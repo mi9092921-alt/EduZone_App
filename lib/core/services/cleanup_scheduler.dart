@@ -1,0 +1,121 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:workmanager/workmanager.dart';
+
+import '../../features/downloads/data/datasources/download_local_ds.dart';
+import '../services/encryption_service.dart';
+import '../services/storage_service.dart';
+
+/// Service for scheduling automatic cleanup of expired downloads.
+///
+/// Uses WorkManager on Android to run cleanup tasks periodically.
+/// Cleanup runs daily to remove expired downloads and free storage.
+///
+/// The [callbackDispatcher] runs in its own isolate (no Flutter binding,
+/// no Riverpod container). It therefore bootstraps only the lowest-level
+/// data-access objects directly, without going through any provider or
+/// use-case layer.
+class CleanupScheduler {
+  static const _cleanupTask = 'cleanupExpiredDownloads';
+
+  /// Initializes the cleanup scheduler.
+  static Future<void> initialize() async {
+    await Workmanager().initialize(
+      callbackDispatcher,
+    );
+  }
+
+  /// Registers the periodic cleanup task.
+  ///
+  /// Runs once every 24 hours when the device is connected and battery is
+  /// not critically low.
+  static Future<void> scheduleCleanup() async {
+    await Workmanager().registerPeriodicTask(
+      _cleanupTask,
+      _cleanupTask,
+      frequency: const Duration(hours: 24),
+      constraints: Constraints(
+        networkType: NetworkType.connected,
+        requiresBatteryNotLow: true,
+        requiresCharging: false,
+      ),
+    );
+  }
+
+  /// Callback dispatcher for WorkManager.
+  ///
+  /// Called by the system when the scheduled task fires.  Bootstraps its
+  /// own DB + encryption instances (no Riverpod in this isolate) and
+  /// physically deletes every expired download row along with its files
+  /// and encryption key.
+  @pragma('vm:entry-point')
+  static void callbackDispatcher() {
+    Workmanager().executeTask((task, inputData) async {
+      if (task != _cleanupTask) return false;
+
+      try {
+        final storageService = StorageService();
+        final localDs = DownloadLocalDataSource(storageService);
+        const secureStorage = FlutterSecureStorage();
+        final encryptionService = EncryptionService(secureStorage);
+
+        final expiredRows = await localDs.getExpiredDownloads();
+
+        for (final row in expiredRows) {
+          final id = row['id'] as String?;
+          if (id == null || id.isEmpty) continue;
+
+          final encryptedPath = row['encrypted_path'] as String?;
+          final audioPath = row['audio_path'] as String?;
+
+          // Delete every file variant (the final encrypted file and any
+          // in-progress .tmp counterpart).
+          for (final path in [
+            encryptedPath,
+            if (encryptedPath != null && encryptedPath.isNotEmpty)
+              '$encryptedPath.tmp',
+            audioPath,
+            if (audioPath != null && audioPath.isNotEmpty) '$audioPath.tmp',
+          ]) {
+            if (path == null || path.isEmpty) continue;
+            try {
+              final file = File(path);
+              if (await file.exists()) await file.delete();
+            } catch (_) {
+              // Non-fatal: file may already be gone.
+            }
+          }
+
+          // Remove the AES key from secure storage.
+          try {
+            await encryptionService.deleteKey(id);
+          } catch (_) {}
+
+          // Remove the DB row last so that a crash mid-loop leaves the
+          // record in place and the next run retries the cleanup.
+          await localDs.deleteDownload(id);
+        }
+
+        if (kDebugMode) {
+          debugPrint(
+            '[CleanupScheduler] Removed ${expiredRows.length} expired download(s)',
+          );
+        }
+        return true;
+      } catch (e, stack) {
+        if (kDebugMode) {
+          debugPrint('[CleanupScheduler] Cleanup failed: $e\n$stack');
+        }
+        // Return false so WorkManager can retry the task later.
+        return false;
+      }
+    });
+  }
+
+  /// Cancels the scheduled cleanup task.
+  static Future<void> cancelCleanup() async {
+    await Workmanager().cancelAll();
+  }
+}

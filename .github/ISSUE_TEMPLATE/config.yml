@@ -1,0 +1,10 @@
+# تعطيل القوالب الفارغة يجبر المستخدم على اختيار قالب محدد بدل فتح Issue حر
+blank_issues_enabled: false
+
+contact_links:
+  - name: 🔒 الإبلاغ عن ثغرة أمنية
+    url: https://github.com/mi9092921-alt/EduZone_App/security/advisories/new
+    about: لا تفتح Issue عام للثغرات الأمنية — استخدم Private Vulnerability Reporting أو راسلنا مباشرة (راجع SECURITY.md)
+  - name: 💬 سؤال عام / دعم
+    url: https://github.com/mi9092921-alt/EduZone_App/discussions
+    about: للأسئلة العامة التي ليست خطأ أو طلب ميزة (يتطلب تفعيل GitHub Discussions)

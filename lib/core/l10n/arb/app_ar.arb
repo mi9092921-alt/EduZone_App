@@ -1,0 +1,581 @@
+{
+  "@@locale": "ar",
+  "appTitle": "EduZone",
+  "welcome": "أهلاً بك",
+  
+  "loginTitle": "تسجيل الدخول",
+  "loginSubtitle": "الوصول إلى رحلتك التعليمية",
+  "emailHint": "البريد الإلكتروني",
+  "passwordHint": "كلمة المرور",
+  "loginButton": "تسجيل الدخول",
+  "forgotPassword": "نسيت كلمة المرور؟",
+  
+  "homeTab": "الرئيسية",
+  "discoverTab": "اكتشف",
+  "coursesTab": "الكورسات",
+  "downloads": "التنزيلات",
+  "sectionsLabel": "أقسام",
+  "todoTab": "مهامي",
+  "profileTab": "حسابي",
+  
+  "errorNetwork": "لا يوجد اتصال بالإنترنت.",
+  "errorAuth": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+  "errorEmailNotConfirmed": "يرجى تأكيد بريدك الإلكتروني قبل تسجيل الدخول.",
+
+  "errorLocked": "تم قفل الحساب بسبب محاولات فاشلة متعددة.",
+  "errorBanned": "لقد تم حظر حسابك.",
+  "errorSuspended": "حسابك معلق مؤقتاً.",
+  "errorMaintenance": "النظام تحت الصيانة. يرجى التحقق لاحقاً.",
+  
+  "errorEmulatorBlocked": "لا يمكن تسجيل الدخول من المحاكي.",
+  "errorRateLimit": "محاولات كثيرة جداً، انتظر {minutes} دقائق.",
+  "@errorRateLimit": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "errorMaxDevices": "تم الوصول للحد الأقصى للأجهزة (جهاز واحد).",
+  "errorDeviceBound": "هذا الجهاز مسجل لحساب آخر.",
+  
+  "retryButton": "إعادة المحاولة",
+
+  "lockedScreenTitle": "الحساب مقفل",
+  "lockedScreenMsg": "تم قفل حسابك لأسباب أمنية. يرجى الاتصال بالدعم لإلغاء القفل.",
+  "lockedScreenContactBtn": "اتصل بالدعم",
+  
+  "bannedScreenTitle": "الحساب محظور",
+  "bannedScreenMsg": "تم حظر هذا الحساب نهائياً من منصة EduZone بسبب انتهاك شروط الخدمة.",
+  "bannedScreenAppeal": "إذا كنت تعتقد أن هذا خطأ، يمكنك تقديم التماس عبر البريد: appeals@eduzone.com",
+  
+  "suspendedScreenTitle": "الحساب معلق",
+  "suspendedScreenMsg": "تم تعليق وصولك مؤقتاً. يرجى مراجعة بريدك الإلكتروني لمزيد من التفاصيل.",
+  "suspendedScreenCheckStatusBtn": "تحقق من الحالة",
+  
+  "maintenanceScreenTitle": "تحت الصيانة",
+  "maintenanceScreenMsg": "نقوم حالياً بإجراء صيانة دورية لتحسين خدماتنا. سنعود قريباً!",
+  "maintenanceScreenEstTime": "الوقت المقدر: 15 دقيقة",
+  "maintenanceScreenEndTime": "وقت الانتهاء المتوقع: {time}",
+  "@maintenanceScreenEndTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+
+  "statusReason": "السبب: {reason}",
+  "@statusReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  
+  "statusUntil": "حتى: {time}",
+  "@statusUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+
+  "welcome_user": "أهلاً بك، {firstName} 👋",
+  "@welcome_user": {
+    "placeholders": {
+      "firstName": {
+        "type": "String"
+      }
+    }
+  },
+  "continue_learning": "متابعة التعلم",
+  "recent_courses": "الكورسات الأخيرة",
+  "today_todos": "مهام اليوم",
+  "no_recent_courses": "لا توجد كورسات أخيرة.",
+  "no_recent_todos": "لا توجد مهام اليوم.",
+  "no_courses_available": "لا توجد كورسات متاحة.",
+  "see_all": "عرض الكل",
+  "notificationsTitle": "الإشعارات",
+  "markAllRead": "تحديد الكل كمقروء",
+  "noNotifications": "لا توجد إشعارات",
+  "lessonNotFound": "الدرس غير موجود",
+  "enrollmentRequired": "الاشتراك مطلوب",
+  "enrollToAccessLesson": "يرجى الاشتراك في هذه الدورة للوصول إلى هذا الدرس ومحتواه الكامل.",
+  "viewEnrollmentOptions": "عرض خيارات الاشتراك",
+  "chooseVideoPlayer": "اختر مشغل الفيديو",
+  "youtubePlayer": "مشغل YouTube",
+  "youtubePlayerSubtitle": "المشغل القياسي في Flutter",
+  "proxyPlayer": "مشغل البروكسي",
+  "proxyPlayerSubtitle": "مشغل بدون إعلانات",
+  "modernPlayer": "المشغل الحديث",
+  "modernPlayerSubtitle": "تجربة WebView مع إزالة العناصر غير الضرورية",
+  "directPlayer": "المشغل المباشر",
+  "directPlayerSubtitle": "تشغيل مباشر بجودة عالية بدون WebView",
+  "normalSpeed": "طبيعية",
+  "retryLoading": "إعادة المحاولة",
+  "checkInternetConnection": "تحقق من اتصالك بالإنترنت وأعد المحاولة",
+  "serverError": "حدث خطأ غير متوقع في الخادم",
+  "videoParseError": "خطأ في بيانات الفيديو. حاول مجدداً أو تواصل مع الدعم الفني.",
+  "autoQuality": "تلقائي",
+  "invalidVideoUrl": "رابط الفيديو غير صالح",
+
+  "markAsDone": "تحديد كمكتمل",
+  "completed": "مكتمل",
+  "errorLoading": "خطأ: {message}",
+  "@errorLoading": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "tasksTitle": "مهامي",
+  "allTasks": "الكل ({count})",
+  "@allTasks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pendingTasks": "قيد التنفيذ ({count})",
+  "@pendingTasks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "completedTasks": "المكتملة ({count})",
+  "@completedTasks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noTasks": "لم يتم العثور على مهام",
+  "addTask": "إضافة مهمة جديدة",
+  "editTask": "تعديل المهمة",
+  "deleteTask": "حذف المهمة",
+  "confirmDeleteTitle": "تأكيد الحذف",
+  "confirmDeleteMsg": "هل أنت متأكد من حذف هذه المهمة؟ لا يمكن التراجع عن هذا الإجراء.",
+  "undo": "تراجع",
+  "cancel": "إلغاء",
+  "taskTitleHint": "عنوان المهمة",
+  "taskDescHint": "الوصف (اختياري)",
+  "taskPriority": "الأولوية",
+  "priorityNormal": "عادي",
+  "priorityMedium": "متوسط",
+  "priorityHigh": "مرتفع",
+  "dueDateLabel": "تاريخ الاستحقاق",
+  "addBtn": "إضافة",
+  "editButton": "تعديل",
+  "deleteButton": "حذف",
+  "taskAdded": "تمت إضافة المهمة بنجاح",
+  "taskUpdated": "تم تحديث المهمة بنجاح",
+  "taskDeleted": "تم حذف المهمة بنجاح",
+  "overdueLabel": "متأخر: {time}",
+  "@overdueLabel": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "dueLabel": "موعدنا: {time}",
+  "@dueLabel": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "minCount": "{count} دقيقة",
+  "@minCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "lessonsCount": "{count, plural, =0{لا توجد دروس} =1{درس واحد} =2{درسان} few{{count} دروس} many{{count} درسًا} other{{count} درس}}",
+  "@lessonsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noContentAvailable": "لا يوجد محتوى متاح.",
+  "searchCourses": "ابحث عن الكورسات",
+  "@searchCourses": {},
+  "failedToLoadCourses": "فشل تحميل الكورسات. اسحب للتحديث.",
+  "generalCategory": "عام",
+  "errorLoadingTasks": "خطأ في تحميل المهام",
+  "errorPasswordTooShort": "يجب أن تكون كلمة المرور 8 أحرف على الأقل",
+  "levelBeginner": "مبتدئ",
+  "levelIntermediate": "متوسط",
+  "levelAdvanced": "متقدم",
+  "closeButton": "إغلاق",
+  "notEnrolledMsg": "أنت غير مشترك في هذا الكورس.",
+  "courseProgress": "تقدم الكورس",
+  "enrollmentSuspended": "اشتراكك معلق.",
+  "logout": "تسجيل الخروج",
+  "loggingOut": "جاري تسجيل الخروج...",
+  "settings": "الإعدادات",
+  "pushNotifications": "إشعارات التطبيق",
+
+  "editProfile": "تعديل الملف الشخصي",
+  "firstName": "الاسم الأول",
+  "lastName": "الاسم الأخير",
+  "saveChanges": "حفظ التغييرات",
+  "deviceInfo": "الجهاز",
+  "verifiedDevice": "موثق",
+  "changeAvatar": "تغيير الصورة",
+  "profileUpdated": "تم تحديث الملف الشخصي بنجاح",
+  "avatarUpdated": "تم تحديث الصورة بنجاح",
+  "themeLabel": "المظهر",
+  "themeLight": "فاتح",
+  "themeDark": "داكن",
+  "themeSystem": "النظام",
+  "languageLabel": "اللغة",
+  "logoutConfirmTitle": "تأكيد تسجيل الخروج",
+  "logoutConfirmMsg": "هل أنت متأكد من تسجيل الخروج؟ ستحتاج للدخول مرة أخرى.",
+  "contactSupport": "موظف الدعم",
+  "noInternetBanner": "لا يوجد اتصال بالإنترنت",
+  "suspendedCountdown": "الوقت المتبقي: {days} يوم {hours} ساعة {minutes} دقيقة",
+  "@suspendedCountdown": {
+    "placeholders": {
+      "days": { "type": "int" },
+      "hours": { "type": "int" },
+      "minutes": { "type": "int" }
+    }
+  },
+  "maintenanceCountdown": "الوقت المتبقي المقدر: {hours} ساعة {minutes} دقيقة",
+  "@maintenanceCountdown": {
+    "placeholders": {
+      "hours": { "type": "int" },
+      "minutes": { "type": "int" }
+    }
+  },
+  "supportAndInfo": "الدعم والمعلومات",
+  "helpAndSupport": "المساعدة والدعم",
+  "followUs": "تابعنا",
+  "termsAndConditions": "الشروط والأحكام",
+  "privacyPolicy": "سياسة الخصوصية",
+  "termsContent": "باستخدامك لمنصة EduZone، فإنك توافق على الالتزام بجميع الشروط والأحكام الموضحة في هذه الاتفاقية. تم تصميم EduZone لتوفير خدمات تعليمية رقمية عالية الجودة مدعومة بالتقنيات الحديثة. يتم تقديم جميع المحتويات \"كما هي\" دون أي ضمانات صريحة أو ضمنية فيما يتعلق بالدقة أو الاكتمال. يطلب من المستخدمين استخدام المنصة بطريقة قانونية وأخلاقية.",
+  "privacyContent": "في EduZone، نضع أعلى أولوية لحماية خصوصية المستخدم وبياناته الشخصية. نجمع فقط المعلومات الضرورية المطلوبة لتحسين جودة خدماتنا التعليمية، مثل تفاصيل التسجيل ونشاط الاستخدام. نلتزم بعدم بيع أو مشاركة بيانات المستخدم مع أطراف ثالثة دون موافقة صريحة، إلا ما يقتضيه القانون.",
+  "about": "حول التطبيق",
+  "agreeToTerms": "أوافق على الشروط والأحكام وسياسة الخصوصية",
+  "agreeToTermsPrefix": "أوافق على ",
+  "agreeToTermsMiddle": " و",
+  "agreeToTermsSuffix": "",
+  "agreeToTermsError": "يجب الموافقة على الشروط والأحكام للمتابعة",
+  "errorInvalidEmail": "يرجى إدخال بريد إلكتروني صحيح",
+  "lastUpdated": "آخر تحديث: {date}",
+  "@lastUpdated": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "copyright": "© {year} منصة EduZone",
+  "@copyright": {
+    "placeholders": {
+      "year": {
+        "type": "String"
+      }
+    }
+  },
+  "errorLinkUnavailable": "الرابط غير متاح",
+  "modernLearningPlatform": "منصة تعليمية حديثة للطلاب والمعلمين",
+  "@modernLearningPlatform": {
+    "description": "Short description of the platform used in the About dialog"
+  },
+  "ok": "حسناً",
+  "copyrightFull": "منصة EduZone © {year}. جميع الحقوق محفوظة.",
+  "@copyrightFull": {
+    "placeholders": {
+      "year": {
+        "type": "String"
+      }
+    }
+  },
+  "versionLabel": "الإصدار {version}",
+  "@versionLabel": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "emailCopied": "تم نسخ البريد الإلكتروني",
+  "defaultUserName": "طالب",
+  "welcomeSubtitle": "جاهز لتعزيز مهاراتك اليوم؟",
+  "permissionsHeader": "أذونات التطبيق",
+  "locationPermission": "الموقع الجغرافي",
+  "locationPermissionDescription": "يُستخدم لتخصيص التجارب التعليمية القريبة والميزات المرتبطة بالموقع.",
+  "cameraPermission": "الكاميرا",
+  "cameraPermissionDescription": "يُستخدم عند التقاط صورة الملف الشخصي أو رفع مهام بصرية.",
+  "mediaPermission": "الصور والملفات",
+  "mediaPermissionDescription": "يُستخدم لرفع الملفات الدراسية والمرفقات والصور.",
+  "storagePermission": "التخزين والكاميرا",
+  "notificationPermission": "الإشعارات",
+  "notificationPermissionDescription": "يُستخدم لتنبيهك بالمواعيد ونشاط الدورات والتحديثات المهمة.",
+  "permissionGranted": "مسموح",
+  "permissionDenied": "مرفوض",
+  "permissionPermanentlyDenied": "معطل (من الإعدادات)",
+  "openSettings": "فتح الإعدادات",
+  "permDeniedTitle": "الإذن مطلوب",
+  "permDeniedMsg": "تتطلب هذه الميزة الوصول إلى {permission}. يرجى تفعيله يدوياً من إعدادات النظام.",
+  "@permDeniedMsg": {
+    "placeholders": {
+      "permission": {
+        "type": "String"
+      }
+    }
+  },
+  "permActionOpenSettings": "فتح الإعدادات",
+  "lessonsLabel": "الدروس",
+  "courseDescriptionLabel": "حول هذا الكورس",
+  "courseCurriculumLabel": "محتوى الكورس",
+  "instructorLabel": "المحاضر",
+  "priceLabel": "السعر",
+  "freeLabel": "مجاني",
+  "enrollNow": "اشترك الآن",
+  "enrollmentComingSoon": "ميزة الاشتراك ستتوفر قريباً!",
+  "resumeLearning": "متابعة التعلم",
+  "allFilter": "الكل",
+  "unreadFilter": "غير مقروء",
+  "noUnreadNotifications": "لا توجد تنبيهات جديدة!",
+  "notificationsEmptyDesc": "سنخطرك عند حدوث شيء مهم.",
+  "daily_progress": "التقدم اليومي",
+  "learning_time": "وقت التعلم",
+  "streak_count": "أيام الاستمرار",
+  "home_stats_title": "إحصائياتك",
+  "explore_courses": "اكتشف الكورسات",
+  "no_courses_desc": "لم تبدأ أي كورس بعد. ما رأيك في اكتشاف شيء جديد اليوم؟",
+  "no_tasks_desc": "أنت متفرغ تماماً! هل تريد التخطيط لمهمة جديدة؟",
+  "create_task": "إنشاء مهمة",
+  "pendingLabel": "قيد الانتظار",
+  "completeLabel": "مكتمل",
+  "pendingFilter": "قيد التنفيذ",
+  "completedFilter": "المكتملة",
+  "courseCardLabel": "كورس: {title}",
+  "@courseCardLabel": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "courseCardHint": "اضغط لعرض تفاصيل الكورس",
+  "progress": "التقدم",
+  "paidPrice": "مدفوع",
+  "featuredLabel": "مميز",
+  "newStatusLabel": "جديد",
+  "discoverTopPicks": "اكتشف اختياراتنا لك",
+  "plus100Courses": "+100 كورس",
+  "exploreMore": "استكشف المزيد",
+  "findLessons": "ماذا تريد أن تتعلم اليوم؟",
+  "previewLabel": "معاينة",
+  "videoLabel": "فيديو",
+  "hours": "ساعة",
+  "minutes": "دقيقة",
+  "unknownInstructor": "مدرب غير معروف",
+  "studentsLabel": "طالب",
+  "whatYouWillLearn": "ماذا ستتعلم",
+  "learningPoint1": "فهم الأساسيات والمفاهيم الرئيسية المتعلقة بالموضوع",
+  "learningPoint2": "تطبيق عملي خطوة بخطوة على مشاريع حقيقية",
+  "learningPoint3": "اكتساب المهارات المطلوبة في سوق العمل الحديث",
+  "coursePrerequisites": "المتطلبات المسبقة",
+  "courseLanguage": "اللغة",
+  "learningObjectives": "أهداف التعلم",
+  "requirement1": "لا يُشترط وجود خبرة سابقة (مناسب للمبتدئين)",
+  "requirement2": "اتصال جيد بالإنترنت وجهاز كمبيوتر شخصي أو هاتف",
+  "reviewCourse": "مراجعة الكورس",
+  "viewFullCourse": "عرض الكورس كاملاً",
+  "enrolledSuccessfully": "تم الاشتراك في الكورس بنجاح.",
+  "enrollmentFailed": "فشل الاشتراك. يرجى المحاولة مرة أخرى.",
+  "fullAccessLabel": "وصول كامل",
+  "permOpenSettingsManual": "يرجى فتح الإعدادات → التطبيقات → EduZone → الأذونات لتفعيل الوصول",
+  "permOpenSettingsError": "تعذر فتح الإعدادات. يرجى تفعيل الأذونات يدوياً.",
+  "noPreviewAvailable": "لا يوجد فيديو معاينة متاح لهذا الكورس.",
+  "showLess": "عرض أقل",
+  "showMore": "عرض المزيد",
+  "startNow": "ابدأ الآن (مراجعة)",
+  "comingSoon": "قريباً",
+  "paymentNotAvailable": "نظام الدفع غير متاح حالياً في هذا الإصدار. يمكنك طلب المراجعة وسيتم التواصل معك.",
+  "confirmRequest": "تأكيد الطلب للمراجعة",
+  "requestReceived": "تم استلام طلبك، سنقوم بمراجعته قريباً",
+
+  "forceUpdateTitle": "تحديث إجباري مطلوب",
+  "forceUpdateMsg": "يجب تحديث التطبيق للاستمرار في استخدام EduZone.",
+  "forceUpdateBtn": "تحديث الآن",
+  "optionalUpdateTitle": "تحديث جديد متاح",
+  "optionalUpdateBtn": "تحديث الآن",
+  "optionalUpdateLater": "لاحقاً",
+
+  "progressTitle": "تقدمك",
+  "lessonsCompleted": "{completed}/{total} دروس",
+  "@lessonsCompleted": {
+    "placeholders": {
+      "completed": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "courseCompleted": "الكورس مكتمل! 🎉",
+  "overallProgress": "التقدم العام",
+  "continueWatching": "متابعة المشاهدة",
+  "sectionProgress": "{completed}/{total}",
+  "@sectionProgress": {
+    "placeholders": {
+      "completed": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "lastWatched": "آخر مشاهدة {time}",
+  "@lastWatched": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "notStarted": "لم تبدأ بعد",
+
+  "statusActive": "نشط",
+  "statusLocked": "مقفل",
+  "statusSuspended": "موقوف",
+  "statusBanned": "محظور",
+  "statusInactive": "غير نشط",
+  "statusMaintenance": "صيانة",
+  "statusUnauthenticated": "غير مسجل",
+  "statusAppLocked": "التطبيق مقفل",
+  "downloadNotFound": "الملف غير موجود",
+  "downloadNotReady": "الملف غير جاهز يرجى الانتظار",
+  "offlineModeLabel": "وضع عدم الاتصال",
+  "errorGeneric": "حدث خطأ",
+
+  "downloadsTitle": "التنزيلات",
+  "downloadsEmpty": "لا توجد تنزيلات بعد",
+  "downloadsEmptyHint": "قم بتنزيل الدروس لمشاهدتها بدون إنترنت",
+  "downloadsError": "خطأ في تحميل التنزيلات",
+  "downloadsRetry": "إعادة المحاولة",
+  "downloadsCleanupTitle": "تنظيف التنزيلات المنتهية",
+  "downloadsCleanupMsg": "هل تريد حذف جميع التنزيلات المنتهية لتحرير مساحة التخزين؟",
+  "downloadsCleanup": "تنظيف",
+  "downloadsDeleteTitle": "حذف التنزيل",
+  "downloadsDeleteMsg": "هل أنت متأكد من حذف هذا التنزيل؟",
+  "downloadsDeleteBtn": "حذف",
+  "downloadsCancelBtn": "إلغاء",
+  "downloadsStorageUsed": "المساحة المستخدمة: {size} م.ب",
+  "@downloadsStorageUsed": {
+    "placeholders": { "size": { "type": "String" } }
+  },
+  "downloadStatusPending": "في الانتظار",
+  "downloadStatusDownloading": "جاري التنزيل",
+  "downloadStatusPaused": "متوقف مؤقتاً",
+  "downloadStatusCompleted": "تم التنزيل",
+  "downloadStatusFailed": "فشل التنزيل",
+  "downloadExpired": "منتهي الصلاحية",
+  "downloadNeverExpires": "لا ينتهي",
+  "downloadExpiresInDays": "ينتهي خلال {days} يوم",
+  "@downloadExpiresInDays": {
+    "placeholders": { "days": { "type": "int" } }
+  },
+  "downloadExpiresInHours": "ينتهي خلال {hours} ساعة",
+  "@downloadExpiresInHours": {
+    "placeholders": { "hours": { "type": "int" } }
+  },
+  "downloadExpiresSoon": "ينتهي قريباً",
+  "downloadCourseGroup": "كورس: {courseId}",
+  "@downloadCourseGroup": {
+    "placeholders": { "courseId": { "type": "String" } }
+  },
+  "downloadSelectQuality": "اختر جودة الفيديو",
+  "downloadEstimatedSizes": "حجم الملف التقريبي:",
+  "downloadPause": "إيقاف مؤقت",
+  "downloadResume": "استئناف",
+  "downloadCancel": "إلغاء",
+  "downloadRetry": "إعادة المحاولة",
+  "loadingOfflineLesson": "جارٍ تجهيز الدرس للعرض…",
+  "offlinePlaybackError": "تعذّر تشغيل الدرس بدون إنترنت.",
+  "playButtonLabel": "تشغيل",
+  "pauseButtonTooltip": "إيقاف مؤقت",
+  "fullScreenButtonTooltip": "ملء الشاشة",
+  "exitFullScreenButtonTooltip": "خروج من ملء الشاشة",
+  "settingsTooltip": "إعدادات",
+  "audioSettingsTooltip": "إعدادات الصوت",
+  "speedTooltip": "سرعة التشغيل",
+  "volumeTooltip": "مستوى الصوت",
+  "showControlsTooltip": "إظهار/إخفاء عناصر التحكم",
+  "rewindButtonTooltip": "إرجاع 10 ثوانٍ",
+  "fastForwardButtonTooltip": "تقديم 10 ثوانٍ",
+  "toggleAspectRatioTooltip": "تبديل أبعاد الفيديو",
+  "savedCoursesTitle": "المحفوظات",
+  "savedCoursesEmptyMessage": "لا توجد كورسات محفوظة",
+  "bookmarkFailed": "فشل تحديث الإشارة المرجعية. حاول مرة أخرى.",
+  "bookmarkAdd": "إضافة إلى المحفوظات",
+  "bookmarkRemove": "إزالة من المحفوظات",
+  "downloadLesson": "تنزيل الدرس",
+  "shareCourse": "مشاركة الدورة",
+  "videoSeekBack": "إرجاع 10 ثوانٍ",
+  "videoSeekForward": "تقديم 10 ثوانٍ",
+  "videoPlay": "تشغيل",
+  "videoPause": "إيقاف مؤقت",
+  "videoMute": "كتم الصوت",
+  "videoUnmute": "إلغاء الكتم",
+  "passwordShow": "إظهار كلمة المرور",
+  "passwordHide": "إخفاء كلمة المرور",
+  "videoEnterFullscreen": "تشغيل ملء الشاشة",
+  "videoExitFullscreen": "إيقاف ملء الشاشة",
+  "videoOrientationPortrait": "التبديل للوضع الرأسي",
+  "videoOrientationLandscape": "التبديل للوضع الأفقي",
+  "videoSwitchPlayer": "تبديل مشغّل الفيديو",
+  "navigateBack": "رجوع",
+  "lessonsProgress": "{completed}/{total} {total, plural, =0{دروس} =1{درس واحد} =2{درسان} few{دروس} many{درسًا} other{درس}}",
+  "@lessonsProgress": {
+    "placeholders": {
+      "completed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "downloadingTitle": "جاري تنزيل {title}",
+  "@downloadingTitle": {
+    "placeholders": { "title": { "type": "String" } }
+  },
+  "downloadingProgress": "تم اكتمال {pct}%",
+  "@downloadingProgress": {
+    "placeholders": { "pct": { "type": "String" } }
+  },
+  "downloadingSubtitle": "جاري التنزيل...",
+  "downloadCompleted": "تم اكتمال التنزيل",
+  "downloadFailed": "فشل التنزيل",
+  "loadingLessonData": "جاري تحميل بيانات الدرس...",
+  "videoUrlError": "فشل الحصول على رابط الفيديو",
+  "downloadStarting": "جاري بدء التنزيل...",
+  "downloadStartedSuccess": "تم بدء تنزيل الجودة {quality} بنجاح",
+  "@downloadStartedSuccess": {
+    "placeholders": { "quality": { "type": "String" } }
+  },
+  "downloadStartFailed": "فشل بدء التنزيل: {error}",
+  "@downloadStartFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "videoInfoFetchFailed": "فشل جلب خصائص الفيديو: {error}",
+  "@videoInfoFetchFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "downloadActionFailed": "فشلت العملية: {error}",
+  "@downloadActionFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  }
+}

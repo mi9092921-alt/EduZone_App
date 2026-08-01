@@ -1,0 +1,49 @@
+# This file configures the analyzer, which statically analyzes Dart code to
+# check for errors, warnings, and lints.
+#
+# The issues identified by the analyzer are surfaced in the UI of Dart-enabled
+# IDEs (https://dart.dev/tools#ides-and-editors). The analyzer can also be
+# invoked from the command line by running `flutter analyze`.
+
+# The following line activates a set of recommended lints for Flutter apps,
+# packages, and plugins designed to encourage good coding practices.
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  errors:
+    invalid_annotation_target: ignore
+    missing_required_param: error
+    missing_return: error
+    todo: warning
+
+linter:
+  rules:
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - avoid_print
+    - avoid_dynamic_calls
+    - always_declare_return_types
+    - cancel_subscriptions
+    - close_sinks
+    - prefer_single_quotes
+    - avoid_unnecessary_containers
+    - sized_box_for_whitespace
+    - use_decorated_box
+    - use_colored_box
+    # Added — moderate, high-signal additions only. Deliberately NOT
+    # adding public_member_api_docs, lines_longer_than_80_chars, or the
+    # analyzer strict-casts/strict-inference/strict-raw-types modes here:
+    # on a codebase this size they would likely surface a large number of
+    # pre-existing violations in one go and block CI without warning.
+    # Worth doing as a separate, scoped cleanup effort if the team wants
+    # them — not bundled silently into this pass. Run `flutter analyze`
+    # after this change to see how much new signal these actually add
+    # before deciding whether any need `// ignore:` in specific files.
+    - prefer_final_locals
+    - prefer_final_in_for_each
+    - unawaited_futures
+    - use_build_context_synchronously
+    - use_key_in_widget_constructors
+    - directives_ordering
+    - sort_child_properties_last
+    - avoid_redundant_argument_values

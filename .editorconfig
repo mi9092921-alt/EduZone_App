@@ -1,0 +1,42 @@
+# EditorConfig — يوحّد التنسيق بين Android Studio / VSCode / IntelliJ
+# https://editorconfig.org
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Dart/Flutter — يطابق تنسيق dart format الافتراضي
+[*.dart]
+indent_size = 2
+max_line_length = 80
+
+# ملفات مولّدة تلقائيًا — لا تُنسّق يدويًا، استبعدها من أي أداة تنسيق تعمل عبر .editorconfig
+[{*.g.dart,*.freezed.dart,*.gr.dart}]
+trim_trailing_whitespace = false
+insert_final_newline = false
+
+# YAML (pubspec.yaml, CI workflows, l10n.yaml)
+[*.{yml,yaml}]
+indent_size = 2
+
+# Kotlin/Gradle (Android)
+[*.{kt,kts}]
+indent_size = 4
+
+# JSON (ARB files, l10n, launcher config)
+[*.{json,arb}]
+indent_size = 2
+
+# Markdown — لا تحذف المسافات الزائدة (قد تكون جزءًا من صيغة line break)
+[*.md]
+trim_trailing_whitespace = false
+
+# XML (Android manifests, resources)
+[*.xml]
+indent_size = 4

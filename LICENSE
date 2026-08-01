@@ -1,0 +1,36 @@
+Copyright (c) 2026 EduZone. All Rights Reserved.
+
+This software and its associated source code, documentation, assets, and
+design files (collectively, the "Software") are the proprietary and
+confidential property of EduZone ("the Company").
+
+No part of the Software may be copied, reproduced, distributed, republished,
+downloaded, displayed, posted, transmitted, modified, or used to create
+derivative works, in any form or by any means, without the prior written
+permission of the Company, except as expressly permitted under a separate
+written agreement (e.g., an employment agreement, contractor agreement, or
+license agreement) between the recipient and the Company.
+
+Access to this repository does not, by itself, grant any license or right
+to use, copy, modify, merge, publish, distribute, sublicense, or sell copies
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+---
+
+ملاحظة: هذا الملف صيغة "Proprietary / All Rights Reserved" مناسبة لمنتج
+تجاري مغلق المصدر (SaaS متعدد المستأجرين). إذا كان لدى الشركة مستشار
+قانوني، يُفضّل مراجعته معه قبل النشر، خصوصًا إذا كان هناك مستثمرون أو
+شركاء يحتاجون بنودًا إضافية (مثل حقوق الملكية الفكرية المشتركة، أو
+اتفاقيات ترخيص فرعية لعملاء الـ White-label إن وجدت).
+
+هذا الملف لا يمنح أي ترخيص لطرف ثالث حتى لو كان المستودع عامًا (public)
+بالخطأ — إذا كانت هناك نية لفتح جزء من الكود (مثل الـ Design System) كمصدر
+مفتوح مستقبلاً، يجب فصله في مستودع منفصل برخصة MIT/Apache-2.0 صريحة.

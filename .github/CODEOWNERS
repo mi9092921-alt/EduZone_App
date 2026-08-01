@@ -1,0 +1,29 @@
+# CODEOWNERS
+# صاحب المشروع: مصطفى إبراهيم محمد أحمد (@mi9092921-alt)
+
+* @mi9092921-alt
+
+# ── الأمان: كل ما يخص RASP، التشفير، والحماية وقت التشغيل ─────────────────
+/lib/core/security/                        @mi9092921-alt
+/lib/core/services/encryption_service.dart @mi9092921-alt
+
+# ── طبقة الشبكة والجلسات (Supabase client + تخزين التوكن) ─────────────────
+/lib/core/network/                         @mi9092921-alt
+
+# ── ميزة المصادقة كاملة (auth flow حساس بطبيعته) ───────────────────────────
+/lib/features/auth/                        @mi9092921-alt
+
+# ── توقيع وبناء أندرويد (Release signing, minify) ──────────────────────────
+/android/app/build.gradle.kts              @mi9092921-alt
+/android/**/key.properties                 @mi9092921-alt
+
+# ── CI/CD وأتمتة النشر ──────────────────────────────────────────────────────
+/.github/workflows/                        @mi9092921-alt
+/.github/dependabot.yml                    @mi9092921-alt
+
+# ── Design System (تغييرات هنا تؤثر بصريًا على كل الميزات) ─────────────────
+/lib/design_system/                        @mi9092921-alt
+
+# ── إعدادات المشروع الجذرية ─────────────────────────────────────────────────
+/pubspec.yaml                              @mi9092921-alt
+/analysis_options.yaml                     @mi9092921-alt
