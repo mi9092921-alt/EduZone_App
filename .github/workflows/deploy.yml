@@ -7,13 +7,13 @@ jobs:
   deploy_android:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Placeholder for Android deployment to Play Store (fastlane)
         run: echo "Fastlane setup deferred to P10"
 
   deploy_ios:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Placeholder for iOS deployment to TestFlight (fastlane)
         run: echo "Fastlane setup deferred to P10"
