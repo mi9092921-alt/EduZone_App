@@ -119,7 +119,7 @@ CLAUDE.md
 ROLE.md
 Auth Security and Functional Audit Report.md
 tools/
-tool/
+
 
 # Golden test failure diffs (auto-generated on golden test mismatch, never commit)
 **/failures/
