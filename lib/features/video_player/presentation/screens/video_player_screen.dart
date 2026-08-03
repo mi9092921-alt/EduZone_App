@@ -7,10 +7,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../shared/cross_feature/courses_shared.dart';
 import '../../../courses/domain/entities/course.dart';
 import '../../../courses/domain/entities/lesson.dart';
 import '../../../courses/domain/entities/section.dart';
-import '../../../courses/presentation/providers/courses_provider.dart';
 import '../providers/video_provider.dart';
 import '../widgets/lessons_sidebar.dart';
 

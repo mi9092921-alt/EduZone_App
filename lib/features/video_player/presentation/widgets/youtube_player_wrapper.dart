@@ -4,7 +4,7 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/utils/device_info_helper.dart';
-import '../../../courses/presentation/providers/courses_provider.dart';
+import '../../../../shared/cross_feature/courses_shared.dart';
 import '../providers/video_provider.dart';
 import 'youtube_player_widget.dart';
 

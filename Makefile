@@ -39,16 +39,16 @@ check-a11y:
 	@python3 tool/check_a11y.py
 
 check-architecture:
-        @python3 tool/check_architecture.py
+	@python3 tool/check_architecture.py --strict
 
 check-rtl:
-        @python3 tool/check_rtl.py
+	@python3 tool/check_rtl.py
 
 check-design-tokens:
-        @python3 tool/check_design_tokens.py
+	@python3 tool/check_design_tokens.py
 
 check-performance:
-        @python3 tool/check_performance.py
+	@python3 tool/check_performance.py
 
 check-all: check-a11y check-architecture check-rtl check-design-tokens check-performance
 

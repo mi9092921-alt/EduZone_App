@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../../notifications/presentation/providers/notifications_provider.dart';
-import '../../../notifications/presentation/widgets/notification_tile.dart';
+import '../../../../shared/cross_feature/notifications_shared.dart';
 
 class NotificationsPreview extends ConsumerWidget {
   const NotificationsPreview({super.key});

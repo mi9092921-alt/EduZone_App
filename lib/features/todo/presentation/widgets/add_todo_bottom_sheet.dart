@@ -7,9 +7,9 @@ import 'package:uuid/uuid.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../core/network/supabase_client.dart';
+import '../../../../shared/cross_feature/auth_shared.dart';
 import '../../../../shared/utils/app_snackbar.dart';
 import '../../../auth/domain/entities/auth_state.dart';
-import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../domain/entities/todo_item.dart';
 import '../providers/todo_provider.dart';
 

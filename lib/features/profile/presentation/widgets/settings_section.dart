@@ -14,10 +14,10 @@ import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../core/permissions/permission_builder.dart';
 import '../../../../core/permissions/permission_item.dart';
 import '../../../../core/services/permission_service.dart';
+import '../../../../shared/cross_feature/auth_shared.dart';
 import '../../../../shared/utils/app_snackbar.dart';
 import '../../../../shared/widgets/confirm_dialog.dart';
 import '../../../auth/domain/entities/auth_state.dart';
-import '../../../auth/presentation/providers/auth_provider.dart';
 import 'adaptive_settings_picker.dart';
 import 'settings_tile.dart';
 

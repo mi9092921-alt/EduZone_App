@@ -1,6 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../../shared/cross_feature/auth_shared.dart';
 import '../../data/repositories/profile_repo_impl.dart';
 import '../../domain/entities/student_profile.dart';
 import '../../domain/repositories/profile_repository.dart';

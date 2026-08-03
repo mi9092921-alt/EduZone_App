@@ -8,7 +8,7 @@ import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../../../design_system/design_system.dart';
-import '../../../courses/presentation/providers/courses_provider.dart';
+import '../../../../shared/cross_feature/courses_shared.dart';
 import '../../data/models/streaming_video_info.dart';
 import '../providers/player4_provider.dart';
 import '../providers/video_provider.dart';

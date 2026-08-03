@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../../notifications/presentation/providers/notifications_provider.dart';
-import '../../../profile/presentation/providers/profile_provider.dart';
+import '../../../../shared/cross_feature/notifications_shared.dart';
+import '../../../../shared/cross_feature/profile_shared.dart';
 
 /// Welcome header showing personalized greeting + notification badge.
 class WelcomeHeader extends ConsumerWidget {
