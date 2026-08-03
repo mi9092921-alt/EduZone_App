@@ -25,30 +25,31 @@ class TodoPriorityIndicator extends StatelessWidget {
           width: 4,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: AppRadius.hairlineBorder,
           ),
         );
       case TodoPriorityStyle.pill:
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.hairline),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: AppRadius.xsBorder,
             border: Border.all(color: color.withValues(alpha: 0.2)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(_getPriorityEmoji(), style: const TextStyle(fontSize: 10)),
+              Text(
+                _getPriorityEmoji(),
+                style: AppTextStyles.labelTiny.copyWith(
+                  fontWeight: FontWeight.normal,
+                  letterSpacing: 0,
+                ),
+              ),
               const SizedBox(width: 4),
               Text(
                 _getPriorityText(context),
-                style: TextStyle(
-                  color: color,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
+                style: AppTextStyles.labelTiny.copyWith(color: color),
               ),
             ],
           ),

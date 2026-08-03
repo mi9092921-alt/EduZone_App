@@ -78,7 +78,7 @@ class BannedScreen extends ConsumerWidget {
                   padding: const EdgeInsets.all(AppSpacing.md),
                   decoration: BoxDecoration(
                     color: AppColors.errorSoft.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: AppRadius.smBorder,
                     border: Border.all(
                       color: AppColors.error.withValues(alpha: 0.2),
                     ),

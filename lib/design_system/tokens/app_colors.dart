@@ -86,6 +86,10 @@ class AppColors {
   static const Color hoverOverlay = Color(0x0FFFFFFF);
   static const Color focusRing = Color(0xFF60A5FA);
 
+  // ================= OVERLAY / SCRIM
+  // Black @ 30% alpha -- backdrop behind full-screen blocking loaders/dialogs.
+  static const Color scrim = Color(0x4D000000);
+
   // ================= GRADIENTS (Modern UI trend)
   static const LinearGradient primaryGradient = LinearGradient(
     colors: [

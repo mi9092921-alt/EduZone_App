@@ -19,6 +19,23 @@ jobs:
         run: flutter analyze
       - name: Accessibility Guard
         run: make check-a11y
+      - name: Architecture Guard
+        run: make check-architecture
+      - name: RTL Guard
+        # TODO: remove continue-on-error once the current violations are fixed,
+        # so this becomes a blocking check.
+        run: make check-rtl
+        continue-on-error: true
+      - name: Design Token Guard
+        # TODO: remove continue-on-error once the current violations are fixed,
+        # so this becomes a blocking check.
+        run: make check-design-tokens
+        continue-on-error: true
+      - name: Performance Guard
+        # TODO: remove continue-on-error once the current violations are fixed,
+        # so this becomes a blocking check.
+        run: make check-performance
+        continue-on-error: true
       - name: Run tests with coverage
         run: flutter test --coverage
       - name: Upload coverage to Codecov

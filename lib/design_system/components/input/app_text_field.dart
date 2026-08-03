@@ -111,7 +111,9 @@ class _AppTextFieldState extends State<AppTextField> {
       onFieldSubmitted: widget.onFieldSubmitted,
       minLines: widget.autoExpand ? 1 : null,
       maxLines: widget.autoExpand ? widget.maxExpandedLines : widget.maxLines,
-      textAlign: resolvedRtl ? TextAlign.right : TextAlign.left,
+      // No explicit textAlign needed: TextAlign.start is already the
+      // TextFormField default, and it resolves correctly here because
+      // `textDirection` (below) is already explicitly set from resolvedDir.
       textDirection: resolvedRtl ? TextDirection.rtl : TextDirection.ltr,
       style: resolvedRtl
           ? AppTextStyles.bodyMediumAr

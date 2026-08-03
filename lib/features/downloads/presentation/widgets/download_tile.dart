@@ -157,7 +157,7 @@ class DownloadTile extends ConsumerWidget {
             shape: BoxShape.circle,
           ),
           child: const Padding(
-            padding: EdgeInsets.all(10),
+            padding: EdgeInsets.all(AppSpacing.iconBadgePadding),
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
         );

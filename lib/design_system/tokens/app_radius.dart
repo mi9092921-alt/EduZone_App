@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 class AppRadius {
   AppRadius._();
 
+  // Hairline (drag handles / thin bottom-sheet grabbers)
+  static const double hairline = 2.0;
+  // Extra-micro (checkboxes, small badges, compact InkWell hit areas)
+  static const double xxs  = 4.0;
   // Micro (inputs, chips, small elements)
   static const double xs   = 8.0;
   // Buttons / Interactive elements
@@ -16,6 +20,8 @@ class AppRadius {
   // Fully rounded (avatars, pill buttons)
   static const double full = 999.0;
 
+  static const BorderRadius hairlineBorder = BorderRadius.all(Radius.circular(hairline));
+  static const BorderRadius xxsBorder  = BorderRadius.all(Radius.circular(xxs));
   static const BorderRadius xsBorder   = BorderRadius.all(Radius.circular(xs));
   static const BorderRadius smBorder   = BorderRadius.all(Radius.circular(sm));
   static const BorderRadius mdBorder   = BorderRadius.all(Radius.circular(md));

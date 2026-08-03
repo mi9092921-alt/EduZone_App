@@ -97,7 +97,11 @@ class _SplashScreenState extends State<SplashScreen>
 
   // 'Edu' و 'Zone' مستخدمتان مباشرةً في _AnimatedBrandName كـ literals
 
-  static const TextStyle _boldStyle = TextStyle(
+  // Must stay a const TextStyle literal (not AppTextStyles.brandLogo with
+  // .copyWith applied) because it is used inside a const TextSpan below
+  // (copyWith is not a const constructor). Kept numerically identical to
+  // AppTextStyles.brandLogo -- update both together if this ever changes.
+  static const TextStyle _boldStyle = TextStyle( // check-ignore
     fontSize: _K.fontSize,
     fontWeight: FontWeight.w800,
     color: AppColors.primary,
@@ -268,11 +272,8 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final boldStyle = TextStyle(
-      fontSize: _K.fontSize,
-      fontWeight: FontWeight.w800,
+    final boldStyle = AppTextStyles.brandLogo.copyWith(
       color: isDark ? Colors.white : AppColors.primary,
-      letterSpacing: -0.5,
     );
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -368,7 +369,7 @@ class _GradientBackground extends StatelessWidget {
               : [
                   AppColors.neutral50,
                   AppColors.primarySoft,
-                  const Color(0xFFDBEAFE),
+                  AppColors.primarySoft,
                 ],
         ),
       ),
@@ -427,8 +428,8 @@ class _AnimatedLogo extends StatelessWidget {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(_K.logoRadius),
                       gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                        begin: AlignmentDirectional.topStart,
+                        end: AlignmentDirectional.bottomEnd,
                         colors: isDark
                             ? [
                                 AppColors.darkSurface.withValues(alpha: 0.75),
@@ -466,8 +467,8 @@ class _AnimatedLogo extends StatelessWidget {
                         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                         child: ShaderMask(
                           shaderCallback: (bounds) => const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+                            begin: AlignmentDirectional.topStart,
+                            end: AlignmentDirectional.bottomEnd,
                             colors: [AppColors.primary, AppColors.accent],
                           ).createShader(bounds),
                           child: const Icon(

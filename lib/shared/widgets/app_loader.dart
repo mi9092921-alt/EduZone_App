@@ -1,3 +1,4 @@
+import 'package:app/design_system/tokens/app_colors.dart';
 import 'package:flutter/material.dart';
 
 class AppLoader extends StatelessWidget {
@@ -16,7 +17,7 @@ class AppFullScreenLoader extends StatelessWidget {
   Widget build(BuildContext context) {
     return const ColoredBox(
       key: Key('full_screen_loader_bg'),
-      color: Color(0x4D000000), // black with 0.3 alpha
+      color: AppColors.scrim, // black @ 30% alpha
       child: Center(child: CircularProgressIndicator()),
     );
   }

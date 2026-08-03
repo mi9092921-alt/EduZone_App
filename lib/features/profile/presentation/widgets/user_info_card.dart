@@ -37,7 +37,7 @@ class UserInfoCard extends StatelessWidget {
             children: [
               // Avatar Section
               Stack(
-                alignment: Alignment.bottomRight,
+                alignment: AlignmentDirectional.bottomEnd,
                 children: [
                   DecoratedBox(
                     decoration: BoxDecoration(
@@ -48,7 +48,7 @@ class UserInfoCard extends StatelessWidget {
                       ),
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.all(3),
+                      padding: const EdgeInsets.all(3), // check-ignore -- single-use precise avatar-ring inset, not a repeating pattern
                       child: AppAvatar(
                         url: profile.avatarUrl,
                         name: profile.displayName,
@@ -67,7 +67,7 @@ class UserInfoCard extends StatelessWidget {
                           border: Border.all(color: ds.surface, width: 2),
                         ),
                         child: Padding(
-                          padding: const EdgeInsets.all(4),
+                          padding: const EdgeInsets.all(AppSpacing.xs2), // check-ignore -- already a token; false positive
                           child: Icon(
                             AppIcons.camera,
                             size: 12,

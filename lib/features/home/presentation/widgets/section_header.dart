@@ -33,7 +33,7 @@ class SectionHeader extends StatelessWidget {
           if (trailing != null)
             InkWell(
               onTap: onTrailingTapped,
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: AppRadius.xxsBorder,
               child: trailing!,
             ),
         ],

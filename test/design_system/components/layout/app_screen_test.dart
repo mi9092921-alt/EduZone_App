@@ -33,4 +33,113 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.text('Under Loading'), findsOneWidget);
   });
+
+  testWidgets(
+    'AppScreen shows an AppEmptyState with the error message instead of '
+    'child when `error` is set, using the built-in English fallback copy '
+    '(no AppLocalizations wired up in this MaterialApp)',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: AppScreen(
+            error: 'Could not load your courses',
+            child: Text('Should be hidden while erroring'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Something went wrong'), findsOneWidget);
+      expect(find.text('Could not load your courses'), findsOneWidget);
+      expect(find.text('Should be hidden while erroring'), findsNothing);
+    },
+  );
+
+  testWidgets('AppScreen invokes onRetry when the error state\'s retry '
+      'button is tapped', (WidgetTester tester) async {
+    bool retried = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppScreen(
+          error: 'Network error',
+          onRetry: () => retried = true,
+          child: const Text('Content'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Retry'));
+    expect(retried, isTrue);
+  });
+
+  testWidgets('AppScreen wraps content in a RefreshIndicator when '
+      'onRefresh is provided', (WidgetTester tester) async {
+    var refreshed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppScreen(
+          onRefresh: () async => refreshed = true,
+          child: SizedBox(height: 2000, child: Container()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RefreshIndicator), findsOneWidget);
+
+    await tester.fling(find.byType(RefreshIndicator), const Offset(0, 300), 1000);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(refreshed, isTrue);
+  });
+
+  testWidgets('AppScreen does not wrap content in a RefreshIndicator when '
+      'onRefresh is null', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AppScreen(child: Text('No refresh here')),
+      ),
+    );
+
+    expect(find.byType(RefreshIndicator), findsNothing);
+  });
+
+  testWidgets('AppScreen with useScaffold: false renders a ColoredBox '
+      'instead of a Scaffold', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AppScreen(useScaffold: false, child: Text('Bare content')),
+      ),
+    );
+
+    expect(find.byType(Scaffold), findsNothing);
+    expect(find.byType(ColoredBox), findsOneWidget);
+    expect(find.text('Bare content'), findsOneWidget);
+  });
+
+  testWidgets('AppScreen applies the given padding around its child', (
+    WidgetTester tester,
+  ) async {
+    const padding = EdgeInsets.all(24);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AppScreen(
+          padding: padding,
+          scrollable: false,
+          safeArea: false,
+          child: Text('Padded'),
+        ),
+      ),
+    );
+
+    final paddingWidget = tester.widget<Padding>(
+      find.ancestor(
+        of: find.text('Padded'),
+        matching: find.byType(Padding),
+      ).first,
+    );
+    expect(paddingWidget.padding, padding);
+  });
 }

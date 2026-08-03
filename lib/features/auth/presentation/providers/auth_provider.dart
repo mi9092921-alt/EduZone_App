@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:app/app/session/session_invalidation.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -15,12 +16,6 @@ import '../../../../core/network/request_cancellation_manager.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/device_service.dart';
 import '../../../../core/services/location_service.dart';
-import '../../../courses/presentation/providers/courses_provider.dart';
-import '../../../home/presentation/providers/home_provider.dart';
-import '../../../notifications/presentation/providers/notifications_provider.dart';
-import '../../../profile/presentation/providers/profile_provider.dart';
-// Feature providers to invalidate on logout
-import '../../../todo/presentation/providers/todo_provider.dart';
 import '../../application/services/check_user_access_service.dart';
 import '../../application/services/logout_orchestrator.dart';
 import '../../application/services/update_service.dart';
@@ -618,20 +613,22 @@ class Auth extends _$Auth {
   /// Centralized provider invalidation — ensures zero data leakage
   /// between user sessions.
   ///
-  /// Delegates to each feature's own `invalidateXProviders(ref)` helper
-  /// (defined alongside that feature's providers) instead of listing every
-  /// individual provider here. This was previously a hand-maintained list
-  /// duplicated from each feature file, which had already drifted out of
-  /// sync in one case (`todoProvider`, which never existed —
-  /// `TodoNotifier` generates `todoNotifierProvider`). Keeping the
-  /// invalidation list next to the providers it invalidates means adding a
-  /// new user-scoped provider to a feature can no longer silently forget
-  /// to wire up its own cleanup.
+  /// Delegates to `invalidateAllUserScopedProviders` (lib/app/session/
+  /// session_invalidation.dart), which in turn delegates to each feature's
+  /// own `invalidateXProviders(ref)` helper (defined alongside that
+  /// feature's providers) instead of listing every individual provider
+  /// here. This was previously a hand-maintained list duplicated from each
+  /// feature file, which had already drifted out of sync in one case
+  /// (`todoProvider`, which never existed — `TodoNotifier` generates
+  /// `todoNotifierProvider`). Keeping the invalidation list next to the
+  /// providers it invalidates means adding a new user-scoped provider to a
+  /// feature can no longer silently forget to wire up its own cleanup.
+  ///
+  /// The aggregation itself lives in lib/app/ (a composition-root, per
+  /// tool/check_architecture.py's EXEMPT_PATH_FRAGMENTS) rather than here,
+  /// so this `auth` feature no longer imports courses/home/notifications/
+  /// profile/todo internals directly (see ARCH-001).
   void _invalidateAllUserProviders() {
-    invalidateProfileProviders(ref);
-    invalidateCoursesProviders(ref);
-    invalidateTodoProviders(ref);
-    invalidateHomeProviders(ref);
-    invalidateNotificationsProviders(ref);
+    invalidateAllUserScopedProviders(ref);
   }
 }

@@ -1,4 +1,4 @@
-.PHONY: run-dev run-staging build-prod gen-l10n gen-code analyze check-a11y test clean
+.PHONY: run-dev run-staging build-prod gen-l10n gen-code analyze check-a11y check-architecture check-rtl check-design-tokens check-performance check-all test clean
 
 ## ─── Development ───────────────────────────────────────────────────────
 
@@ -37,6 +37,20 @@ analyze:
 
 check-a11y:
 	@python3 tool/check_a11y.py
+
+check-architecture:
+        @python3 tool/check_architecture.py
+
+check-rtl:
+        @python3 tool/check_rtl.py
+
+check-design-tokens:
+        @python3 tool/check_design_tokens.py
+
+check-performance:
+        @python3 tool/check_performance.py
+
+check-all: check-a11y check-architecture check-rtl check-design-tokens check-performance
 
 test:
 	flutter test --coverage

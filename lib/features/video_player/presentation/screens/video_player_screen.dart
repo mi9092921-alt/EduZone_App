@@ -414,7 +414,7 @@ class _PlayerSwitchButton extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
       ),
       builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(
+        padding: const EdgeInsetsDirectional.fromSTEB(
           AppSpacing.xl,
           AppSpacing.lg,
           AppSpacing.xl,

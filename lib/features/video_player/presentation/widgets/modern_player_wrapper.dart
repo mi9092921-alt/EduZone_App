@@ -543,7 +543,7 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: AppRadius.xsBorder,
                     ),
                     child: AppIconButton(
                       icon: Icons.fullscreen_exit_rounded,
@@ -630,7 +630,7 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
             const SizedBox(height: 8),
             Text(
               'خطأ في تحميل الفيديو (كود: $_errorCode)',
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
+              style: AppTextStyles.bodySmall.copyWith(color: Colors.white70),
             ),
             TextButton(
               onPressed: () {

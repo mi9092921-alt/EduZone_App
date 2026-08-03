@@ -142,7 +142,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
                   ),
                   decoration: BoxDecoration(
                     color: ds.surface,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: AppRadius.smBorder,
                     border: Border.all(color: ds.border),
                   ),
                   child: Text(

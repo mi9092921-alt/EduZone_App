@@ -59,8 +59,8 @@ class AppConnectivityError extends StatelessWidget {
                     height: 90 * sizeMultiplier,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                        begin: AlignmentDirectional.topStart,
+                        end: AlignmentDirectional.bottomEnd,
                         colors: [
                           ds.error.withValues(alpha: 0.2),
                           ds.error.withValues(alpha: 0.1),

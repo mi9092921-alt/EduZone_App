@@ -70,7 +70,7 @@ class NotificationsScreen extends ConsumerWidget {
 
         return [
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(
+            padding: const EdgeInsetsDirectional.fromSTEB(
               AppSpacing.lg,
               0,
               AppSpacing.lg,
@@ -125,7 +125,7 @@ class NotificationsScreen extends ConsumerWidget {
         final scheme = Theme.of(context).colorScheme;
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(
+          padding: const EdgeInsetsDirectional.fromSTEB(
             AppSpacing.lg,
             AppSpacing.md,
             AppSpacing.lg,
@@ -180,7 +180,7 @@ class NotificationsScreen extends ConsumerWidget {
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl2),
+        padding: const EdgeInsets.all(AppSpacing.xl2), // check-ignore -- already a token; false positive (regex matches the digit in "xl2")
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

@@ -23,6 +23,33 @@ class DownloadsScreen extends ConsumerStatefulWidget {
   ConsumerState<DownloadsScreen> createState() => _DownloadsScreenState();
 }
 
+/// Flattened row description for the downloads list.
+///
+/// Building this list is cheap (no widgets are constructed yet) so it can
+/// be done eagerly; the actual widgets are only built lazily, on demand,
+/// by ListView.builder's itemBuilder -- see PERF-001.
+enum _DownloadRowType { activeHeader, courseHeader, tile, divider }
+
+class _DownloadRow {
+  final _DownloadRowType type;
+  final String? title;
+  final DownloadedLesson? download;
+
+  const _DownloadRow.activeHeader(String this.title)
+      : type = _DownloadRowType.activeHeader,
+        download = null;
+  const _DownloadRow.courseHeader(String this.title)
+      : type = _DownloadRowType.courseHeader,
+        download = null;
+  const _DownloadRow.tile(DownloadedLesson this.download)
+      : type = _DownloadRowType.tile,
+        title = null;
+  const _DownloadRow.divider()
+      : type = _DownloadRowType.divider,
+        title = null,
+        download = null;
+}
+
 class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   @override
   void initState() {
@@ -128,53 +155,70 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       grouped.putIfAbsent(download.courseId, () => []).add(download);
     }
 
+    // Flatten into a row-description list first (cheap: no widgets built
+    // yet), then hand it to ListView.builder so items are laid out lazily
+    // instead of the whole (possibly large) list being built up front on
+    // every rebuild. See PERF-001.
+    final rows = <_DownloadRow>[];
+    if (active.isNotEmpty) {
+      rows.add(_DownloadRow.activeHeader(l10n.downloadStatusDownloading));
+      for (final download in active) {
+        rows.add(_DownloadRow.tile(download));
+      }
+      if (completed.isNotEmpty) rows.add(const _DownloadRow.divider());
+    }
+    for (final entry in grouped.entries) {
+      final courseDownloads = entry.value;
+      rows.add(_DownloadRow.courseHeader(
+        l10n.downloadCourseGroup(resolveCourseGroupTitle(courseDownloads.first)),
+      ));
+      for (final download in courseDownloads) {
+        rows.add(_DownloadRow.tile(download));
+      }
+    }
+
     return RefreshIndicator(
       onRefresh: () => ref.read(downloadsProvider.notifier).refresh(),
-      child: ListView(
-        children: [
-          // Active downloads section
-          if (active.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.md,
-                AppSpacing.md,
-                AppSpacing.md,
-                AppSpacing.xs,
-              ),
-              child: Text(
-                l10n.downloadStatusDownloading,
-                style: AppTextStyles.bodySmall.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.of(context).primary,
-                ),
-              ),
-            ),
-            ...active.map((download) => DownloadTile(download: download)),
-            if (completed.isNotEmpty) const Divider(height: 24),
-          ],
-          // Completed downloads grouped by course
-          ...grouped.entries.map((entry) {
-            final courseDownloads = entry.value;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  child: Text(
-                    l10n.downloadCourseGroup(resolveCourseGroupTitle(courseDownloads.first)),
-                    style: AppTextStyles.bodySmall.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                ...courseDownloads
-                    .map((download) => DownloadTile(download: download)),
-              ],
-            );
-          }),
-        ],
+      child: ListView.builder(
+        itemCount: rows.length,
+        itemBuilder: (context, index) => _buildDownloadRow(context, rows[index]),
       ),
     );
+  }
+
+  Widget _buildDownloadRow(BuildContext context, _DownloadRow row) {
+    switch (row.type) {
+      case _DownloadRowType.activeHeader:
+        return Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(
+            AppSpacing.md,
+            AppSpacing.md,
+            AppSpacing.md,
+            AppSpacing.xs,
+          ),
+          child: Text(
+            row.title!,
+            style: AppTextStyles.bodySmall.copyWith(
+              fontWeight: FontWeight.w600,
+              color: AppColors.of(context).primary,
+            ),
+          ),
+        );
+      case _DownloadRowType.courseHeader:
+        return Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Text(
+            row.title!,
+            style: AppTextStyles.bodySmall.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        );
+      case _DownloadRowType.tile:
+        return DownloadTile(download: row.download!);
+      case _DownloadRowType.divider:
+        return const Divider(height: 24);
+    }
   }
 
   Widget _buildEmptyState(

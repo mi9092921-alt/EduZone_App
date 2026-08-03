@@ -62,6 +62,16 @@ class AppTextStyles {
     letterSpacing: 0,
   );
 
+  /// Tiny bold badge/pill label (10px) -- course "Free" ribbon, todo
+  /// priority pill. Color is intentionally omitted; call sites set it via
+  /// .copyWith(color: ...) since it varies per badge.
+  static const TextStyle labelTiny = TextStyle(
+    fontSize: 10,
+    height: 1.2,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0.5,
+  );
+
   static const TextStyle labelSmall = TextStyle(
     fontSize: 11,
     height: 1.45,
@@ -96,6 +106,16 @@ class AppTextStyles {
 
   static TextStyle get bodyMediumOnSurface =>
       bodyMedium.copyWith(color: AppColors.onSurfaceSecondary);
+
+  /// Bold, tightly-tracked wordmark style used for the animated "EduZone"
+  /// splash-screen logo. Color is intentionally omitted -- call sites set
+  /// it via .copyWith(color: ...) since the splash screen swaps between a
+  /// light and dark variant.
+  static const TextStyle brandLogo = TextStyle(
+    fontSize: 30,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -0.5,
+  );
 
   static const TextStyle bodyMediumAr = TextStyle(
     fontSize: 15,

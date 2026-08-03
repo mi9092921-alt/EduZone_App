@@ -208,7 +208,7 @@ class _CourseCardBaseState extends State<CourseCardBase> {
         Padding(
           // Tighter image padding frees up a little more room for content
           // (was AppSpacing.xs on all sides).
-          padding: const EdgeInsets.all(AppSpacing.xs2),
+          padding: const EdgeInsets.all(AppSpacing.xs2), // check-ignore -- already a token; false positive (regex matches the digit in "xs2")
           child: AspectRatio(
             aspectRatio: widget.verticalImageAspectRatio ?? 2.0,
             child: Container(
@@ -270,7 +270,7 @@ class _CourseCardBaseState extends State<CourseCardBase> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.all(AppSpacing.xs2),
+            padding: const EdgeInsets.all(AppSpacing.xs2), // check-ignore -- already a token; false positive (regex matches the digit in "xs2")
             child: SizedBox(
               width: widget.horizontalImageWidth,
               child: Container(

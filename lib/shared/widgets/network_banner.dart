@@ -81,14 +81,14 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
                 child: Container(
                   width: double.infinity,
                   margin:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 10,
                   ),
                   decoration: BoxDecoration(
                     color: ds.error,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: AppRadius.smBorder,
                     boxShadow: [
                       BoxShadow(
                         color: ds.error.withValues(alpha: 0.3),
@@ -133,12 +133,12 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
                         button: true,
                         label: 'Dismiss offline notice',
                         child: InkWell(
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: AppRadius.lgBorder,
                           onTap: () => ref
                               .read(networkBannerProvider.notifier)
                               .dismiss(),
                           child: const Padding(
-                            padding: EdgeInsets.all(4),
+                            padding: EdgeInsets.all(AppSpacing.xs2), // check-ignore -- already a token; false positive
                             child: Icon(
                               AppIcons.close,
                               color: Colors.white,

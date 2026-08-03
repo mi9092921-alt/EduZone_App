@@ -68,8 +68,8 @@ class AppEmptyState extends StatelessWidget {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                          begin: AlignmentDirectional.topStart,
+                          end: AlignmentDirectional.bottomEnd,
                           colors: [
                             ds.primary.withValues(alpha: 0.12),
                             ds.primary.withValues(alpha: 0.04),

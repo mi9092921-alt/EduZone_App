@@ -213,8 +213,8 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
                     Theme(
                       data: Theme.of(context).copyWith(
                         iconTheme: const IconThemeData(color: Colors.white),
-                        textTheme: const TextTheme(
-                          bodyMedium: TextStyle(
+                        textTheme: TextTheme(
+                          bodyMedium: AppTextStyles.bodyMedium.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                           ),

@@ -223,7 +223,7 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
               height: 4,
               decoration: BoxDecoration(
                 color: ds.textMuted.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(2),
+                borderRadius: AppRadius.hairlineBorder,
               ),
             ),
             const SizedBox(height: AppSpacing.xl),

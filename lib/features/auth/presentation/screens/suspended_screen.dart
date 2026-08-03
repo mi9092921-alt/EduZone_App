@@ -139,7 +139,7 @@ class _SuspendedScreenState extends ConsumerState<SuspendedScreen> {
                   padding: const EdgeInsets.all(AppSpacing.md),
                   decoration: BoxDecoration(
                     color: AppColors.warning.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: AppRadius.xsBorder,
                     border: Border.all(
                       color: AppColors.warning.withValues(alpha: 0.2),
                     ),
@@ -164,7 +164,7 @@ class _SuspendedScreenState extends ConsumerState<SuspendedScreen> {
                   ),
                   decoration: BoxDecoration(
                     color: ds.surface,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: AppRadius.smBorder,
                     border: Border.all(color: ds.border),
                   ),
                   child: Text(

@@ -130,7 +130,7 @@ class _OfflinePlayerScreenState extends ConsumerState<OfflinePlayerScreen> {
                       semanticLabel: l10n.toggleAspectRatioTooltip,
                       onPressed: () => setState(() => _isVertical = !_isVertical),
                       backgroundColor: ds.surface2,
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(AppSpacing.sm),
                     ),
                     const SizedBox(width: AppSpacing.sm),
                     AppIconButton(
@@ -138,7 +138,7 @@ class _OfflinePlayerScreenState extends ConsumerState<OfflinePlayerScreen> {
                       semanticLabel: l10n.fullScreenButtonTooltip,
                       onPressed: () => setState(() => _isFullScreen = !_isFullScreen),
                       backgroundColor: ds.surface2,
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(AppSpacing.sm),
                     ),
                   ],
                 ),

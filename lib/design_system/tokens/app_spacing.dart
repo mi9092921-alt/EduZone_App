@@ -2,6 +2,7 @@ class AppSpacing {
   AppSpacing._();
 
   static const double xs2 = 4.0; //
+  static const double hairline = 2.0; // padding رأسي دقيق جدًا لشارات صغيرة (Free badge, priority pill)
   static const double xs = 6.0; // أيقونة padding، فجوة Chip داخلية
   static const double sm = 8.0; // padding داخلي لحقل الإدخال، فجوات القائمة
   static const double md = 12.0; // padding أفقي داخلي للبطاقة (مدمج)
@@ -21,4 +22,6 @@ class AppSpacing {
   static const double sectionSpacing = xl2; // 32
   static const double iconGap = sm; // 8
   static const double chipInnerPadding = xs; // 4
+  static const double snackbarPaddingV = 14.0;
+  static const double iconBadgePadding = 10.0; // padding أيقونة داخل خلفية دائرية (download_tile, device_info_widget)
 }

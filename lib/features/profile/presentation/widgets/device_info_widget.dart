@@ -26,7 +26,7 @@ class DeviceInfoWidget extends StatelessWidget {
         children: [
           // Device icon
           AppCard(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(AppSpacing.iconBadgePadding),
             backgroundColor: ds.surface2,
             elevated: false,
             borderRadius: 10,

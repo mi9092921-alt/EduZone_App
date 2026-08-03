@@ -132,10 +132,8 @@ class TodoListTile extends StatelessWidget {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(
-              l10n.deleteButton,
-              style: const TextStyle(color: AppColors.error),
-            ),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: Text(l10n.deleteButton),
           ),
         ],
       ),

@@ -49,8 +49,8 @@ class ResumeCard extends StatelessWidget {
               },
         gradient: LinearGradient(
           colors: [ds.surface2, ds.surface],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          begin: AlignmentDirectional.topStart,
+          end: AlignmentDirectional.bottomEnd,
         ),
         borderColor: ds.border.withValues(alpha: 0.5),
         child: Row(

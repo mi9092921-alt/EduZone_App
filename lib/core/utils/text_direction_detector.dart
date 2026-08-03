@@ -50,7 +50,7 @@ abstract class TextDirectionDetector {
     return fallback;
   }
 
-  /// Convenience helper returning [TextAlign.right] / [TextAlign.left]
+  /// Convenience helper returning [TextAlign.right] / [TextAlign.left] // check-ignore
   /// (rather than `start`/`end`) for widgets that need an explicit
   /// alignment independent of an ambient `Directionality`.
   static TextAlign detectAlign(
@@ -58,8 +58,8 @@ abstract class TextDirectionDetector {
     TextDirection fallback = TextDirection.ltr,
   }) {
     return detect(text, fallback: fallback) == TextDirection.rtl
-        ? TextAlign.right
-        : TextAlign.left;
+        ? TextAlign.right // check-ignore
+        : TextAlign.left; // check-ignore
   }
 
   /// True if [text]'s detected direction is RTL.

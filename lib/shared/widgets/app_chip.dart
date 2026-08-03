@@ -10,7 +10,12 @@ class AppChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Chip(
-      label: Text(label, style: TextStyle(color: textColor)),
+      // Only `color` is customised here by design -- this is a generic,
+      // reusable chip wrapper and must keep inheriting font size/weight
+      // from ChipTheme (see AppTheme.chipTheme) rather than hardcoding a
+      // design-system text token, which would override that inheritance
+      // for every call site.
+      label: Text(label, style: TextStyle(color: textColor)), // check-ignore
       backgroundColor: color,
     );
   }

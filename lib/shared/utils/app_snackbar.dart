@@ -92,12 +92,15 @@ class FeedbackService {
       backgroundColor: Colors.transparent,
       elevation: 0,
       behavior: SnackBarBehavior.floating,
-      margin: const EdgeInsets.all(16),
+      margin: const EdgeInsets.all(AppSpacing.lg),
       content: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.snackbarPaddingV,
+        ),
         decoration: BoxDecoration(
           color: style.bg,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: AppRadius.mdBorder,
           border: Border.all(color: style.text.withValues(alpha: 0.2)),
           boxShadow: [
             BoxShadow(
@@ -114,9 +117,8 @@ class FeedbackService {
             Expanded(
               child: Text(
                 message,
-                style: TextStyle(
+                style: AppTextStyles.bodyMedium.copyWith(
                   color: style.text,
-                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -130,7 +132,7 @@ class FeedbackService {
                 },
                 child: Text(
                   action.label,
-                  style: TextStyle(
+                  style: AppTextStyles.label.copyWith(
                     color: style.text,
                     fontWeight: FontWeight.bold,
                     decoration: TextDecoration.underline,
@@ -237,10 +239,13 @@ class _ToastWidgetState extends State<_ToastWidget>
           child: GestureDetector(
             onTap: widget.onDismiss,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.md,
+              ),
               decoration: BoxDecoration(
                 color: widget.style.bg,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: AppRadius.mdBorder,
                 border: Border.all(
                   color: widget.style.text.withValues(alpha: 0.1),
                 ),
@@ -259,10 +264,8 @@ class _ToastWidgetState extends State<_ToastWidget>
                   Expanded(
                     child: Text(
                       widget.message,
-                      style: TextStyle(
+                      style: AppTextStyles.label.copyWith(
                         color: widget.style.text,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),

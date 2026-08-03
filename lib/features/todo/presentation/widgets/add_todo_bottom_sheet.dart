@@ -141,7 +141,7 @@ class _AddTodoBottomSheetState extends ConsumerState<AddTodoBottomSheet> {
                 padding: const EdgeInsets.only(bottom: AppSpacing.xl),
                 child: Material(
                   color: ds.border,
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: AppRadius.hairlineBorder,
                   child: const SizedBox(width: 40, height: 4),
                 ),
               ),

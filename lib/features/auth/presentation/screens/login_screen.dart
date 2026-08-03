@@ -166,8 +166,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         child: Checkbox(
                           value: _agreedToTerms,
                           activeColor: AppColors.primary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: AppRadius.xxsBorder,
                           ),
                           onChanged: (value) =>
                               setState(() => _agreedToTerms = value ?? false),
@@ -184,7 +184,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               TextSpan(text: l10n.agreeToTermsPrefix),
                               TextSpan(
                                 text: l10n.termsAndConditions,
-                                style: const TextStyle(
+                                style: AppTextStyles.bodySmall.copyWith(
                                   color: AppColors.primary,
                                   fontWeight: FontWeight.bold,
                                   decoration: TextDecoration.underline,
@@ -194,7 +194,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               TextSpan(text: l10n.agreeToTermsMiddle),
                               TextSpan(
                                 text: l10n.privacyPolicy,
-                                style: const TextStyle(
+                                style: AppTextStyles.bodySmall.copyWith(
                                   color: AppColors.primary,
                                   fontWeight: FontWeight.bold,
                                   decoration: TextDecoration.underline,

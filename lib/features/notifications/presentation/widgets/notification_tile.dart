@@ -44,7 +44,7 @@ class NotificationTile extends ConsumerWidget {
                       padding: const EdgeInsets.only(bottom: AppSpacing.lg),
                       child: Material(
                         color: ds.border.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(2),
+                        borderRadius: AppRadius.hairlineBorder,
                         child: const SizedBox(width: 40, height: 4),
                       ),
                     ),
@@ -192,7 +192,7 @@ class NotificationTile extends ConsumerWidget {
                         color: notification.isRead
                             ? ds.surface2.withValues(alpha: 0.5)
                             : typeColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppRadius.smBorder,
                       ),
                       child: Icon(
                         iconData,

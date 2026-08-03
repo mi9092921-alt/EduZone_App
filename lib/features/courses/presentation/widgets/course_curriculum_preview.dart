@@ -131,14 +131,12 @@ class CourseCurriculumPreview extends StatelessWidget {
                                   color: AppColors.success.withValues(
                                     alpha: 0.1,
                                   ),
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius: AppRadius.xxsBorder,
                                 ),
                                 child: Text(
                                   l10n.freeLabel,
-                                  style: const TextStyle(
+                                  style: AppTextStyles.labelTiny.copyWith(
                                     color: AppColors.success,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ),

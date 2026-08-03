@@ -77,7 +77,7 @@ class AppToast {
     ToastType.error => AppColors.errorSoft,
     ToastType.warning => AppColors.warningSoft,
     ToastType.info => AppColors.info,
-    ToastType.securityAlert => const Color(0xFFFEE2E2),
+    ToastType.securityAlert => AppColors.errorSoft,
   };
 
   static Duration _duration(ToastType type) => switch (type) {

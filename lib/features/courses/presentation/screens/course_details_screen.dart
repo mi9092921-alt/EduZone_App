@@ -328,7 +328,7 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
       left: 0,
       right: 0,
       child: Container(
-        padding: EdgeInsets.fromLTRB(
+        padding: EdgeInsetsDirectional.fromSTEB(
           AppSpacing.lg,
           AppSpacing.md,
           AppSpacing.lg,
@@ -445,7 +445,7 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
               height: 60,
               decoration: BoxDecoration(
                 color: ds.surface2,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: AppRadius.smBorder,
               ),
             ),
           );

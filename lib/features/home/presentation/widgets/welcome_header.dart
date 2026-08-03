@@ -26,7 +26,7 @@ class WelcomeHeader extends ConsumerWidget {
     );
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
+      padding: const EdgeInsetsDirectional.fromSTEB(
         AppSpacing.lg,
         AppSpacing.xl,
         AppSpacing.lg,
@@ -76,12 +76,12 @@ class WelcomeHeader extends ConsumerWidget {
 
     return InkWell(
       onTap: () => context.push('${AppRoutes.home}/notifications'),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: AppRadius.smBorder,
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.sm),
         decoration: BoxDecoration(
           color: AppColors.primary.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: AppRadius.smBorder,
         ),
         child: unreadCount > 0
             ? Badge(

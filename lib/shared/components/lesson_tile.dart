@@ -92,8 +92,8 @@ class LessonTile extends StatelessWidget {
       children: [
         if (isFree && !isLocked)
           Container(
-            margin: const EdgeInsets.only(left: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            margin: const EdgeInsetsDirectional.only(start: 8),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: AppSpacing.hairline),
             decoration: BoxDecoration(
               color: ds.success.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(AppRadius.xs),
@@ -101,11 +101,7 @@ class LessonTile extends StatelessWidget {
             ),
             child: Text(
               l10n.freeLabel,
-              style: TextStyle(
-                color: ds.success,
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-              ),
+              style: AppTextStyles.labelTiny.copyWith(color: ds.success),
             ),
           ),
 
@@ -115,8 +111,8 @@ class LessonTile extends StatelessWidget {
             value: completed,
             onChanged: onToggleCompleted,
             activeColor: ds.success,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(4),
+            shape: const RoundedRectangleBorder(
+              borderRadius: AppRadius.xxsBorder,
             ),
             visualDensity: VisualDensity.compact,
           ),
@@ -131,14 +127,14 @@ class LessonTile extends StatelessWidget {
   Widget _buildDownloadIndicator(DesignSystemColors ds, BuildContext context) {
     if (isDownloaded) {
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
         child: Icon(Icons.check_circle_rounded, color: ds.success, size: 20),
       );
     }
 
     if (isDownloading) {
       return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12),
+        margin: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
         width: 16,
         height: 16,
         child: CircularProgressIndicator(

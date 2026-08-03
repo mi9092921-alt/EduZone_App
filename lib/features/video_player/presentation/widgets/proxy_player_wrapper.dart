@@ -102,7 +102,7 @@ class _ProxyPlayerWrapperState extends ConsumerState<ProxyPlayerWrapper> {
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: AppRadius.xsBorder,
                     ),
                     child: AppIconButton(
                       icon: Icons.fullscreen_exit_rounded,

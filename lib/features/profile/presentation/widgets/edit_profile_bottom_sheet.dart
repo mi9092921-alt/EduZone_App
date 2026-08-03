@@ -138,7 +138,7 @@ class _EditProfileBottomSheetState
           // Drag handle
           Material(
             color: ds.border,
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: AppRadius.hairlineBorder,
             child: const SizedBox(width: 40, height: 4),
           ),
 
@@ -156,7 +156,7 @@ class _EditProfileBottomSheetState
           GestureDetector(
             onTap: _pickImage,
             child: Stack(
-              alignment: Alignment.bottomRight,
+              alignment: AlignmentDirectional.bottomEnd,
               children: [
                 if (_selectedImagePath != null)
                   CircleAvatar(
@@ -176,7 +176,7 @@ class _EditProfileBottomSheetState
                     border: Border.all(color: ds.surface, width: 2),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.all(6),
+                    padding: const EdgeInsets.all(AppSpacing.xs),
                     child: Icon(AppIcons.camera, size: 14, color: ds.surface),
                   ),
                 ),
