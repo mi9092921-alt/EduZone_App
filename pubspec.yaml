@@ -60,7 +60,6 @@ dependencies:
   media_kit_libs_video: ^1.0.7
   image_picker: ^1.1.2
   url_launcher: ^6.3.1
-  google_fonts: ^8.0.2
   font_awesome_flutter: ^11.0.0
   dio: ^5.9.2
   webview_flutter: ^4.13.1
@@ -105,3 +104,16 @@ flutter:
     - assets/lottie/
     - assets/certs/
 
+  fonts:
+    - family: Cairo
+      fonts:
+        - asset: assets/fonts/Cairo-Variable.ttf
+          weight: 400
+        - asset: assets/fonts/Cairo-Variable.ttf
+          weight: 500
+        - asset: assets/fonts/Cairo-Variable.ttf
+          weight: 600
+        - asset: assets/fonts/Cairo-Variable.ttf
+          weight: 700
+        - asset: assets/fonts/Cairo-Variable.ttf
+          weight: 800

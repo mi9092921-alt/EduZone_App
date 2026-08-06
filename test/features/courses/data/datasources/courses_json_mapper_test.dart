@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_dynamic_calls
+
 import 'package:app/features/courses/data/datasources/courses_json_mapper.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -130,7 +132,6 @@ void main() {
       CoursesJsonMapper.backfillTotalLessons(
         rawJson: rawJson,
         target: target,
-        debugLog: false,
       );
 
       expect(target['total_lessons'], 1);
@@ -266,6 +267,7 @@ void main() {
 
       CoursesJsonMapper.filterUserProgressForCurrentUser(target, 'u1');
 
+      
       final lessons = (target['sections'] as List).first['lessons'] as List;
       final progress = lessons.first['user_progress'] as List;
       expect(progress, hasLength(1));

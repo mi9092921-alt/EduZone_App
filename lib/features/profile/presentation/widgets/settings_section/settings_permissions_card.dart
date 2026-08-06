@@ -4,10 +4,10 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../core/permissions/permission_item.dart';
 import '../../../../../design_system/design_system.dart';
+import '../settings_tile.dart';
 import 'settings_divider.dart';
 import 'settings_permission_icon.dart';
 import 'settings_permission_status_label.dart';
-import '../settings_tile.dart';
 import 'settings_value_display.dart';
 
 /// Content of the "Permissions" settings card: a 3-row loading skeleton

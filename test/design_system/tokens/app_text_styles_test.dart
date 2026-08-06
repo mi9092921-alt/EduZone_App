@@ -105,7 +105,7 @@ void main() {
       expect(theme.headlineSmall?.fontSize, AppTextStyles.h3.fontSize);
     });
 
-    test('uses a different font family for Arabic vs. English locale', () {
+    test('uses Cairo font family consistently for both Arabic and English locales', () {
       final en = buildAppTextTheme(
         locale: const Locale('en'),
         brightness: Brightness.light,
@@ -121,9 +121,9 @@ void main() {
         mutedTextColor: mutedColor,
       );
 
-      // Cairo (ar) vs Outfit (en) -- exact family string is Google Fonts'
-      // concern, but they must not resolve to the same family.
-      expect(en.bodyMedium?.fontFamily, isNot(ar.bodyMedium?.fontFamily));
+      // Cairo covers both Arabic + Latin in one bundled typeface
+      expect(en.bodyMedium?.fontFamily, 'Cairo');
+      expect(ar.bodyMedium?.fontFamily, 'Cairo');
     });
 
     test('does not throw for either brightness', () {

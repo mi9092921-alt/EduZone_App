@@ -155,7 +155,7 @@ void main() {
       await tester.pumpWidget(
         buildTestableWidget(
           LessonTileWrapper(
-            lesson: _lesson(id: 'lesson_1'),
+            lesson: _lesson(),
             courseId: 'course_1',
             courseTitle: 'Flutter Basics',
             isEnrolled: true,

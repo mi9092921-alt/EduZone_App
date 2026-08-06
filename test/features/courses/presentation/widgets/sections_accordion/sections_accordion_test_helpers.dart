@@ -1,6 +1,7 @@
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 /// Wraps [child] with the localization + provider scaffolding every
 /// sections_accordion widget test needs. [overrides] lets individual tests

@@ -1,6 +1,5 @@
 import 'package:app/core/permissions/permission_item.dart';
 import 'package:app/features/profile/presentation/widgets/settings_section/settings_permissions_card.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:permission_handler/permission_handler.dart';
 

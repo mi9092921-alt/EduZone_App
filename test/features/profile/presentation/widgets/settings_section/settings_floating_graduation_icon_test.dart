@@ -1,5 +1,4 @@
 import 'package:app/features/profile/presentation/widgets/settings_section/settings_floating_graduation_icon.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 
@@ -86,7 +85,8 @@ class AppTextStyles {
     letterSpacing: 0,
   );
 
-  static TextStyle get code => GoogleFonts.jetBrainsMono(
+  static const TextStyle code = TextStyle(
+    fontFamily: 'monospace',
     fontSize: 13,
     height: 1.54,
     fontWeight: FontWeight.w400,
@@ -133,6 +133,9 @@ class AppTextStyles {
 }
 
 TextTheme buildAppTextTheme({
+  // Kept in the signature for API stability and in case a future locale
+  // needs a different font override; currently unused since Cairo covers
+  // both ar/en.
   required Locale locale,
   required Brightness brightness,
   required Color primaryTextColor,
@@ -143,9 +146,12 @@ TextTheme buildAppTextTheme({
       ? Typography.material2021().white
       : Typography.material2021().black;
 
-  final localized = locale.languageCode == 'ar'
-      ? GoogleFonts.cairoTextTheme(base)
-      : GoogleFonts.outfitTextTheme(base);
+  // Cairo is bundled locally (assets/fonts/Cairo-Variable.ttf, registered
+  // in pubspec.yaml) instead of fetched at runtime via GoogleFonts.*TextTheme.
+  // It covers Arabic + Latin (incl. English digits) in one consistent
+  // typeface, so the same family is applied regardless of locale -- no
+  // network dependency, no flash-of-unstyled-text on first launch.
+  final localized = base.apply(fontFamily: 'Cairo');
 
   return localized.copyWith(
     displayLarge: localized.displayLarge?.copyWith(
