@@ -1,48 +1,38 @@
-import 'dart:ui';
-
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import 'splash/animated_brand_name.dart';
+import 'splash/animated_logo.dart';
+import 'splash/gradient_background.dart';
+import 'splash/splash_brand_metrics.dart';
+import 'splash/splash_constants.dart';
 
 // =====================================================================
 //  SplashScreen — v4  (production-ready)
 //
 //  التحسينات المطبقة:
 //  ✅ 1. كل widget معزول في class مستقل → rebuild scope محدود
+//     (الآن كل واحد في ملفه الخاص تحت screens/splash/)
 //  ✅ 2. Matrix4 موحد بدل 3 Transform متداخلين
 //  ✅ 3. Semantics للـ logo والنص
 //  ✅ 4. BackdropFilter glassmorphism حقيقي
-//  ✅ 5. Magic numbers → named constants
+//  ✅ 5. Magic numbers → named constants (splash/splash_constants.dart)
 //  ✅ 6. Parallax خفيف على الخلفية
 //
 //  ملاحظة: هذه الشاشة عرض/أنيميشن فقط (بلا منطق مصادقة أو تنقّل).
 //  الحركة النبضية (_pulse) تستمر عمدًا بعد انتهاء الأنيميشن الرئيسية
 //  (_main) ولا تتوقف. قرار "متى نغادر الشاشة" يُدار مركزيًا عبر
 //  redirect في app_router.dart، وليس من هنا.
+//
+//  البنية بعد التقسيم:
+//   - splash_screen.dart          → هذا الملف: التحكّم بالأنيميشن + build()
+//   - splash/splash_constants.dart → الثوابت المشتركة
+//   - splash/splash_brand_metrics.dart → قياس الحروف (منطق صرف، قابل للاختبار)
+//   - splash/gradient_background.dart  → خلفية التدرّج
+//   - splash/animated_logo.dart        → اللوغو المتحرك
+//   - splash/animated_brand_name.dart  → اسم العلامة المتحرك
 // =====================================================================
-
-// ─────────────────────────── Constants ───────────────────────────────
-
-abstract final class _K {
-  // Logo
-  static const double logoSize = 120;
-  static const double logoRadius = 32;
-  static const double logoIconSize = 60;
-  static const double logoTranslateY = 96; // px عند بداية الانزلاق
-
-  // Brand text
-  static const double fontSize = 30;
-  static const double letterHeight = 42; // مرتبط بـ fontSize + letterSpacing
-
-  // Parallax
-  static const double parallaxRange = 10; // px
-}
-
-// "cation" — الجزء المتحرك من "Education" الذي ينزلق حرفًا حرفًا.
-// ثابت مشترك بين _SplashScreenState (القياس) و_AnimatedBrandName (الرسم)
-// حتى لا يُعدَّل أحدهما دون الآخر لو تغيّرت الكلمة مستقبلًا (Rebrand مثلًا).
-const String _kCation = 'cation';
-const int _kCationLetterCount = 6;
 
 // ─────────────────────────── Entry point ─────────────────────────────
 //
@@ -89,20 +79,18 @@ class _SplashScreenState extends State<SplashScreen>
   late final Animation<double> _spaceOpacity;
   late final Animation<double> _finalTextScale;
 
-  // Measurements (مرة واحدة)
-  late final List<double> _letterWidths;
-  late final List<double> _letterOffsets;
-  late final double _fullCationWidth;
-  late final double _spaceWidth;
+  // Measurements (مرة واحدة) — انظر splash/splash_brand_metrics.dart
+  late final SplashBrandMetrics _brandMetrics;
 
-  // 'Edu' و 'Zone' مستخدمتان مباشرةً في _AnimatedBrandName كـ literals
+  // 'Edu' و 'Zone' مستخدمتان مباشرةً في SplashAnimatedBrandName كـ literals
 
   // Must stay a const TextStyle literal (not AppTextStyles.brandLogo with
-  // .copyWith applied) because it is used inside a const TextSpan below
-  // (copyWith is not a const constructor). Kept numerically identical to
-  // AppTextStyles.brandLogo -- update both together if this ever changes.
+  // .copyWith applied) because it is used for measurement via TextPainter
+  // below (copyWith is not a const constructor). Kept numerically
+  // identical to AppTextStyles.brandLogo -- update both together if this
+  // ever changes.
   static const TextStyle _boldStyle = TextStyle( // check-ignore
-    fontSize: _K.fontSize,
+    fontSize: SplashConstants.fontSize,
     fontWeight: FontWeight.w800,
     color: AppColors.primary,
     letterSpacing: -0.5,
@@ -113,7 +101,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
-    _measureLetters();
+    _brandMetrics = SplashBrandMetrics.measure(_boldStyle);
 
     _main = AnimationController(
       vsync: this,
@@ -131,37 +119,13 @@ class _SplashScreenState extends State<SplashScreen>
     _main.forward();
   }
 
-  // ─────────────────────────── Measurements ──────────────────────────
-
-  void _measureLetters() {
-    final painter = TextPainter(textDirection: TextDirection.ltr);
-
-    _letterWidths = List.generate(_kCationLetterCount, (i) {
-      painter.text = TextSpan(text: _kCation[i], style: _boldStyle);
-      painter.layout();
-      return painter.width;
-    });
-
-    double running = 0;
-    _letterOffsets = List.generate(_kCationLetterCount, (i) {
-      final o = running;
-      running += _letterWidths[i];
-      return o;
-    });
-    _fullCationWidth = running;
-
-    painter.text = const TextSpan(text: ' ', style: _boldStyle);
-    painter.layout();
-    _spaceWidth = painter.width;
-  }
-
   // ─────────────────────────── Animations ────────────────────────────
 
   void _buildLogoAnimations() {
     const logoInterval = Interval(0.0, 0.25, curve: Curves.easeOutBack);
 
     _logoTranslateY = Tween<double>(
-      begin: -_K.logoTranslateY,
+      begin: -SplashConstants.logoTranslateY,
       end: 0,
     ).animate(CurvedAnimation(parent: _main, curve: logoInterval));
 
@@ -195,7 +159,8 @@ class _SplashScreenState extends State<SplashScreen>
         );
 
     // ✅ Parallax خفيف: الخلفية تتحرك بعكس اللوغو بمقدار أقل
-    _bgParallax = Tween<double>(begin: _K.parallaxRange, end: 0).animate(
+    _bgParallax = Tween<double>(begin: SplashConstants.parallaxRange, end: 0)
+        .animate(
       CurvedAnimation(
         parent: _main,
         curve: const Interval(0.0, 0.3, curve: Curves.easeOut),
@@ -212,13 +177,13 @@ class _SplashScreenState extends State<SplashScreen>
   void _buildTextAnimations() {
     const double start = 0.3;
     const double end = 0.8;
-    const double perLetter = (end - start) / _kCationLetterCount;
+    const double perLetter = (end - start) / kSplashCationLetterCount;
 
     _letterOpacities = [];
     _letterSlideX = [];
 
-    for (int i = 0; i < _kCationLetterCount; i++) {
-      final ri = _kCationLetterCount - 1 - i;
+    for (int i = 0; i < kSplashCationLetterCount; i++) {
+      final ri = kSplashCationLetterCount - 1 - i;
       final ls = start + ri * perLetter;
       final le = ls + perLetter;
       final curve = Interval(ls, le, curve: Curves.easeIn);
@@ -234,7 +199,7 @@ class _SplashScreenState extends State<SplashScreen>
       _letterSlideX.add(
         Tween<double>(
           begin: 0,
-          end: _letterWidths[i] * 0.8,
+          end: _brandMetrics.letterWidths[i] * 0.8,
         ).animate(CurvedAnimation(parent: _main, curve: curve)),
       );
     }
@@ -293,7 +258,7 @@ class _SplashScreenState extends State<SplashScreen>
                 offset: Offset(0, _bgParallax.value),
                 child: Transform.scale(
                   scale: _bgPulseScale.value,
-                  child: const _GradientBackground(),
+                  child: const SplashGradientBackground(),
                 ),
               ),
             ),
@@ -308,7 +273,7 @@ class _SplashScreenState extends State<SplashScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // ✅ Widget معزول → rebuild scope محدود
-                    _AnimatedLogo(
+                    SplashAnimatedLogo(
                       main: _main,
                       pulse: _pulse,
                       opacity: _logoOpacity,
@@ -319,12 +284,12 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     // ✅ Widget معزول → rebuild scope محدود
-                    _AnimatedBrandName(
+                    SplashAnimatedBrandName(
                       main: _main,
-                      letterWidths: _letterWidths,
-                      letterOffsets: _letterOffsets,
-                      fullCationWidth: _fullCationWidth,
-                      spaceWidth: _spaceWidth,
+                      letterWidths: _brandMetrics.letterWidths,
+                      letterOffsets: _brandMetrics.letterOffsets,
+                      fullCationWidth: _brandMetrics.fullCationWidth,
+                      spaceWidth: _brandMetrics.spaceWidth,
                       letterOpacities: _letterOpacities,
                       letterSlideX: _letterSlideX,
                       spaceOpacity: _spaceOpacity,
@@ -338,245 +303,6 @@ class _SplashScreenState extends State<SplashScreen>
           ],
         ),
       ),
-    );
-  }
-}
-
-// =====================================================================
-//  Sub-widgets (كل واحد rebuild بشكل مستقل)
-// =====================================================================
-
-// ─────────────────────── Gradient Background ─────────────────────────
-
-class _GradientBackground extends StatelessWidget {
-  const _GradientBackground();
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: isDark
-              ? [
-                  AppColors.darkBackground,
-                  AppColors.darkSurface,
-                  AppColors.darkSurface2,
-                ]
-              : [
-                  AppColors.neutral50,
-                  AppColors.primarySoft,
-                  AppColors.primarySoft,
-                ],
-        ),
-      ),
-      child: const SizedBox.expand(),
-    );
-  }
-}
-
-// ───────────────────────── Animated Logo ─────────────────────────────
-
-class _AnimatedLogo extends StatelessWidget {
-  final AnimationController main;
-  final AnimationController pulse;
-  final Animation<double> opacity;
-  final Animation<double> translateY;
-  final Animation<double> scaleBase;
-  final Animation<double> logoPulse;
-  final Animation<double> wobble;
-
-  const _AnimatedLogo({
-    required this.main,
-    required this.pulse,
-    required this.opacity,
-    required this.translateY,
-    required this.scaleBase,
-    required this.logoPulse,
-    required this.wobble,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    return AnimatedBuilder(
-      // ✅ يستمع للاثنين فقط — لا يعيد بناء بقية الشجرة
-      animation: Listenable.merge([main, pulse]),
-      builder: (context, child) {
-        final scale = scaleBase.value * logoPulse.value;
-
-        // Transform.translate + rotate + scale منفصلين —
-        // Flutter يدمجهم تلقائياً في layer واحدة (repaint boundary)
-        // وهذا أكثر استقراراً من Matrix4 cascade API المتغيرة
-        return Semantics(
-          label: 'EduZone logo',
-          child: Opacity(
-            opacity: opacity.value,
-            child: Transform.translate(
-              offset: Offset(0, translateY.value),
-              child: Transform.rotate(
-                angle: wobble.value,
-                child: Transform.scale(
-                  scale: scale,
-                  child: Container(
-                    width: _K.logoSize,
-                    height: _K.logoSize,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(_K.logoRadius),
-                      gradient: LinearGradient(
-                        begin: AlignmentDirectional.topStart,
-                        end: AlignmentDirectional.bottomEnd,
-                        colors: isDark
-                            ? [
-                                AppColors.darkSurface.withValues(alpha: 0.75),
-                                AppColors.darkSurface2.withValues(alpha: 0.35),
-                              ]
-                            : [
-                                Colors.white.withValues(alpha: 0.75),
-                                Colors.white.withValues(alpha: 0.35),
-                              ],
-                      ),
-                      border: Border.all(
-                        color: isDark
-                            ? AppColors.darkBorder.withValues(alpha: 0.9)
-                            : Colors.white.withValues(alpha: 0.9),
-                        width: 1.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.12),
-                          blurRadius: 24,
-                          offset: const Offset(0, 8),
-                          spreadRadius: 2,
-                        ),
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.05),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    // ✅ Glassmorphism حقيقي بـ BackdropFilter
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(_K.logoRadius),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: ShaderMask(
-                          shaderCallback: (bounds) => const LinearGradient(
-                            begin: AlignmentDirectional.topStart,
-                            end: AlignmentDirectional.bottomEnd,
-                            colors: [AppColors.primary, AppColors.accent],
-                          ).createShader(bounds),
-                          child: const Icon(
-                            Icons.school_rounded,
-                            size: _K.logoIconSize,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ─────────────────────── Animated Brand Name ─────────────────────────
-
-class _AnimatedBrandName extends StatelessWidget {
-  final AnimationController main;
-  final List<double> letterWidths;
-  final List<double> letterOffsets;
-  final double fullCationWidth;
-  final double spaceWidth;
-  final List<Animation<double>> letterOpacities;
-  final List<Animation<double>> letterSlideX;
-  final Animation<double> spaceOpacity;
-  final Animation<double> finalTextScale;
-  final TextStyle boldStyle;
-
-  const _AnimatedBrandName({
-    required this.main,
-    required this.letterWidths,
-    required this.letterOffsets,
-    required this.fullCationWidth,
-    required this.spaceWidth,
-    required this.letterOpacities,
-    required this.letterSlideX,
-    required this.spaceOpacity,
-    required this.finalTextScale,
-    required this.boldStyle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      // ✅ يستمع لـ main فقط — pulse لا يؤثر هنا
-      animation: main,
-      builder: (context, _) {
-        double cationWidth = 0;
-        for (int i = 0; i < _kCationLetterCount; i++) {
-          cationWidth +=
-              letterOpacities[i].value.clamp(0.0, 1.0) * letterWidths[i];
-        }
-        cationWidth = cationWidth.clamp(0.0, fullCationWidth);
-
-        final spaceVisible = (spaceOpacity.value * spaceWidth).clamp(
-          0.0,
-          spaceWidth,
-        );
-
-        return Semantics(
-          label: 'EduZone',
-          child: Transform.scale(
-            scale: finalTextScale.value,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              textDirection: TextDirection.ltr,
-              children: [
-                Text('Edu', style: boldStyle),
-
-                // "cation" — ينكمش مع انزلاق الأحرف
-                ClipRect(
-                  child: SizedBox(
-                    width: cationWidth,
-                    height: _K.letterHeight,
-                    child: Stack(
-                      children: List.generate(_kCationLetterCount, (i) {
-                        return Positioned(
-                          left: letterOffsets[i] + letterSlideX[i].value,
-                          top: 0,
-                          bottom: 0,
-                          child: Opacity(
-                            opacity: letterOpacities[i].value,
-                            child: Center(
-                              child: Text(_kCation[i], style: boldStyle),
-                            ),
-                          ),
-                        );
-                      }),
-                    ),
-                  ),
-                ),
-
-                SizedBox(width: spaceVisible),
-                Text('Zone', style: boldStyle),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

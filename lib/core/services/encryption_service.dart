@@ -238,6 +238,166 @@ class ChunkIndex {
       );
 }
 
+/// Plaintext chunk size for AES-256-GCM chunked file encryption. Extracted
+/// as a shared constant (previously hardcoded separately inside
+/// [_encryptFileOnWorker]) so callers that need to align byte ranges to
+/// chunk boundaries — e.g. a parallel encrypted download — use the exact
+/// same size without risk of drift.
+const int kEncryptionChunkSize = 512 * 1024;
+
+/// The on-disk header written at the start of every chunked-encrypted file.
+/// Shared constant so planning code (below) and the actual writer/reader
+/// (`_encryptFileOnWorker`, `buildIndexForExistingFile`) can never disagree
+/// about its length.
+final List<int> chunkedFormatHeaderBytes = utf8.encode('eduzone-gcm-chunked');
+
+/// One planned chunk: where its plaintext lives in the *source* stream, and
+/// exactly where its encrypted form will live in the *destination* file.
+///
+/// Building this plan requires nothing but the total plaintext size — no
+/// file access, no data read — because AES-256-GCM ciphertext is always
+/// exactly `plaintext.length + EncryptionService.gcmTagLength` bytes (a
+/// fixed-size authentication tag, no block padding). That determinism is
+/// what makes it safe for multiple parallel download workers to each
+/// encrypt their own byte range and write directly into the shared
+/// destination file at a precomputed offset, without waiting on each other
+/// or coordinating anything beyond "who owns which chunk indices".
+class PlannedChunk {
+  final int index;
+  final int plaintextStart;
+  final int plaintextLength;
+
+  /// Absolute byte offset in the destination file where this chunk's
+  /// `[IV][length][ciphertext+tag]` record begins. Uses the same
+  /// "absolute from file start" convention as the existing
+  /// `ChunkEntry.encryptedOffset` (see `_encryptFileOnWorker` /
+  /// `EdzLocalProxy`), so files produced by the new pipelined path are
+  /// byte-for-byte layout-compatible with the existing playback proxy —
+  /// no changes needed there to read them.
+  final int encryptedOffset;
+
+  const PlannedChunk({
+    required this.index,
+    required this.plaintextStart,
+    required this.plaintextLength,
+    required this.encryptedOffset,
+  });
+
+  int get plaintextEnd => plaintextStart + plaintextLength - 1;
+
+  /// Total bytes this chunk's record occupies in the destination file
+  /// (IV + length field + ciphertext-with-tag).
+  int get recordLength =>
+      EncryptionService.ivLength + 4 + plaintextLength + EncryptionService.gcmTagLength;
+}
+
+/// Precomputes the full chunk layout for a plaintext stream of
+/// [totalPlaintextSize] bytes. Pure function, no I/O — safe to call before
+/// a single byte has been downloaded.
+List<PlannedChunk> planChunkLayout(
+  int totalPlaintextSize, {
+  int chunkSize = kEncryptionChunkSize,
+}) {
+  final plan = <PlannedChunk>[];
+  var plainOffset = 0;
+  var encOffset = chunkedFormatHeaderBytes.length;
+  var index = 0;
+  while (plainOffset < totalPlaintextSize) {
+    final remaining = totalPlaintextSize - plainOffset;
+    final length = remaining < chunkSize ? remaining : chunkSize;
+    final chunk = PlannedChunk(
+      index: index,
+      plaintextStart: plainOffset,
+      plaintextLength: length,
+      encryptedOffset: encOffset,
+    );
+    plan.add(chunk);
+    encOffset += chunk.recordLength;
+    plainOffset += length;
+    index++;
+  }
+  return plan;
+}
+
+/// Total size the destination file will occupy once every planned chunk has
+/// been written — used to preallocate the file up front so parallel workers
+/// can each seek-and-write their own region independently.
+int totalEncryptedSizeForPlan(List<PlannedChunk> plan) {
+  if (plan.isEmpty) return chunkedFormatHeaderBytes.length;
+  final last = plan.last;
+  return last.encryptedOffset + last.recordLength;
+}
+
+/// Builds the [ChunkIndex] sidecar directly from a chunk plan. Since the
+/// plan is fully deterministic (see [PlannedChunk]), this can be produced
+/// and written to the `.idx` sidecar even before the corresponding bytes
+/// have been downloaded/encrypted — the pipelined download path uses this
+/// to write the sidecar once as the final step, rather than accumulating it
+/// chunk-by-chunk as `_encryptFileOnWorker` does for the single-isolate
+/// whole-file path.
+ChunkIndex chunkIndexFromPlan(List<PlannedChunk> plan, int totalPlaintextSize) {
+  return ChunkIndex(
+    version: 1,
+    totalPlaintextSize: totalPlaintextSize,
+    chunks: [
+      for (final c in plan)
+        ChunkEntry(
+          encryptedOffset: c.encryptedOffset,
+          encryptedLength: c.plaintextLength + EncryptionService.gcmTagLength,
+          plaintextLength: c.plaintextLength,
+        ),
+    ],
+  );
+}
+
+/// One encrypted chunk record ready to be written to disk: the IV used and
+/// the ciphertext with its GCM tag appended (matches the layout
+/// `_encryptFileOnWorker` already writes: `[IV][ciphertext+tag]`, prefixed
+/// separately with the 4-byte length by the caller).
+class EncryptedChunkRecord {
+  final Uint8List iv;
+  final Uint8List cipherWithTag;
+  const EncryptedChunkRecord(this.iv, this.cipherWithTag);
+}
+
+/// Encrypts a batch of plaintext chunk buffers with AES-256-GCM in a single
+/// [Isolate.run] call.
+///
+/// Batched (rather than one [Isolate.run] per chunk, which is what
+/// [EdzLocalProxy] does on the *read* side) because a download worker may
+/// need to encrypt hundreds of chunks for its assigned range — spawning an
+/// isolate per chunk there would add up to meaningful overhead. On the read
+/// side a single [Isolate.run] per chunk is fine because an LRU cache
+/// absorbs repeat reads of the same chunk; on the write side every chunk is
+/// unique, so batching is the right trade-off here instead.
+///
+/// [plaintextChunks] must be in the same order as the chunk indices they
+/// correspond to; the returned list preserves that order.
+Future<List<EncryptedChunkRecord>> encryptChunkBatch(
+  List<Uint8List> plaintextChunks,
+  String keyBase64,
+) {
+  return Isolate.run(() {
+    final key = Key.fromBase64(keyBase64);
+    final results = <EncryptedChunkRecord>[];
+    for (final buffer in plaintextChunks) {
+      final iv = IV.fromSecureRandom(EncryptionService.ivLength);
+      // A fresh Encrypter per chunk mirrors the existing single-isolate
+      // encrypt path (`_encryptFileOnWorker`) and the existing decrypt path
+      // (`EdzLocalProxy._decryptChunkCached`) — AES-GCM state must not be
+      // reused across calls with different IVs on some backends, so this
+      // keeps the same safe pattern already established elsewhere.
+      final encrypter = Encrypter(AES(key, mode: AESMode.gcm));
+      final encrypted = encrypter.encryptBytes(buffer, iv: iv);
+      results.add(EncryptedChunkRecord(
+        Uint8List.fromList(iv.bytes),
+        Uint8List.fromList(encrypted.bytes),
+      ));
+    }
+    return results;
+  });
+}
+
 /// Attempts to build a ChunkIndex by scanning an encrypted file without
 /// decrypting the payload. Expects the chunked header 'eduzone-gcm-chunked'.
 Future<ChunkIndex> buildIndexForExistingFile(File encryptedFile) async {

@@ -1,60 +1,164 @@
-chore(deps): bump the minor-and-patch group with 21 updates 
+# الدليل الهندسي الشامل لتطوير وتوسيع تطبيق EduZone App ليضاهي المنصات العالمية
+
+يقدم هذا المستند تنظيماً هندسياً دقيقاً وشاملاً للمقترحات التطويرية الخاصة بمنصة EduZone، بهدف الارتقاء بمستوى الأداء، تجربة المستخدم، البنية المعمارية، ومعايير الشمولية التقنية لتضاهي التطبيقات والمنصات العالمية الكبرى.
+
+---
+
+## 1. نظام التنزيل فائق السرعة (Parallel Multi-Isolate Download System)
+
+لتحقيق أقصى استفادة من سرعات الإنترنت المتاحة وتقليص وقت التنزيل بنسبة تصل إلى **70%**، يُقترح تطوير `DownloadManager.dart` ليعمل بنظام الأجزاء المتوازية الحقيقية:
+
+| المحور المعماري | الوصف التفصيلي |
+| --- | --- |
+| **تقسيم الملفات (Chunking)** | تقسيم ملف الفيديو أو المحتوى (مثل دقة 1080p) إلى **4 إلى 8 أجزاء متوازية**. |
+| **التنفيذ عبر العزل (Flutter Isolates)** | تشغيل `Isolates` مستقلة تماماً عن خيط الواجهة الرئيسية (UI Thread)، بحيث يتولى كل عزل تحميل جزء بشكل متزامن. |
+| **التشفير الفوري (In-Flight Encryption)** | تشفير كل جزء فور اكتمال تحميله في الذاكرة العشوائية (RAM) وقبل كتابته على التخزين المحلي، لضمان عدم وجود أي لحظة يُكشف فيها ملف الفيديو بصيغة خام (Raw) على الجهاز. |
+
+---
+
+## 2. تحسين كفاءة العرض الرسومي والسلاسة البصرية (UI & Rendering Optimization)
+
+تعتمد سلاسة تجربة المستخدم بشكل جوري على استقرار معدل تحديث الإطارات (60/120 FPS). ولتحقيق ذلك، يتم تطبيق الممارسات التالية:
+
+- **عزل عمليات إعادة الرسم (RepaintBoundary):**دمج مكونات `RepaintBoundary` حول العناصر ذات الرسوم المتحركة المستمرة (مثل مؤشرات التحميل والشاشات التمهيدية Shimmers في الشاشة الرئيسية)، مما يعزل المكونات المتحركة عن شجرة الواجهة كاملة ويخفض استهلاك المعالج (CPU) ويحافظ على طاقة البطارية.
+
+- **التحميل الكسول للقوائم (Lazy Loading):**التحول الكامل نحو استخدام `ListView.builder` أو `Slivers` للقوائم الطويلة والكورسات، منعاً لبناء جميع العناصر دفعة واحدة في الذاكرة وتفادي أي توقف (Jank) أثناء التصفح سريع الاستجابة.
+
+---
+
+## 3. الاستدامة التقنية، واقتصاد استهلاك البيانات، وتحسين قاعدة البيانات (Technical Sustainability & DB Optimization)
+
+تُعد كفاءة استهلاك البطارية، وتقليل استنزاف شريحة الاتصال، وتحسين عمليات قاعدة البيانات ركائز أساسية لتجربة مستدامة وسريعة:
+
+- **تجميع الطلبات والمزامنة (Batching & Sync Engine):**تطوير نظام `SyncEngine` لتجميع العمليات التفاعلية وإرسالها في فترات زمنية متباعدة، مما يقلل عدد مرات تنشيط شريحة الاتصال (Radio Wakeups) في الهاتف — وهو المسبب الرئيسي لاستنزاف البطارية — ويضمن استهلاكاً اقتصادياً وفعالاً للبيانات.
+
+- **تقليل عمليات الكتابة المفرطة في قاعدة البيانات (Local DB Debouncing & Throttling):**بدلاً من حفظ تقدم الطالب (Video Progress / Watch Time) في قاعدة البيانات المحلية أو الخادم عند كل ثانية أو حركة طفيفة، يتم استخدام تقنيات **Debouncing** و **Throttling** لتجميع وتخزين التقدم في الذاكرة المؤقتة (RAM) وكتابته دفعة واحدة على فترات زمنية محددة أو عند تغيير حدث رئيسي، مما يحافظ على صحة الذاكرة التخزينية (Flash Storage Wear) ويقلل استهلاك المعالج.
+
+- **التحديث الفوري للواجهة (Optimistic UI Updates):**ضمان تحديث واجهة المستخدم فوراً (مثل إتمام الدرس، تحديث التقدم، أو وضع علامة إعجاب) دون انتظار استجابة الخادم أو اكتمال عمليات الكتابة الثقيلة في قاعدة البيانات المحلية. يتم عكس التغيير في الحالة محلياً في أجزاء من الثانية مع تنفيذ العملية في الخلفية، مما يعطي شعوراً بالسرعة الفائقة وانعدام وقت الانتظار (Zero Latency Feel).
+
+---
+
+## 4. إزالة التكرار المعماري وبناء الخدمات المركزية (DRY Principle & Centralized Services)
+
+للقضاء على ازدواجية الكود ومنع استدعاء حزم النظام الخارجية (مثل `device_info_plus` أو `package_info_plus` أو `connectivity_plus`) بشكل متفرق وعشوائي داخل الشاشات والمكونات المختلفة، يتم توحيدها ضمن معمارية **Single Source of Truth**:
+
+- **إنشاء خدمات مركزية (Centralized Core Services):**بناء خدمات عامة موحدة في طبقة الـ Core (مثل `DeviceContextService` أو `AppInfoService`) بحيث تتحول حزم مثل `device_info_plus` إلى استدعاء مرة واحدة عند بدء تشغيل التطبيق (App Startup) أو تخزينها مؤقتاً (Cached Singleton)، وتستمد باقي الشاشات والمكونات البيانات منها مباشرة.
+
+- **منع تكرار منطق الاتصال والأذونات:**توحيد فحص حالة الشبكة، صلاحيات التخزين، ومعلومات الإصدار في خدمات مركزية (Providers/Services) تمنع تكرار كود الاستعلام وتضمن سهولة الصيانة وتحديث الإصدارات المستقبلية دون تعديل مئات الملفات.
+
+---
+
+## 5. خط أنابيب الوسائط والصور المتقدم (Advanced Media & Image Caching Pipeline)
+
+لضمان تجربة تصفح فائقة السلاسة وتقليل استهلاك البيانات عند تصفح صور الكورسات والمدرسين:
+
+- **الذاكرة المؤقتة ثقية المستويات (Multi-Tier Caching for Images):**تكوين مدير ذاكرة مؤقتة مخصص للصور (مثل `cached_network_image`) مع دمج ضغط ذكي للصيغ الحديثة (مثل WebP) لتقليل حجم البيانات المنقولة بنسبة تصل إلى 40%.
+
+- **التخزين المؤقت المسبق (Prefetching Strategies):**تحميل صور وغلاف الكورسات التالية مسبقاً (Prefetching) في القوائم والأقسام، بحيث تظهر الصور للمستخدم فوراً ودون أي وقت انتظار عند التمرير.
+
+---
+
+## 6. حوكمة إدارة الذاكرة والتنظيف التلقائي (Memory Hygiene & Auto-Disposal Architecture)
+
+لمنع تسرب الذاكرة (Memory Leaks) والمحافظة على استقرار التطبيق أثناء الاستخدام الطويل:
+
+- **التنظيف الاستباقي للمتحكمات (Strict Controller Lifecycle):**إلزامية استخدام `AutoDispose` في كافة مزودي الحالة (Providers) والتخلص من اشتراكات الستريم (Stream Subscriptions)، مؤشرات النصوص (`TextEditingControllers`)، ومتحكمات الرسوم المتحركة (`AnimationControllers`) فور الخروج من الشاشة لمنع استهلاك الذاكرة في الخلفية.
+
+---
+
+## 7. شمولية الوصول والتجربة العالمية (Advanced Accessibility & A11y)
+
+لضمان وصول المحتوى التعليمي لجميع الفئات دون استثناء، يتم اعتماد المعايير المتقدمة للوصولية:
+
+- **دعم قراء الشاشة (Screen Readers):**إلزامية تضمين `Semantics labels` لجميع الأيقونات التفاعلية (أزرار التحكم بالمشغل، التنقل)، لتمكين الطلاب ذوي الإعاقة البصرية من قراءة ووصف دقيق لكل عنصر.
+
+- **الخطوط الديناميكية (Dynamic Type):**اختبار الحاويات (`Containers`) لضمان توسعها رأسياً دون قص النصوص عند قيام المستخدم بتكبير الخطوط من إعدادات النظام.
+
+- **إيماءات الوصول (Accessibility Gestures):**دعم الإيماءات السريعة (مثل النقر المزدوج أو السحب بأصبعين) لتسهيل التفاعل الحركي مع التطبيق.
+
+---
+
+## 8. البنية المعمارية وهندسة البرمجيات (Modular Clean Architecture & Engineering Standards)
+
+للارتقاء بالبنية البرمجية للمشروع لتضاهي عمالقة التقنية (مثل Netflix، Spotify، Google)، يتم تبني المعايير الهندسية التالية:
+
+### أ. الفصل المعماري وقابلية التوسع
+
+- **فصل الميزات التام (Feature-First & Modularization):** تحويل الميزات الكبرى (التنزيلات، مشغل الفيديو، الكورسات) إلى حزم مستقلة (Packages) قابلة للتطوير والاختبار المنفصل.
+
+- **إدارة الذاكرة والحالة (Advanced State Management):** استخدام `Riverpod 3.x` مع `AutoDispose` و `Family` providers بشكل صارم لمنع تسرب الذاكرة (Memory Leaks) والتخلص التلقائي من المتحكمات فور مغادرة الشاشة.
+
+### ب. الأداء وتجربة عدم الاتصال (Offline-First Excellence)
+
+- **قواعد البيانات الهجينة:** دمج حلول تخزين محلية فائقة السرعة للبيانات الضخمة مع نظام مزامنة ذكي عبر `WorkManager`.
+
+- **محرك الوسائط (Media Engine):** تفعيل `Hardware Acceleration` المتقدم وإدارة الذاكرة المؤقتة (Smart Buffering) في مشغلات الفيديو مثل `media_kit`.
+
+### ج. هندسة الجودة وضمان الاختبارات
+
+- **الالتزام بنهج TDD ونسبة التغطية:** استهداف نسبة تغطية اختبارات لا تقل عن **80%** تشمل اختبارات الوحدة (Unit Tests)، اختبارات الواجهة (Widget Tests)، واختبارات التكامل (Integration Tests).
+
+### د. التوطين المتقدم (Advanced i18n & RTL)
+
+- دعم مرن لتغيير الاتجاهات (RTL/LTR) مع إدارة دقيقة لملفات الترجمة والتنسيقات الإقليمية.
 
 
-Analyzing EduZone_App...                                        
-
-  error • '_$AppThemeMode.runBuild' ('void Function()') isn't a valid override of 'AnyNotifier.runBuild' ('WhenComplete Function()') • lib/app/app_providers.g.dart:50:8 • invalid_override
-  error • '_$AppLocale.runBuild' ('void Function()') isn't a valid override of 'AnyNotifier.runBuild' ('WhenComplete Function()') • lib/app/app_providers.g.dart:101:8 • invalid_override
-   info • 'anonKey' is deprecated and shouldn't be used. Use publishableKey instead. anonKey will be removed in a future major version. Try replacing the use of the deprecated member with the replacement • lib/core/network/supabase_client.dart:26:7 • deprecated_member_use
-  error • '_$Auth.runBuild' ('void Function()') isn't a valid override of 'AnyNotifier.runBuild' ('WhenComplete Function()') • lib/features/auth/presentation/providers/auth_provider.g.dart:525:8 • invalid_override
-  error • '_$UserSubscriptions.runBuild' ('void Function()') isn't a valid override of 'AnyNotifier.runBuild' ('WhenComplete Function()') • lib/features/courses/presentation/providers/courses_provider.g.dart:1027:8 • invalid_override
-  error • '_$PublicCourses.runBuild' ('void Function()') isn't a valid override of 'AnyNotifier.runBuild' ('WhenComplete Function()') • lib/features/courses/presentation/providers/courses_provider.g.dart:1071:8 • invalid_override
-  error • '_$BookmarkedCourses.runBuild' ('void Function()') isn't a valid override of 'AnyNotifier.runBuild' ('WhenComplete Function()') • lib/features/courses/presentation/providers/courses_provider.g.dart:1322:8 • invalid_override
-  error • '_$DownloadsNotifier.runBuild' ('void Function()') isn't a valid override of 'AnyNotifier.runBuild' ('WhenComplete Function()') • lib/features/downloads/presentation/providers/downloads_provider.g.dart:636:8 • invalid_override
-  error • '_$NotificationFilter.runBuild' ('void Function()') isn't a valid override of 'AnyNotifier.runBuild' ('WhenComplete Function()') • lib/features/notifications/presentation/providers/notifications_provider.g.dart:278:8 • invalid_override
-  error • '_$ProfileActions.runBuild' ('void Function()') isn't a valid override of 'AnyNotifier.runBuild' ('WhenComplete Function()') • lib/features/profile/presentation/providers/profile_provider.g.dart:219:8 • invalid_override
-  error • '_$TodoNotifier.runBuild' ('void Function()') isn't a valid override of 'AnyNotifier.runBuild' ('WhenComplete Function()') • lib/features/todo/presentation/providers/todo_provider.g.dart:344:8 • invalid_override
-  error • '_$Player4VideoInfo.runBuild' ('void Function()') isn't a valid override of 'AnyNotifier.runBuild' ('WhenComplete Function()') • lib/features/video_player/presentation/providers/player4_provider.g.dart:135:8 • invalid_override
-  error • '_$VideoProgress.runBuild' ('void Function()') isn't a valid override of 'AnyNotifier.runBuild' ('WhenComplete Function()') • lib/features/video_player/presentation/providers/video_provider.g.dart:335:8 • invalid_override
-  error • '_FakeRealtimeChannel.onPostgresChanges' ('RealtimeChannel Function({required void Function(PostgresChangePayload) callback, required PostgresChangeEvent event, PostgresChangeFilter? filter, String? schema, String? table})') isn't a valid override of 'RealtimeChannel.onPostgresChanges' ('RealtimeChannel Function({required void Function(PostgresChangePayload) callback, required PostgresChangeEvent event, PostgresChangeFilter? filter, List<PostgresChangeFilter>? filters, String? schema, List<String>? select, String? table})') • test/features/auth/presentation/providers/auth_notifier_test.dart:500:19 • invalid_override
-
-14 issues found. (ran in 23.8s)
-Error: Process completed with exit code 1.
 
 
+# تقرير مراجعة المستودع وأسس تحسين الموارد (Centralized Services & Isolate Architecture)
 
-=========================================================================================================
+بعد فحص دقيق وشامل لمستودع مشروع **EduZone App** (بما في ذلك هيكل التطبيق في `lib/app/app_initializer.dart`، مدير التنزيلات في `lib/features/downloads/data/services/download_manager.dart`، ونظام معالجة وتشفير الملفات)، يتضح أن المشروع يتبنى أساسيات معمارية قوية مثل التهيئة المركزية لـ `Supabase` و `DeviceInfoHelper` في ملف بدء التشغيل.
 
+وللارتقاء بالمشروع لمصاف المنصات العالمية العملاقة (مثل Netflix و Coursera)، نقدم المقترحات الهندسية الدقيقة لتقليل الضغط على الموارد، عزل العمليات الثقيلة، والخدمات المركزية:
 
+---
 
-chore(deps): bump youtube_player_flutter from 9.1.3 to 10.0.1 #25
+## 1. عزل العمليات الثقيلة في مسارات الخلفية (Isolate Worker Isolation)
 
-Analyzing EduZone_App...                                        
+تم رصد عمليات معالجة الملفات الكبرى في التنزيل والتشفير، ولضمان عدم حدوث أي تجميد في واجهة المستخدم (Jank / UI Freezing) والحفاظ على معدل 60/120 FPS، يتم تطبيق التالي:
 
-  error • The getter 'isPlaying' isn't defined for the type 'YoutubePlayerValue'. Try importing the library that defines 'isPlaying', correcting the name to the name of an existing getter, or defining a getter or field named 'isPlaying' • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:43:46 • undefined_getter
-  error • The getter 'position' isn't defined for the type 'YoutubePlayerValue'. Try importing the library that defines 'position', correcting the name to the name of an existing getter, or defining a getter or field named 'position' • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:63:53 • undefined_getter
-  error • The named parameter 'seconds' is required, but there's no corresponding argument. Try adding the required argument • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:65:23 • missing_required_argument
-  error • Too many positional arguments: 0 expected, but 1 found. Try removing the extra positional arguments, or specifying the name for named arguments • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:65:30 • extra_positional_arguments_could_be_named
-  error • The getter 'isPlaying' isn't defined for the type 'YoutubePlayerValue'. Try importing the library that defines 'isPlaying', correcting the name to the name of an existing getter, or defining a getter or field named 'isPlaying' • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:70:33 • undefined_getter
-  error • The method 'pause' isn't defined for the type 'YoutubePlayerController'. Try correcting the name to the name of an existing method, or defining a method named 'pause' • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:71:25 • undefined_method
-  error • The method 'play' isn't defined for the type 'YoutubePlayerController'. Try correcting the name to the name of an existing method, or defining a method named 'play' • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:77:25 • undefined_method
-  error • The named parameter 'onReady' isn't defined. Try correcting the name to an existing named parameter's name, or defining a named parameter with the name 'onReady' • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:87:7 • undefined_named_parameter
-  error • The argument type 'YoutubePlayerController' can't be assigned to the parameter type 'Listenable'.  • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:107:32 • argument_type_not_assignable
-  error • The getter 'isReady' isn't defined for the type 'YoutubePlayerValue'. Try importing the library that defines 'isReady', correcting the name to the name of an existing getter, or defining a getter or field named 'isReady' • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:109:54 • undefined_getter
-  error • The getter 'isPlaying' isn't defined for the type 'YoutubePlayerValue'. Try importing the library that defines 'isPlaying', correcting the name to the name of an existing getter, or defining a getter or field named 'isPlaying' • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:128:47 • undefined_getter
-  error • The method 'ProgressBar' isn't defined for the type '_CustomYoutubePlayerState'. Try correcting the name to the name of an existing method, or defining a method named 'ProgressBar' • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:177:17 • undefined_method
-  error • The name 'ProgressBarColors' isn't a class. Try correcting the name to match an existing class • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:180:33 • creation_with_non_type
-  error • The getter 'position' isn't defined for the type 'YoutubePlayerValue'. Try importing the library that defines 'position', correcting the name to the name of an existing getter, or defining a getter or field named 'position' • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:195:63 • undefined_getter
-  error • The method 'PlaybackSpeedButton' isn't defined for the type '_CustomYoutubePlayerState'. Try correcting the name to the name of an existing method, or defining a method named 'PlaybackSpeedButton' • lib/features/video_player/presentation/widgets/youtube_player_widget.dart:225:32 • undefined_method
-  error • The method 'convertUrlToId' isn't defined for the type 'YoutubePlayer'. Try correcting the name to the name of an existing method, or defining a method named 'convertUrlToId' • lib/features/video_player/presentation/widgets/youtube_player_wrapper.dart:40:35 • undefined_method
-  error • The method 'dispose' isn't defined for the type 'YoutubePlayerController'. Try correcting the name to the name of an existing method, or defining a method named 'dispose' • lib/features/video_player/presentation/widgets/youtube_player_wrapper.dart:46:18 • undefined_method
-  error • The named parameter 'initialVideoId' isn't defined. Try correcting the name to an existing named parameter's name, or defining a named parameter with the name 'initialVideoId' • lib/features/video_player/presentation/widgets/youtube_player_wrapper.dart:48:7 • undefined_named_parameter
-  error • The named parameter 'flags' isn't defined. Try correcting the name to an existing named parameter's name, or defining a named parameter with the name 'flags' • lib/features/video_player/presentation/widgets/youtube_player_wrapper.dart:49:7 • undefined_named_parameter
-  error • The name 'YoutubePlayerFlags' isn't a class. Try correcting the name to match an existing class • lib/features/video_player/presentation/widgets/youtube_player_wrapper.dart:49:20 • creation_with_non_type
-  error • The method 'addListener' isn't defined for the type 'YoutubePlayerController'. Try correcting the name to the name of an existing method, or defining a method named 'addListener' • lib/features/video_player/presentation/widgets/youtube_player_wrapper.dart:52:8 • undefined_method
-  error • The getter 'isReady' isn't defined for the type 'YoutubePlayerValue'. Try importing the library that defines 'isReady', correcting the name to the name of an existing getter, or defining a getter or field named 'isReady' • lib/features/video_player/presentation/widgets/youtube_player_wrapper.dart:58:64 • undefined_getter
-  error • The getter 'position' isn't defined for the type 'YoutubePlayerValue'. Try importing the library that defines 'position', correcting the name to the name of an existing getter, or defining a getter or field named 'position' • lib/features/video_player/presentation/widgets/youtube_player_wrapper.dart:66:41 • undefined_getter
-  error • The method 'dispose' isn't defined for the type 'YoutubePlayerController'. Try correcting the name to the name of an existing method, or defining a method named 'dispose' • lib/features/video_player/presentation/widgets/youtube_player_wrapper.dart:104:18 • undefined_method
+- **فصل عمليات التشفير وفك التشفير عن الخيط الرئيسي:**
+  - كما تم بنجاح في هيكل التشفير الجديد (`EncryptionService` و `encryption_file_worker.dart`)، يجب ضمان تشغيل كافة عمليات قراءة الحزم الضخمة وكتابتها (مثل ملفات الفيديوهات التعليمية التي تتجاوز مئات الميجابايت) داخل **Isolate.run** مستقل.
 
-24 issues found. (ran in 27.1s)
-Error: Process completed with exit code 1.
+- **تحليل فهارس التنزيل الضخمة في الخلفية:**
+  - عمليات قراءة وفهرسة الملفات المجزأة (`ChunkIndex` و `buildIndexForExistingFile`) تتطلب عمليات I/O مكثفة؛ لذا يجب عزلها تماماً عن خيط الواجهة الرئيسية لتجنب أي تأخير في تشغيل مشغل الفيديو (`media_kit`).
+
+---
+
+## 2. الخدمات المركزية ومبدأ المصدر الأوحد للحقيقة (Centralized Services & DRY)
+
+بالاستناد إلى الهيكل الحالي الذي يقوم بتهيئة الخدمات الحيوية في `AppInitializer.init()`، يجب تعميم الخدمات المركزية التالية:
+
+### أ. خدمة معلومات الجهاز الموحدة (Centralized Device Context)
+
+- **الوضع الحالي:** استخدام `DeviceInfoHelper.init()` مرة واحدة عند بدء التشغيل لتوليد بصمة الجهاز (Device Fingerprint) ومعلوماته دون تكرار الاستعلامات.
+
+- **التعميم المطلوب:** تحويل جميع الاستعلامات الخاصة بمعلومات النظام (`device_info_plus` و `package_info_plus`) لتعتمد حصرياً على `DeviceContextService` كمرجع موحد (Single Source of Truth) دون أي استدعاء عشوائي داخل الشاشات.
+
+### ب. مركزية شبكة الاتصال والروابط (Unified Connectivity & Token Management)
+
+- **الوضع الحالي:** وجود نظام ذكي لتحديث روابط التنزيل منتهية الصلاحية (`handleTokenRefresh` في `DownloadManager`).
+
+- **التعميم المطلوب:** ربط جميع طلبات الـ HTTP وعمليات التنزيل الخلفية بـ `ConnectivityService` مركزي يراقب حالة الإنترنت ويوقف المحاولات تلقائياً عند انقطاع الشبكة، منعاً لاستنزاف طاقة البطارية وبطارية الهاتف (Radio Wakeups).
+
+---
+
+## 3. تحسين استهلاك الذاكرة وإدارة دورة الحياة (Memory Hygiene & Auto-Disposal)
+
+- **التخلص الاستباقي من الـ Controllers:**
+  - في المكونات الكبرى (مثل مشغلات الفيديو والبطاقات المعقدة مثل `course_card.dart` و `player4_wrapper.dart`)، يجب الالتزام التام باستخدام `autoDispose` في جميع الـ Providers والتخلص من الاشتراكات (Stream Subscriptions) فور مغادرة الشاشة لمنع تسرب الذاكرة (Memory Leaks).
+
+- **إدارة الذاكرة المؤقتة للوسائط:**
+  - ضبط استهلاك الذاكرة لـ `media_kit` ومكتبات عرض الصور لضمان تفريغ الـ Decoders وفهارس التخزين المؤقت فور الانتهاء من مشاهدة الدروس التعليمية.
+
+---
+
+## الخلاصة
+
+من خلال تطبيق سياسة عزل العمليات الثقيلة (Isolate Workers) والخدمات المركزية الموثقة في مستودع التطبيق، سيضمن النظام:
+
+1. **استقراراً تاماً في الأداء (Zero Jank)** أثناء معالجة وتنزيل الفيديوهات الكبرى.
+
+1. **كفاءة عالية في استهلاك البطارية والذاكرة** عبر منع الاستعلامات المتكررة واستخدام الـ Singletons المركزية.
+
+1. **هيكلة برمجية نظيفة وقابلة للتوسع** تضاهي المنصات التعليمية العالمية.

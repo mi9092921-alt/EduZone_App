@@ -1,5 +1,6 @@
+// ignore_for_file: unused_field
+
 import 'dart:async';
-import 'dart:io';
 
 import 'package:app/app/session/session_invalidation.dart';
 import 'package:flutter/foundation.dart';
@@ -9,84 +10,38 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
 import '../../../../core/config/app_config.dart';
-import '../../../../core/error/exceptions.dart';
 import '../../../../core/logging/domain/app_event.dart';
 import '../../../../core/logging/logging_providers.dart';
 import '../../../../core/network/request_cancellation_manager.dart';
-import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/device_service.dart';
 import '../../../../core/services/location_service.dart';
+import '../../application/policies/auth_error_policy.dart';
 import '../../application/services/check_user_access_service.dart';
 import '../../application/services/logout_orchestrator.dart';
-import '../../application/services/update_service.dart';
 import '../../data/datasources/auth_remote_ds.dart';
-import '../../data/datasources/update_remote_ds.dart';
-import '../../data/repositories/auth_repo_impl.dart';
-import '../../domain/entities/app_user.dart';
 import '../../domain/entities/auth_state.dart';
 import '../../domain/entities/update_info.dart';
-import '../../domain/repositories/auth_repository.dart';
-import '../../domain/usecases/bind_device.dart';
-import '../../domain/usecases/check_user_access.dart';
-import '../../domain/usecases/get_current_user.dart';
-import '../../domain/usecases/login_user.dart';
-import '../../domain/usecases/logout_user.dart';
-import '../../domain/usecases/validate_device_exists.dart';
+import 'auth_di_providers.dart';
+
+export 'auth_di_providers.dart';
 
 part 'auth_provider.g.dart';
 
-@Riverpod(keepAlive: true)
-SupabaseClient supabaseClient(Ref ref) => SupabaseService.client;
-
-@Riverpod(keepAlive: true)
-AuthRemoteDataSource authRemoteDataSource(Ref ref) => AuthRemoteDataSource();
-
-// ─── Domain layer wiring (Phase 2) ──────────────────────────────────────────
-// AuthRepository is built on top of the same authRemoteDataSourceProvider
-// used above, so overriding authRemoteDataSourceProvider in tests (as
-// auth_notifier_test.dart already does) transparently flows through to the
-// repository and every use case below — no test changes required.
-
-@Riverpod(keepAlive: true)
-AuthRepository authRepository(Ref ref) =>
-    AuthRepositoryImpl(ref.watch(authRemoteDataSourceProvider));
-
-@Riverpod(keepAlive: true)
-LoginUser loginUserUseCase(Ref ref) =>
-    LoginUser(ref.watch(authRepositoryProvider));
-
-@Riverpod(keepAlive: true)
-CheckUserAccess checkUserAccessUseCase(Ref ref) =>
-    CheckUserAccess(ref.watch(authRepositoryProvider));
-
-@Riverpod(keepAlive: true)
-BindDevice bindDeviceUseCase(Ref ref) =>
-    BindDevice(ref.watch(authRepositoryProvider));
-
-// Intentionally unused in production — see doc comment on LogoutUser for why
-// Auth.logout() uses LogoutOrchestrator instead. Kept as a documented,
-// tested fallback.
-@Riverpod(keepAlive: true)
-LogoutUser logoutUserUseCase(Ref ref) =>
-    LogoutUser(ref.watch(authRepositoryProvider));
-
-@Riverpod(keepAlive: true)
-ValidateDeviceExists validateDeviceExistsUseCase(Ref ref) =>
-    ValidateDeviceExists(ref.watch(authRepositoryProvider));
-
-@Riverpod(keepAlive: true)
-GetCurrentUser getCurrentUserUseCase(Ref ref) =>
-    GetCurrentUser(ref.watch(authRepositoryProvider));
-
-@Riverpod(keepAlive: true)
-UpdateRemoteDataSource updateRemoteDataSource(Ref ref) =>
-    UpdateRemoteDataSource();
-
-@Riverpod(keepAlive: true)
-UpdateService updateService(Ref ref) =>
-    UpdateService(ref.watch(updateRemoteDataSourceProvider));
-
 // ─── Auth Notifier (Single Source of Truth) ─────────────────────────────────
+//
+// This file now holds only the `Auth` notifier itself. The plain
+// dependency-injection providers it depends on (supabaseClientProvider,
+// authRepositoryProvider, the use-case providers, updateServiceProvider,
+// authActivitySyncServiceProvider, ...) live in `auth_di_providers.dart`
+// and are re-exported above so existing imports of `auth_provider.dart`
+// across the app keep working unchanged.
+//
+// Two pieces of logic that used to be private methods on this class were
+// also extracted so they're independently unit-testable:
+//   - `_isTransientAuthError` / `_mapExceptionToKey` → `AuthErrorPolicy`
+//     (application/policies/auth_error_policy.dart)
+//   - `_syncActivityAndSession`                     → `AuthActivitySyncService`
+//     (application/services/auth_activity_sync_service.dart)
 
 @Riverpod(keepAlive: true)
 class Auth extends _$Auth {
@@ -135,48 +90,6 @@ class Auth extends _$Auth {
     if (ref.mounted && state is AuthInitializing) {
       state = nextState;
     }
-  }
-
-  // ─── Unified Error Policy ──────────────────────────────────────────────
-  //
-  // Applies to _initializeSession(), login(), and verifyAccess() whenever
-  // an unexpected exception is caught (i.e. NOT an explicit
-  // access.isAllowed == false from checkUserAccess(), which is always
-  // handled as AuthRestricted regardless of this policy).
-  //
-  // - Transient error (no internet, timeout, socket failure, or a
-  //   ServerException whose message indicates a network/connection issue):
-  //   the server did not actually deny access — it was unreachable.
-  //   We must NOT force the user out of an authenticated/restricted state
-  //   on a network blip. Behavior: log and preserve the current state
-  //   (return without calling _safeSetState).
-  //
-  // - Non-transient error (anything else — unexpected parsing errors,
-  //   null appUser, programming errors, etc.): treated as unsafe to trust,
-  //   fall back to AuthUnauthenticated so the user re-authenticates
-  //   cleanly rather than being stuck in an inconsistent state.
-  //
-  // login() is a special case: there is no prior authenticated state to
-  // preserve (the user is actively trying to establish one), so on any
-  // exception — transient or not — it still resolves to
-  // AuthUnauthenticated(error: ...) with a mapped error key so the login
-  // screen can show the right message. The distinction there is only used
-  // for logging clarity, not for a different state outcome.
-  bool _isTransientAuthError(Object error) {
-    if (error is NoInternetException ||
-        error is TimeoutException ||
-        error is SocketException) {
-      return true;
-    }
-
-    if (error is ServerException) {
-      final message = error.message.toLowerCase();
-      return message.contains('network') ||
-          message.contains('timeout') ||
-          message.contains('connection');
-    }
-
-    return false;
   }
 
   // ─── Session Initialization (App Start) ──────────────────────────────────
@@ -264,7 +177,9 @@ class Auth extends _$Auth {
           );
 
           // Track activity and session in the background (device already validated/re-bound above)
-          await _syncActivityAndSession(appUser, skipBind: true);
+          await ref
+              .read(authActivitySyncServiceProvider)
+              .syncActivityAndSession(appUser, skipBind: true);
 
           // Start security monitoring (polling + Realtime token_version check)
           _startAccessMonitoring(appUser.id, appUser.tenantId);
@@ -282,7 +197,7 @@ class Auth extends _$Auth {
         );
       }
     } catch (e) {
-      if (_isTransientAuthError(e)) {
+      if (AuthErrorPolicy.isTransient(e)) {
         // Network blip, not a real access decision — do not kick the user
         // out of whatever state they're currently in. Splash will simply
         // remain until the app is backgrounded/foregrounded or retried.
@@ -345,7 +260,9 @@ class Auth extends _$Auth {
         _safeSetState(AuthAuthenticated(user: appUser, access: access));
 
         // Track activity and session in the background (skip bindDevice — already done above)
-        await _syncActivityAndSession(appUser, skipBind: true);
+        await ref
+            .read(authActivitySyncServiceProvider)
+            .syncActivityAndSession(appUser, skipBind: true);
 
         // Start security monitoring (polling + Realtime token_version check)
         _startAccessMonitoring(appUser.id, appUser.tenantId);
@@ -380,7 +297,7 @@ class Auth extends _$Auth {
       // to establish a session. Transient vs. non-transient only affects
       // logging clarity here; the outcome is always a mapped error on the
       // login screen.
-      if (_isTransientAuthError(e)) {
+      if (AuthErrorPolicy.isTransient(e)) {
         debugPrint('[Auth] Login failed due to transient error: ${e.runtimeType}: $e');
       } else {
         debugPrint('[Auth] Login failed with ${e.runtimeType}: $e');
@@ -404,7 +321,7 @@ class Auth extends _$Auth {
             ),
           );
 
-      _safeSetState(AuthUnauthenticated(error: _mapExceptionToKey(e)));
+      _safeSetState(AuthUnauthenticated(error: AuthErrorPolicy.mapExceptionToKey(e)));
     }
   }
 
@@ -416,61 +333,6 @@ class Auth extends _$Auth {
           handleAccessDenied(reason: reason),
     );
     _accessService!.start(userId: userId, tenantId: tenantId);
-  }
-
-  /// Refreshes state and background tracking after login or cold start.
-  Future<void> _syncActivityAndSession(AppUser user, {bool skipBind = false}) async {
-    try {
-      final device = ref.read(deviceServiceProvider);
-      final fingerprint = device.fingerprint;
-
-      // 1. Ensure device is bound (skip if already done in the calling flow)
-      if (!skipBind) {
-        await ref.read(bindDeviceUseCaseProvider)(
-          fingerprint,
-          device.deviceInfoJson,
-          device.platform,
-        );
-      }
-
-      // 2. Sync activity timestamps (users.last_seen_at, devices.last_seen)
-      await _remoteDataSource.syncUserActivity(
-        userId: user.id,
-        tenantId: user.tenantId,
-        deviceFingerprint: fingerprint,
-      );
-
-      // 3. Record session only on fresh login (skipBind=false means this is a login call)
-      // On app resume (skipBind=true), skip to avoid flooding the sessions table.
-      if (!skipBind) {
-        await _remoteDataSource.recordSession(
-          userId: user.id,
-          tenantId: user.tenantId,
-          deviceFingerprint: fingerprint,
-          regionId: user.regionId,
-          userAgent:
-              '${device.platform}: ${device.deviceInfoJson['model'] ?? 'Unknown'}',
-        );
-      }
-    } catch (e) {
-      debugPrint('[Auth] Background sync error: $e');
-    }
-  }
-
-  String _mapExceptionToKey(Object e) {
-    if (e is InvalidCredentialsException) return 'errorAuth';
-    if (e is EmailNotConfirmedException) return 'errorEmailNotConfirmed';
-    if (e is NoInternetException) return 'errorNetwork';
-    if (e is RateLimitedException) {
-      return 'errorRateLimit:${e.retryAfterSeconds}';
-    }
-    if (e is MaxDevicesReachedException) return 'errorMaxDevices';
-    if (e is DeviceAlreadyBoundException) return 'errorDeviceBound';
-    // All typed exceptions are handled above — fall back for unexpected cases.
-    // Log the concrete runtime type so an unclassified error is never lost
-    // silently behind the generic key.
-    debugPrint('[Auth] Unmapped exception type in _mapExceptionToKey: ${e.runtimeType}: $e');
-    return 'errorGeneric';
   }
 
   // ─── Verify Access (used by restricted screens to re-check) ──────────────
@@ -496,7 +358,7 @@ class Auth extends _$Auth {
       // already-restricted screen — there is no "safe" state to fall back
       // to that's better than what's already showing, so we log and let
       // the user retry explicitly.
-      if (_isTransientAuthError(e)) {
+      if (AuthErrorPolicy.isTransient(e)) {
         debugPrint('[Auth] Verify access deferred due to transient error: ${e.runtimeType}: $e');
       } else {
         debugPrint('[Auth] Verify access failed with ${e.runtimeType}: $e');

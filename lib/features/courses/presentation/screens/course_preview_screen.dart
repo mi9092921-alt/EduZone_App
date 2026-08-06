@@ -6,20 +6,17 @@ import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../core/logging/domain/app_event.dart';
 import '../../../../core/logging/logging_providers.dart';
 import '../../../../design_system/design_system.dart';
-import '../../../../shared/components/course/course_meta_row.dart';
-import '../../../../shared/components/course/course_price_block.dart';
-import '../../../../shared/components/course/enroll_action_button.dart';
-import '../../../../shared/components/course/instructor_card.dart';
 import '../../../../shared/cross_feature/auth_shared.dart';
 import '../../../../shared/widgets/app_course_thumbnail.dart';
+import '../../../../shared/widgets/collapsing_tab_bar_delegate.dart';
 import '../../../auth/domain/entities/auth_state.dart';
 import '../../domain/entities/course.dart';
 import '../../domain/entities/course_enrollment.dart';
 import '../providers/courses_provider.dart';
-import '../utils/course_format_utils.dart';
 import '../widgets/bookmark_button.dart';
+import '../widgets/course_about_tab_content.dart';
 import '../widgets/course_curriculum_preview.dart';
-import '../widgets/course_description_section.dart';
+import '../widgets/course_enroll_price_row.dart';
 
 
 class CoursePreviewScreen extends ConsumerStatefulWidget {
@@ -274,8 +271,8 @@ class _CoursePreviewScreenState extends ConsumerState<CoursePreviewScreen>
             // 3. Tab Bar
             SliverPersistentHeader(
               pinned: true,
-              delegate: _SliverAppBarDelegate(
-                TabBar(
+              delegate: CollapsingTabBarDelegate(
+                tabBar: TabBar(
                   controller: _tabController,
                   labelColor: ds.primary,
                   unselectedLabelColor: ds.textMuted,
@@ -291,7 +288,7 @@ class _CoursePreviewScreenState extends ConsumerState<CoursePreviewScreen>
                     Tab(text: l10n.courseCurriculumLabel),
                   ],
                 ),
-                ds.background,
+                backgroundColor: ds.background,
               ),
             ),
 
@@ -300,7 +297,7 @@ class _CoursePreviewScreenState extends ConsumerState<CoursePreviewScreen>
               padding: const EdgeInsets.all(AppSpacing.lg),
               sliver: SliverToBoxAdapter(
                 child: _tabController.index == 0
-                    ? _buildAboutTab(course, l10n, ds)
+                    ? CourseAboutTabContent(course: course, l10n: l10n, ds: ds)
                     : CourseCurriculumPreview(
                         course: course,
                         ds: ds,
@@ -314,71 +311,6 @@ class _CoursePreviewScreenState extends ConsumerState<CoursePreviewScreen>
     );
   }
 
-  Widget _buildAboutTab(
-    Course course,
-    AppLocalizations l10n,
-    DesignSystemColors ds,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        CourseMetaRow(
-          course: course,
-          ds: ds,
-          l10n: l10n,
-          duration: formatCourseDuration(course.totalDurationMinutes, l10n),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        CourseDescriptionSection(
-          description: course.description ?? '',
-          ds: ds,
-          l10n: l10n,
-        ),
-        const SizedBox(height: AppSpacing.xl),
-
-        if (course.learningObjectives != null && course.learningObjectives!.isNotEmpty) ...[
-          Text(l10n.whatYouWillLearn, style: AppTextStyles.h3),
-          const SizedBox(height: AppSpacing.md),
-          ...course.learningObjectives!.map((obj) => _buildBulletPoint(ds, obj)),
-          const SizedBox(height: AppSpacing.xl),
-        ],
-
-        if (course.prerequisites != null && course.prerequisites!.isNotEmpty) ...[
-          Text(l10n.coursePrerequisites, style: AppTextStyles.h3),
-          const SizedBox(height: AppSpacing.md),
-          ...course.prerequisites!.map((req) => _buildBulletPoint(ds, req)),
-          const SizedBox(height: AppSpacing.xl),
-        ],
-
-        Text(l10n.instructorLabel, style: AppTextStyles.h3),
-        const SizedBox(height: AppSpacing.md),
-        InstructorCard(course: course, ds: ds, l10n: l10n),
-      ],
-    );
-  }
-
-  Widget _buildBulletPoint(DesignSystemColors ds, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.check_circle_rounded,
-            color: AppColors.primary,
-            size: 20,
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              text,
-              style: AppTextStyles.bodyMedium.copyWith(color: ds.textSecondary),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _BottomEnrollBar extends StatefulWidget {
@@ -413,18 +345,10 @@ class _BottomEnrollBarState extends State<_BottomEnrollBar> {
         boxShadow: AppElevation.shadowLg,
         border: Border(top: BorderSide(color: widget.ds.border, width: 0.5)),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: CoursePriceBlock(
-              course: widget.course,
-              l10n: widget.l10n,
-              ds: widget.ds,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(flex: 2, child: EnrollActionButton(l10n: widget.l10n)),
-        ],
+      child: CourseEnrollPriceRow(
+        course: widget.course,
+        l10n: widget.l10n,
+        ds: widget.ds,
       ),
     );
   }
@@ -456,29 +380,3 @@ class _PreviewMedia extends StatelessWidget {
 }
 
 // _ThumbnailFallback was extracted to lib/shared/widgets/app_thumbnail_fallback.dart
-
-class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
-  _SliverAppBarDelegate(this._tabBar, this.backgroundColor);
-
-  final TabBar _tabBar;
-  final Color backgroundColor;
-
-  @override
-  double get minExtent => _tabBar.preferredSize.height;
-  @override
-  double get maxExtent => _tabBar.preferredSize.height;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return ColoredBox(color: backgroundColor, child: _tabBar);
-  }
-
-  @override
-  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
-    return false;
-  }
-}

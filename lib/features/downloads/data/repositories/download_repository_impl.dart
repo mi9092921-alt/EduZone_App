@@ -8,7 +8,6 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/services/encryption_service.dart';
-import '../../data/models/video_info.dart';
 import '../../domain/entities/download_enums.dart';
 import '../../domain/entities/download_progress.dart';
 import '../../domain/entities/downloaded_lesson.dart';
@@ -17,6 +16,9 @@ import '../datasources/download_local_ds.dart';
 import '../datasources/download_remote_ds.dart';
 import '../services/download_manager.dart';
 import '../services/download_notification_helper.dart';
+import 'download_execution_service.dart';
+import 'download_format_selector.dart';
+import 'download_link_refresher.dart';
 import 'download_query_service.dart';
 
 /// Implementation of the download repository.
@@ -29,9 +31,21 @@ class DownloadRepositoryImpl implements DownloadRepository {
   final DownloadManager _downloadManager;
   final EncryptionService _encryptionService;
   final DownloadQueryService _queryService;
+  final DownloadFormatSelector _formatSelector;
+  final DownloadLinkRefresher _linkRefresher;
+
+  // Assigned in the constructor body (not the initializer list) so it can
+  // be wired to the exact same _progressControllers/_downloadManagerIds/
+  // _pausedDownloads/_cancelledDownloads/_changeController instances
+  // declared below — see the class-level doc comment on those fields.
+  late final DownloadExecutionService _executionService;
   final Uuid _uuid;
 
-  // Stream controllers for progress updates
+  // Stream controllers for progress updates. Owned here (not inside
+  // DownloadExecutionService) because pauseDownload/resumeDownload/
+  // cancelDownload/watchProgress/dispose all need to read or mutate them
+  // directly — they're passed to DownloadExecutionService by reference so
+  // both sides observe the same session state. See ARCH-006.
   final Map<String, StreamController<DownloadProgress>> _progressControllers = {};
   final Map<String, String> _downloadManagerIds = {};
   final Set<String> _pausedDownloads = {};
@@ -49,8 +63,26 @@ class DownloadRepositoryImpl implements DownloadRepository {
         _downloadManager = downloadManager,
         _encryptionService = encryptionService,
         _queryService = DownloadQueryService(localDataSource),
+        _formatSelector = const DownloadFormatSelector(),
+        _linkRefresher = DownloadLinkRefresher(
+          remoteDataSource: remoteDataSource,
+          localDataSource: localDataSource,
+        ),
         _uuid = uuid ?? const Uuid() {
     DownloadNotificationHelper.init();
+    _executionService = DownloadExecutionService(
+      remoteDataSource: remoteDataSource,
+      localDataSource: localDataSource,
+      downloadManager: downloadManager,
+      encryptionService: encryptionService,
+      // Shared by reference with this repository's own session-state
+      // fields — see the field-level doc comment above.
+      progressControllers: _progressControllers,
+      downloadManagerIds: _downloadManagerIds,
+      pausedDownloads: _pausedDownloads,
+      cancelledDownloads: _cancelledDownloads,
+      changeController: _changeController,
+    );
   }
 
   @override
@@ -103,7 +135,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
           );
         }
       }
-      final selected = _selectFormats(videoInfo, quality);
+      final selected = _formatSelector.select(videoInfo, quality);
       if (kDebugMode) {
         debugPrint(
           '🔍 selectedFormat → quality=${selected.videoFormat.quality}, '
@@ -185,7 +217,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       });
       _changeController.add(null);
       unawaited(
-        _executeDownload(
+        _executionService.execute(
           downloadId: downloadId,
           title: title,
           videoUrl: selected.videoFormat.videoUrl,
@@ -208,338 +240,6 @@ class DownloadRepositoryImpl implements DownloadRepository {
     } catch (e) {
       return Left(UnknownFailure(e.toString()));
     }
-  }
-
-  /// Result of format selection: always has a video format, optionally an
-  /// audio track for dual-track (requires-merge) downloads.
-  _SelectedFormats _selectFormats(VideoInfo videoInfo, VideoQuality quality) {
-    // 1. Prefer an exact-quality muxed format (single file, no merge needed)
-    final exactMuxed = videoInfo.formats
-        .where(
-          (f) =>
-              f.quality == quality.label && f.hasAudio && !f.requiresMerge,
-        )
-        .toList();
-    if (exactMuxed.isNotEmpty) {
-      return _SelectedFormats(exactMuxed.first);
-    }
-
-    // 2. Check for an exact-quality video-only format + audio track
-    final exactVideo = videoInfo.formats
-        .where((f) => f.quality == quality.label && f.requiresMerge)
-        .toList();
-    if (exactVideo.isNotEmpty) {
-      final exactFormat = exactVideo.first;
-      final audioTrack = _audioTrackForFormat(exactFormat, videoInfo);
-      if (audioTrack != null) {
-        return _SelectedFormats(exactFormat, audioTrack: audioTrack);
-      }
-    }
-    if (exactVideo.isNotEmpty) {
-      // No audio track from API — treat as best-effort single file
-      return _SelectedFormats(exactVideo.first);
-    }
-
-    // 3. Fall back: find closest quality among ALL formats
-    //    Prefer muxed over merge if qualities are equidistant.
-    final allFormats = videoInfo.formats
-        .where((f) => f.quality.isNotEmpty)
-        .toList();
-    if (allFormats.isEmpty) {
-      throw Exception('No video formats available for this lesson.');
-    }
-
-    allFormats.sort((a, b) {
-      final aQ = VideoQuality.fromLabel(a.quality);
-      final bQ = VideoQuality.fromLabel(b.quality);
-      final aDiff = (aQ.index - quality.index).abs();
-      final bDiff = (bQ.index - quality.index).abs();
-      if (aDiff != bDiff) return aDiff.compareTo(bDiff);
-      // Prefer muxed (lower index = already has audio)
-      final aIsMuxed = a.hasAudio && !a.requiresMerge ? 0 : 1;
-      final bIsMuxed = b.hasAudio && !b.requiresMerge ? 0 : 1;
-      return aIsMuxed.compareTo(bIsMuxed);
-    });
-
-    final best = allFormats.first;
-    final needsAudio = !best.hasAudio || best.requiresMerge;
-    return _SelectedFormats(
-      best,
-      audioTrack: needsAudio ? _audioTrackForFormat(best, videoInfo) : null,
-    );
-  }
-
-  AudioTrack? _audioTrackForFormat(VideoFormat format, VideoInfo videoInfo) {
-    final formatAudioUrl = format.audioUrl;
-    if (formatAudioUrl != null && formatAudioUrl.isNotEmpty) {
-      return AudioTrack(
-        url: formatAudioUrl,
-        sizeBytes: format.audioSizeBytes,
-        ext: format.audioExt ?? videoInfo.audio?.ext ?? 'm4a',
-      );
-    }
-    return videoInfo.audio;
-  }
-
-  Future<void> _executeDownload({
-    required String downloadId,
-    required String title,
-    required String videoUrl,
-    required String videoSavePath,
-    String? audioUrl,
-    String? audioSavePath,
-    required String encryptionKey,
-    required String lessonId,
-    VideoQuality? quality,
-    DateTime? accessExpiresAt,
-    String? sourceUrl,
-  }) async {
-    // Update status to downloading
-    await _localDataSource.updateDownloadStatus(downloadId, 'downloading');
-    _changeController.add(null);
-
-    // Create progress controller
-    final controller = StreamController<DownloadProgress>.broadcast(sync: true);
-    _progressControllers[downloadId] = controller;
-
-    final isDualTrack = audioUrl != null && audioSavePath != null;
-
-    final videoTempPath = '$videoSavePath.tmp';
-    final audioTempPath = audioSavePath != null ? '$audioSavePath.tmp' : null;
-
-    var lastStoredProgress = -1.0;
-    var lastProgressUpdateAt = DateTime.fromMillisecondsSinceEpoch(0);
-    var keepTempFiles = false;
-
-    // Shared progress state for parallel downloads
-    var videoReceived = 0;
-    var videoTotal = 0;
-    var audioReceived = 0;
-    var audioTotal = 0;
-
-    void emitCombinedProgress() {
-      if (_pausedDownloads.contains(downloadId) ||
-          _cancelledDownloads.contains(downloadId)) {
-        return;
-      }
-
-      final totalReceived = videoReceived + audioReceived;
-      final totalBytes = videoTotal + audioTotal;
-      final progress = DownloadProgressExtension.calculateProgress(
-        totalReceived,
-        totalBytes,
-      );
-
-      final now = DateTime.now();
-      final shouldPersist = progress >= 100 ||
-          progress - lastStoredProgress >= 1 ||
-          now.difference(lastProgressUpdateAt) >= const Duration(milliseconds: 700);
-      if (shouldPersist) {
-        lastStoredProgress = progress;
-        lastProgressUpdateAt = now;
-        unawaited(_localDataSource.updateProgress(downloadId, progress));
-        DownloadNotificationHelper.showProgress(
-          downloadId: downloadId,
-          title: title,
-          progress: progress,
-        );
-      }
-
-      controller.add(DownloadProgress(
-        downloadId: downloadId,
-        lessonId: lessonId,
-        receivedBytes: totalReceived,
-        totalBytes: totalBytes,
-        progress: progress,
-        status: DownloadStatus.downloading,
-      ));
-    }
-
-    try {
-      if (isDualTrack) {
-        // ── Parallel dual-track download ────────────────────────────────────
-        if (kDebugMode) debugPrint('🎬 Dual-track download started for $downloadId');
-
-        final videoFuture = _downloadManager.startDownload(
-          downloadId: '${downloadId}_video',
-          url: videoUrl,
-          savePath: videoTempPath,
-          sourceUrl: sourceUrl,
-          qualityLabel: quality?.label,
-          onProgress: (received, total) {
-            videoReceived = received;
-            videoTotal = total > 0 ? total : videoTotal;
-            emitCombinedProgress();
-          },
-        );
-
-        final audioFuture = _downloadManager.startDownload(
-          downloadId: '${downloadId}_audio',
-          url: audioUrl,
-          savePath: audioTempPath!,
-          sourceUrl: sourceUrl,
-          qualityLabel: quality?.label,
-          trackType: 'audio',
-          onProgress: (received, total) {
-            audioReceived = received;
-            audioTotal = total > 0 ? total : audioTotal;
-            emitCombinedProgress();
-          },
-        );
-
-        final results = await Future.wait([videoFuture, audioFuture]);
-        _downloadManagerIds[downloadId] = results.first;
-
-        // Encrypt both files
-        final videoTemp = File(videoTempPath);
-        final audioTemp = File(audioTempPath);
-        if (!await videoTemp.exists()) throw Exception('Video temp file missing');
-        if (!await audioTemp.exists()) throw Exception('Audio temp file missing');
-
-        final videoEncrypted = File(videoSavePath);
-        final audioEncrypted = File(audioSavePath);
-        await Future.wait([
-          _encryptionService.encryptFile(videoTemp, videoEncrypted, encryptionKey),
-          _encryptionService.encryptFile(audioTemp, audioEncrypted, encryptionKey),
-        ]);
-
-        // Calculate combined file size
-        final videoSize = await videoEncrypted.length();
-        final audioSize = await audioEncrypted.length();
-        final totalFileSize = videoSize + audioSize;
-        final checksum = await _encryptionService.calculateChecksum(videoEncrypted);
-
-        await _localDataSource.updateDownload(downloadId, {
-          'download_status': 'completed',
-          'progress': 100.0,
-          'file_size': totalFileSize,
-          'checksum': checksum,
-        });
-      } else {
-        // ── Single-file muxed download ───────────────────────────────────────
-        final managerDownloadId = await _downloadManager.startDownload(
-          downloadId: downloadId,
-          url: videoUrl,
-          savePath: videoTempPath,
-          sourceUrl: sourceUrl,
-          qualityLabel: quality?.label,
-          onProgress: (received, total) {
-            videoReceived = received;
-            videoTotal = total;
-            emitCombinedProgress();
-          },
-        );
-        _downloadManagerIds[downloadId] = managerDownloadId;
-
-        final tempFile = File(videoTempPath);
-        if (!await tempFile.exists()) {
-          throw Exception('Download failed: temp file not found');
-        }
-
-        final encryptedFile = File(videoSavePath);
-        await _encryptionService.encryptFile(tempFile, encryptedFile, encryptionKey);
-
-        final checksum = await _encryptionService.calculateChecksum(encryptedFile);
-        final fileSize = await encryptedFile.length();
-
-        await _localDataSource.updateDownload(downloadId, {
-          'download_status': 'completed',
-          'progress': 100.0,
-          'file_size': fileSize,
-          'checksum': checksum,
-        });
-      }
-
-      _changeController.add(null);
-
-      controller.add(DownloadProgress(
-        downloadId: downloadId,
-        lessonId: lessonId,
-        receivedBytes: videoReceived + audioReceived,
-        totalBytes: videoTotal + audioTotal,
-        progress: 100.0,
-        status: DownloadStatus.completed,
-      ));
-
-      await DownloadNotificationHelper.showCompleted(
-        downloadId: downloadId,
-        title: title,
-      );
-
-      if (quality != null) {
-        try {
-          await _remoteDataSource.logDownloadAttempt(
-            lessonId: lessonId,
-            quality: quality.label,
-            accessExpiresAt: accessExpiresAt,
-          );
-        } catch (_) {
-          // Logging failure should not block the finished download.
-        }
-      }
-    } catch (e, stack) {
-      if (_pausedDownloads.remove(downloadId)) {
-        keepTempFiles = true;
-        await _localDataSource.updateDownloadStatus(downloadId, 'paused');
-        _changeController.add(null);
-        controller.add(DownloadProgress(
-          downloadId: downloadId,
-          lessonId: lessonId,
-          receivedBytes: 0,
-          totalBytes: 0,
-          progress: lastStoredProgress.clamp(0, 100).toDouble(),
-          status: DownloadStatus.paused,
-        ));
-        return;
-      }
-
-      if (_cancelledDownloads.remove(downloadId)) return;
-
-      if (kDebugMode) debugPrint('❌ BACKGROUND DOWNLOAD ERROR: $e\n$stack');
-      await _localDataSource.updateDownloadStatus(downloadId, 'failed');
-      _changeController.add(null);
-      controller.add(DownloadProgress(
-        downloadId: downloadId,
-        lessonId: lessonId,
-        receivedBytes: 0,
-        totalBytes: 0,
-        status: DownloadStatus.failed,
-        errorMessage: e.toString(),
-      ));
-      await DownloadNotificationHelper.showFailed(
-        downloadId: downloadId,
-        title: title,
-      );
-    } finally {
-      if (!keepTempFiles) {
-        for (final tmpPath in [
-          videoTempPath,
-          ?audioTempPath,
-        ]) {
-          try {
-            final f = File(tmpPath);
-            if (await f.exists()) await f.delete();
-          } catch (_) {
-            // Best-effort cleanup.
-          }
-        }
-      }
-      await _closeProgressController(downloadId, controller);
-    }
-  }
-
-  Future<void> _closeProgressController(
-    String downloadId, [
-    StreamController<DownloadProgress>? controller,
-  ]) async {
-    final progressController = controller ?? _progressControllers.remove(downloadId);
-    if (progressController != null) {
-      if (!progressController.isClosed) {
-        await progressController.close();
-      }
-    }
-    _progressControllers.remove(downloadId);
-    _downloadManagerIds.remove(downloadId);
   }
 
   @override
@@ -589,14 +289,11 @@ class DownloadRepositoryImpl implements DownloadRepository {
             )
           : null;
 
-      // ── Link-refresh (0.2) ───────────────────────────────────────────────
-      // Server links have a TTL of ~6 hours.  If the stored link is older
-      // than 5 hours (1h safety margin), attempt to fetch a fresh one via
-      // the original source URL before executing the download.
-      var effectiveVideoUrl = videoUrl;
-      var effectiveAudioUrl =
-          (audioUrl == null || audioUrl.isEmpty) ? null : audioUrl;
-
+      // ── Link-refresh ─────────────────────────────────────────────────────
+      // Delegated to DownloadLinkRefresher (see ARCH-006): if the stored
+      // link is old enough to plausibly have expired, it fetches and
+      // persists a fresh one via the original source URL before we execute
+      // the download.
       final sourceUrl = (downloadData['source_url'] as String?)?.trim();
       final rawLinkValidatedAt = downloadData['link_validated_at'];
       final linkValidatedAt = rawLinkValidatedAt != null
@@ -605,37 +302,17 @@ class DownloadRepositoryImpl implements DownloadRepository {
             )
           : null;
 
-      final linkStale = linkValidatedAt == null ||
-          DateTime.now().difference(linkValidatedAt) >
-              const Duration(hours: 5);
-
-      if (linkStale && sourceUrl != null && sourceUrl.isNotEmpty) {
-        try {
-          final freshInfo = await _remoteDataSource.getVideoInfo(sourceUrl);
-          final freshSelected = _selectFormats(freshInfo, quality);
-          effectiveVideoUrl = freshSelected.videoFormat.videoUrl;
-          effectiveAudioUrl = freshSelected.audioTrack?.url;
-          await _localDataSource.updateDownload(downloadId, {
-            'video_url': effectiveVideoUrl,
-            'audio_url': ?effectiveAudioUrl,
-            'link_validated_at': DateTime.now().millisecondsSinceEpoch,
-          });
-          if (kDebugMode) {
-            debugPrint(
-              '🔄 resumeDownload: refreshed stale server link for $downloadId',
-            );
-          }
-        } catch (e) {
-          // Refresh failed — proceed with the stored (possibly stale) URL.
-          // If the link is truly expired the subsequent Dio request will
-          // surface a 401/403 instead of failing silently.
-          if (kDebugMode) {
-            debugPrint(
-              '⚠️ resumeDownload: link refresh failed, using stored URL: $e',
-            );
-          }
-        }
-      }
+      final refreshResult = await _linkRefresher.refreshIfStale(
+        downloadId: downloadId,
+        currentVideoUrl: videoUrl,
+        currentAudioUrl:
+            (audioUrl == null || audioUrl.isEmpty) ? null : audioUrl,
+        sourceUrl: sourceUrl,
+        linkValidatedAt: linkValidatedAt,
+        quality: quality,
+      );
+      final effectiveVideoUrl = refreshResult.videoUrl;
+      final effectiveAudioUrl = refreshResult.audioUrl;
       // ────────────────────────────────────────────────────────────────────
 
       final existingKey = await _encryptionService.retrieveKey(downloadId);
@@ -658,7 +335,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _cancelledDownloads.remove(downloadId);
 
       unawaited(
-        _executeDownload(
+        _executionService.execute(
           downloadId: downloadId,
           title: title,
           videoUrl: effectiveVideoUrl,
@@ -729,7 +406,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _changeController.add(null);
       
       try {
-        await _closeProgressController(downloadId);
+        await _executionService.closeProgressController(downloadId);
       } catch (e) {
         debugPrint('⚠️ Error closing progress controller: $e');
       }
@@ -798,7 +475,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _changeController.add(null);
 
       try {
-        await _closeProgressController(downloadId);
+        await _executionService.closeProgressController(downloadId);
       } catch (e) {
         debugPrint('⚠️ Error closing progress controller: $e');
       }
@@ -896,21 +573,3 @@ class DownloadRepositoryImpl implements DownloadRepository {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Helper: result of format selection
-// ---------------------------------------------------------------------------
-
-/// Holds the video format selected for download and, when the format requires
-/// a separate audio stream, the corresponding [AudioTrack].
-///
-/// When [audioTrack] is null the download is a single muxed file.
-/// When [audioTrack] is non-null the download runs two parallel streams.
-class _SelectedFormats {
-  final VideoFormat videoFormat;
-  final AudioTrack? audioTrack;
-
-  const _SelectedFormats(this.videoFormat, {this.audioTrack});
-
-  /// True when a separate audio file must be downloaded alongside the video.
-  bool get isDualTrack => audioTrack != null;
-}

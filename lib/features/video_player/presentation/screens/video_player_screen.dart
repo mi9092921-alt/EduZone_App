@@ -8,20 +8,33 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/cross_feature/courses_shared.dart';
-import '../../../courses/domain/entities/course.dart';
-import '../../../courses/domain/entities/lesson.dart';
-import '../../../courses/domain/entities/section.dart';
 import '../providers/video_provider.dart';
 import '../widgets/lessons_sidebar.dart';
+import 'video_player/lesson_lookup.dart';
+import 'video_player/player_switch_sheet.dart';
+import 'video_player/player_type.dart';
+import 'video_player/video_lesson_paywall.dart';
+import 'video_player/video_player_skeleton.dart';
+
+export 'video_player/player_type.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // مشغّل الدروس الموحّد (Universal Video Player Screen)
 //
 // يستقبل [playerBuilder] لبناء المشغّل المناسب (YouTube أو Proxy)،
 // مما يوحد واجهة المستخدم ومنطق التحكم بالكامل.
+//
+// هذا الملف كان أصلاً 566 سطرًا بملف واحد. بعد التقسيم:
+//   - video_player_screen.dart              → هذا الملف: التحكّم بالحالة + build()
+//   - video_player/player_type.dart          → enum PlayerType (يُصدَّر من هنا
+//                                               عبر export فلا تحتاج شاشات
+//                                               أخرى تعديل استيرادها)
+//   - video_player/lesson_lookup.dart        → findLessonById() — منطق صرف
+//                                               قابل للاختبار بدون widgets
+//   - video_player/video_player_skeleton.dart → حالة التحميل
+//   - video_player/video_lesson_paywall.dart  → شاشة "يتطلب تسجيل"
+//   - video_player/player_switch_sheet.dart   → زر ونافذة تبديل المشغّل
 // ─────────────────────────────────────────────────────────────────────────────
-
-enum PlayerType { youtube, proxy, modern, player4 }
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String courseId;
@@ -112,7 +125,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
     return courseAsync.when(
       data: (course) {
-        final currentLesson = _findLesson(course, widget.lessonId);
+        final currentLesson = findLessonById(course, widget.lessonId);
 
         if (currentLesson == null) {
           return AppScreen(
@@ -131,7 +144,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         return lessonContentAsync.when(
           data: (content) {
             if (!content.hasAccess) {
-              return _buildPaywall(context, currentLesson, ds);
+              return VideoLessonPaywall(lesson: currentLesson);
             }
 
             final playerWidget = KeyedSubtree(
@@ -161,7 +174,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                 elevation: 0,
                 title: Text(currentLesson.title, style: AppTextStyles.h3),
                 actions: [
-                  _PlayerSwitchButton(
+                  PlayerSwitchButton(
                     courseId: widget.courseId,
                     lessonId: widget.lessonId,
                     playerType: widget.playerType,
@@ -261,8 +274,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
               ),
             );
           },
-          loading: () =>
-              AppSkeleton(child: _buildSkeletonLayout(context)),
+          loading: () => const AppSkeleton(child: VideoPlayerSkeleton()),
           error: (e, _) => AppScreen(
             child: Center(
               child: Text(AppLocalizations.of(context)!.errorLoading(e.toString())),
@@ -270,295 +282,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
           ),
         );
       },
-      loading: () =>
-          AppSkeleton(child: _buildSkeletonLayout(context)),
+      loading: () => const AppSkeleton(child: VideoPlayerSkeleton()),
       error: (e, _) => AppScreen(
         child: Center(
           child: Text(AppLocalizations.of(context)!.errorLoading(e.toString())),
-        ),
-      ),
-    );
-  }
-
-  Lesson? _findLesson(Course course, String lessonId) {
-    final sections = course.sections ?? const <Section>[];
-
-    for (final section in sections) {
-      final lessons = section.lessons ?? const <Lesson>[];
-
-      for (final lesson in lessons) {
-        if (lesson.id == lessonId) return lesson;
-      }
-    }
-    return null;
-  }
-
-  Widget _buildPaywall(
-    BuildContext context,
-    Lesson lesson,
-    DesignSystemColors ds,
-  ) {
-    return AppScreen(
-      appBar: AppBar(
-        elevation: 0,
-        title: Text(lesson.title, style: AppTextStyles.h3),
-      ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                decoration: BoxDecoration(
-                  color: ds.primary.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(AppIcons.lock, size: 48, color: ds.primary),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              Text(
-                AppLocalizations.of(context)!.enrollmentRequired,
-                style: AppTextStyles.h2.copyWith(color: ds.textPrimary),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                AppLocalizations.of(context)!.enrollToAccessLesson,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: ds.textSecondary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppSpacing.xl2),
-              ElevatedButton(
-                onPressed: () => context.pop(),
-                child: Text(
-                  AppLocalizations.of(context)!.viewEnrollmentOptions,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSkeletonLayout(BuildContext context) {
-    return AppScreen(
-      scrollable: false,
-      appBar: AppBar(
-        elevation: 0,
-        title: Container(width: 150, height: 20, color: Colors.white),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const AspectRatio(
-            aspectRatio: 16 / 9,
-            child: ColoredBox(color: Colors.black),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Container(height: 24, color: Colors.white),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: ListView.builder(
-              itemCount: 5,
-              itemBuilder: (_, i) => ListTile(
-                leading: Container(width: 40, height: 40, color: Colors.white),
-                title: Container(height: 16, color: Colors.white),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PlayerSwitchButton extends StatelessWidget {
-  final String courseId;
-  final String lessonId;
-  final PlayerType playerType;
-
-  const _PlayerSwitchButton({
-    required this.courseId,
-    required this.lessonId,
-    required this.playerType,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AppIconButton(
-      icon: playerType == PlayerType.proxy
-          ? Icons.shield_rounded
-          : playerType == PlayerType.modern
-          ? Icons.auto_awesome_rounded
-          : playerType == PlayerType.player4
-          ? Icons.play_circle_outline_rounded
-          : Icons.smart_display_rounded,
-      semanticLabel: AppLocalizations.of(context)!.videoSwitchPlayer,
-      onPressed: () => _showSwitchSheet(context),
-    );
-  }
-
-  void _showSwitchSheet(BuildContext context) {
-    final ds = AppColors.of(context);
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: ds.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsetsDirectional.fromSTEB(
-          AppSpacing.xl,
-          AppSpacing.lg,
-          AppSpacing.xl,
-          AppSpacing.xl2,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              AppLocalizations.of(context)!.chooseVideoPlayer,
-              style: AppTextStyles.h3,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            _PlayerOption(
-              icon: Icons.smart_display_rounded,
-              title: AppLocalizations.of(context)!.youtubePlayer,
-              subtitle: AppLocalizations.of(context)!.youtubePlayerSubtitle,
-              isActive: playerType == PlayerType.youtube,
-              onTap: () {
-                context.pop();
-                if (playerType != PlayerType.youtube) {
-                  context.pushReplacement(
-                    '${AppRoutes.courses}/$courseId/lesson/$lessonId',
-                  );
-                }
-              },
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _PlayerOption(
-              icon: Icons.shield_rounded,
-              title: AppLocalizations.of(context)!.proxyPlayer,
-              subtitle: AppLocalizations.of(context)!.proxyPlayerSubtitle,
-              isActive: playerType == PlayerType.proxy,
-              onTap: () {
-                context.pop();
-                if (playerType != PlayerType.proxy) {
-                  context.pushReplacement(
-                    '${AppRoutes.courses}/$courseId/lesson2/$lessonId',
-                  );
-                }
-              },
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _PlayerOption(
-              icon: Icons.auto_awesome_rounded,
-              title: AppLocalizations.of(context)!.modernPlayer,
-              subtitle: AppLocalizations.of(context)!.modernPlayerSubtitle,
-              isActive: playerType == PlayerType.modern,
-              onTap: () {
-                context.pop();
-                if (playerType != PlayerType.modern) {
-                  context.pushReplacement(
-                    '${AppRoutes.courses}/$courseId/lesson3/$lessonId',
-                  );
-                }
-              },
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _PlayerOption(
-              icon: Icons.play_circle_outline_rounded,
-              title: AppLocalizations.of(context)!.directPlayer,
-              subtitle: AppLocalizations.of(context)!.directPlayerSubtitle,
-              isActive: playerType == PlayerType.player4,
-              onTap: () {
-                context.pop();
-                if (playerType != PlayerType.player4) {
-                  context.pushReplacement(
-                    '${AppRoutes.courses}/$courseId/lesson4/$lessonId',
-                  );
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PlayerOption extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _PlayerOption({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.isActive,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = AppColors.of(context);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        decoration: BoxDecoration(
-          color: isActive
-              ? AppColors.primary.withValues(alpha: 0.1)
-              : ds.surface2,
-          borderRadius: AppRadius.mdBorder,
-          border: Border.all(
-            color: isActive
-                ? AppColors.primary.withValues(alpha: 0.5)
-                : ds.border,
-            width: isActive ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: isActive ? AppColors.primary : ds.textSecondary),
-            const SizedBox(width: AppSpacing.lg),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: ds.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (isActive)
-              const Icon(
-                Icons.check_circle_rounded,
-                color: AppColors.primary,
-                size: 20,
-              ),
-          ],
         ),
       ),
     );

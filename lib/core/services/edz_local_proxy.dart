@@ -32,6 +32,22 @@ class EdzLocalProxy {
   final LinkedHashMap<int, Uint8List> _chunkCache =
       LinkedHashMap<int, Uint8List>();
 
+  // How many chunks ahead of the one currently being written to the socket
+  // get their decryption kicked off early (see `_handleRequest`'s main
+  // loop). Decryption (isolate spawn + AES-GCM) and writing the previous
+  // chunk to the socket (network I/O) use different resources, so starting
+  // the next few decrypts while the current chunk is still being flushed
+  // overlaps that latency instead of paying it serially, chunk after chunk.
+  static const int _prefetchWindow = 2;
+
+  // In-flight decrypt futures, keyed by chunk index. Lets a prefetch call
+  // and the main loop's later request for the same chunk share one decrypt
+  // instead of racing to do it twice, and lets multiple prefetched chunks
+  // decrypt concurrently (each call opens its own file handle — see
+  // `_decryptChunkUncached` — so there's no shared-cursor hazard between
+  // them).
+  final Map<int, Future<Uint8List>> _inFlightDecrypts = {};
+
   EdzLocalProxy();
 
   /// Starts the proxy and returns the full URI to stream from.
@@ -89,68 +105,97 @@ class EdzLocalProxy {
     _index = null;
     _contentType = 'video/mp4';
     _chunkCache.clear();
+    _inFlightDecrypts.clear();
     if (s != null) {
       await s.close(force: true);
     }
   }
 
   /// Returns the decrypted plaintext for chunk [chunkIndex], using the cache
-  /// when available. Cache is a simple LRU: on hit, the entry is moved to
-  /// the end (most-recently-used); on insert past [_maxCachedChunks], the
-  /// oldest entry is evicted.
+  /// when available, and de-duplicating against any decrypt already in
+  /// flight for the same index (see [_inFlightDecrypts] — this is what
+  /// makes it safe for the prefetch loop in [_handleRequest] to kick off a
+  /// chunk's decryption early and have the main loop later just await the
+  /// same result instead of redoing the work).
   ///
-  /// Decryption runs inside [Isolate.run] so AES-256-GCM never blocks the
-  /// main isolate — this is the fix for the "slow playback / UI stall on
-  /// seek" bug where synchronous decryption was freezing the event loop.
-  Future<Uint8List> _decryptChunkCached(
-    RandomAccessFile raf,
-    int chunkIndex,
-    ChunkEntry chunk,
-  ) async {
+  /// Cache is a simple LRU: on hit, the entry is moved to the end
+  /// (most-recently-used); on insert past [_maxCachedChunks], the oldest
+  /// entry is evicted.
+  Future<Uint8List> _decryptChunkCached(int chunkIndex, ChunkEntry chunk) {
     final cached = _chunkCache.remove(chunkIndex);
     if (cached != null) {
       _chunkCache[chunkIndex] = cached; // re-insert = mark as most-recent
-      return cached;
+      return Future.value(cached);
     }
 
-    await raf.setPosition(chunk.encryptedOffset);
-    final ivBytes = await raf.read(EncryptionService.ivLength);
-    if (ivBytes.length < EncryptionService.ivLength) {
-      throw ArgumentError('Truncated IV');
-    }
-    final lenBytes = await raf.read(4);
-    if (lenBytes.length < 4) throw ArgumentError('Truncated length');
-    final length =
-        ByteData.sublistView(Uint8List.fromList(lenBytes)).getInt32(0);
-    final cipherBytes = await raf.read(length);
-    if (cipherBytes.length < length) {
-      throw ArgumentError('Truncated ciphertext');
-    }
+    final inFlight = _inFlightDecrypts[chunkIndex];
+    if (inFlight != null) return inFlight;
 
-    // Capture values needed inside the isolate before crossing the boundary.
-    final keyBase64 = _keyBase64!;
-    final ivSnapshot = Uint8List.fromList(ivBytes);
-    final cipherSnapshot = Uint8List.fromList(cipherBytes);
-
-    // Run AES-256-GCM decryption off the main isolate so it never blocks
-    // the UI or the HTTP event loop. Each call spawns a short-lived isolate;
-    // the LRU cache above keeps this from being called more than necessary.
-    final decrypted = await Isolate.run(() {
-      final key = Key.fromBase64(keyBase64);
-      final encrypter = Encrypter(AES(key, mode: AESMode.gcm));
-      return Uint8List.fromList(
-        encrypter.decryptBytes(
-          Encrypted(cipherSnapshot),
-          iv: IV(ivSnapshot),
-        ),
-      );
+    final future = _decryptChunkUncached(chunkIndex, chunk).then((decrypted) {
+      if (_chunkCache.length >= _maxCachedChunks) {
+        _chunkCache.remove(_chunkCache.keys.first); // evict oldest
+      }
+      _chunkCache[chunkIndex] = decrypted;
+      return decrypted;
+    }).whenComplete(() {
+      _inFlightDecrypts.remove(chunkIndex);
     });
+    _inFlightDecrypts[chunkIndex] = future;
+    return future;
+  }
 
-    if (_chunkCache.length >= _maxCachedChunks) {
-      _chunkCache.remove(_chunkCache.keys.first); // evict oldest
+  /// Reads and decrypts chunk [chunkIndex] from disk, bypassing the cache.
+  ///
+  /// Opens its own [RandomAccessFile] handle rather than sharing one across
+  /// calls: with prefetching, several chunks can now be mid-decrypt at the
+  /// same time (main loop's current chunk + [_prefetchWindow] chunks ahead),
+  /// and a shared handle's `setPosition` cursor would race between them —
+  /// one call's seek could land in the middle of another's `read`. A fresh
+  /// handle per call sidesteps that entirely; local on-device storage makes
+  /// the extra opens cheap relative to the AES-GCM decrypt itself.
+  ///
+  /// Decryption runs inside [Isolate.run] so it never blocks the main
+  /// isolate — this is the fix for the original "slow playback / UI stall
+  /// on seek" bug where synchronous decryption was freezing the event loop.
+  Future<Uint8List> _decryptChunkUncached(
+    int chunkIndex,
+    ChunkEntry chunk,
+  ) async {
+    final raf = await _encryptedFile!.open();
+    try {
+      await raf.setPosition(chunk.encryptedOffset);
+      final ivBytes = await raf.read(EncryptionService.ivLength);
+      if (ivBytes.length < EncryptionService.ivLength) {
+        throw ArgumentError('Truncated IV');
+      }
+      final lenBytes = await raf.read(4);
+      if (lenBytes.length < 4) throw ArgumentError('Truncated length');
+      final length =
+          ByteData.sublistView(Uint8List.fromList(lenBytes)).getInt32(0);
+      final cipherBytes = await raf.read(length);
+      if (cipherBytes.length < length) {
+        throw ArgumentError('Truncated ciphertext');
+      }
+
+      // Capture values needed inside the isolate before crossing the
+      // boundary.
+      final keyBase64 = _keyBase64!;
+      final ivSnapshot = Uint8List.fromList(ivBytes);
+      final cipherSnapshot = Uint8List.fromList(cipherBytes);
+
+      return await Isolate.run(() {
+        final key = Key.fromBase64(keyBase64);
+        final encrypter = Encrypter(AES(key, mode: AESMode.gcm));
+        return Uint8List.fromList(
+          encrypter.decryptBytes(
+            Encrypted(cipherSnapshot),
+            iv: IV(ivSnapshot),
+          ),
+        );
+      });
+    } finally {
+      await raf.close();
     }
-    _chunkCache[chunkIndex] = decrypted;
-    return decrypted;
   }
 
   Future<void> _handleRequest(HttpRequest req) async {
@@ -256,52 +301,57 @@ class EdzLocalProxy {
       return null;
     }));
 
-    final raf = await _encryptedFile!.open();
-    try {
-      int i = first;
-      while (i < chunks.length) {
-        if (aborted) break;
+    int i = first;
+    while (i < chunks.length) {
+      if (aborted) break;
 
-        final chunk = chunks[i];
-        final chunkPlainStart = plaintextStarts[i];
-        if (chunkPlainStart > end) break;
+      final chunk = chunks[i];
+      final chunkPlainStart = plaintextStarts[i];
+      if (chunkPlainStart > end) break;
 
-        final decrypted = await _decryptChunkCached(raf, i, chunk);
-        if (aborted) break;
-
-        // Slice this chunk down to only the bytes that fall within
-        // [start, end] — the first and last overlapping chunks are usually
-        // only partially needed.
-        final chunkPlainEnd = chunkPlainStart + chunk.plaintextLength - 1;
-        final sliceStartInChunk = start > chunkPlainStart ? start - chunkPlainStart : 0;
-        final sliceEndInChunk =
-            end < chunkPlainEnd ? end - chunkPlainStart : chunk.plaintextLength - 1;
-
-        if (sliceStartInChunk <= sliceEndInChunk) {
-          try {
-            req.response.add(decrypted.sublist(sliceStartInChunk, sliceEndInChunk + 1));
-            // Push this chunk to the socket now instead of letting several
-            // chunks silently queue up. flush() also awaits actual I/O,
-            // which yields to the event loop for us — no need for an
-            // arbitrary extra delay between chunks.
-            await req.response.flush();
-          } catch (_) {
-            // Socket already gone — stop immediately rather than continuing
-            // to decrypt for a client that isn't listening anymore.
-            break;
-          }
-        }
-
-        // Yield to the event loop between chunks so a large range (e.g. a
-        // client that requests the whole file with no Range header) doesn't
-        // hog the isolate for its entire duration and freeze the UI.
-        // (flush() above already does this by awaiting real I/O, so no
-        // extra artificial delay is needed here.)
-
-        i++;
+      // Kick off decryption for the next few chunks now, before waiting on
+      // the current one. Decryption (isolate spawn + AES-GCM) and writing
+      // the previous chunk to the socket (network I/O, in the flush() call
+      // below) use different resources, so this overlaps that latency
+      // instead of paying it serially on every single chunk — the main
+      // source of any stutter right after a seek into a fresh region.
+      // `_decryptChunkCached` de-dupes against both the cache and any
+      // decrypt already in flight, so it's safe to call here speculatively
+      // even if the main loop reaches this index a moment later.
+      for (var j = i + 1; j <= i + _prefetchWindow && j < chunks.length; j++) {
+        if (plaintextStarts[j] > end) break;
+        unawaited(_decryptChunkCached(j, chunks[j]));
       }
-    } finally {
-      await raf.close();
+
+      final decrypted = await _decryptChunkCached(i, chunk);
+      if (aborted) break;
+
+      // Slice this chunk down to only the bytes that fall within
+      // [start, end] — the first and last overlapping chunks are usually
+      // only partially needed.
+      final chunkPlainEnd = chunkPlainStart + chunk.plaintextLength - 1;
+      final sliceStartInChunk = start > chunkPlainStart ? start - chunkPlainStart : 0;
+      final sliceEndInChunk =
+          end < chunkPlainEnd ? end - chunkPlainStart : chunk.plaintextLength - 1;
+
+      if (sliceStartInChunk <= sliceEndInChunk) {
+        try {
+          req.response.add(decrypted.sublist(sliceStartInChunk, sliceEndInChunk + 1));
+          // Push this chunk to the socket now instead of letting several
+          // chunks silently queue up. flush() also awaits actual I/O,
+          // which yields to the event loop for us — no need for an
+          // arbitrary extra delay between chunks. While this is in flight,
+          // the prefetch calls kicked off above are decrypting ahead on
+          // their own isolates.
+          await req.response.flush();
+        } catch (_) {
+          // Socket already gone — stop immediately rather than continuing
+          // to decrypt for a client that isn't listening anymore.
+          break;
+        }
+      }
+
+      i++;
     }
 
     if (!aborted) {

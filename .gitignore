@@ -119,7 +119,12 @@ CLAUDE.md
 ROLE.md
 Auth Security and Functional Audit Report.md
 tools/
-
+TASK.md
+SECURITY.md
+issues.md
+IMPLEMENTATION.md
+implementation_plan.md
+engineering_report.md
 
 # Golden test failure diffs (auto-generated on golden test mismatch, never commit)
 **/failures/

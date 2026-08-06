@@ -4,16 +4,13 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
-import '../../../../shared/components/course/course_meta_row.dart';
-import '../../../../shared/components/course/course_price_block.dart';
-import '../../../../shared/components/course/enroll_action_button.dart';
-import '../../../../shared/components/course/instructor_card.dart';
 import '../../../../shared/widgets/app_course_thumbnail.dart';
 import '../../../../shared/widgets/app_refresh_indicator.dart';
+import '../../../../shared/widgets/collapsing_tab_bar_delegate.dart';
 import '../../domain/entities/course.dart';
 import '../providers/courses_provider.dart';
-import '../utils/course_format_utils.dart';
-import '../widgets/course_description_section.dart';
+import '../widgets/course_about_tab_content.dart';
+import '../widgets/course_enroll_price_row.dart';
 import '../widgets/sections_accordion.dart';
 
 class CourseDetailsScreen extends ConsumerStatefulWidget {
@@ -175,8 +172,8 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
             // Tab Bar
             SliverPersistentHeader(
               pinned: true,
-              delegate: _SliverAppBarDelegate(
-                TabBar(
+              delegate: CollapsingTabBarDelegate(
+                tabBar: TabBar(
                   controller: _tabController,
                   labelColor: ds.primary,
                   unselectedLabelColor: ds.textMuted,
@@ -191,7 +188,8 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
                     Tab(text: l10n.courseCurriculumLabel),
                   ],
                 ),
-                ds.background,
+                backgroundColor: ds.background,
+                dividerColor: ds.border,
               ),
             ),
 
@@ -235,39 +233,9 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
               SliverPadding(
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    CourseMetaRow(
-                      course: course,
-                      l10n: l10n,
-                      ds: ds,
-                      duration: formatCourseDuration(course.totalDurationMinutes, l10n),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    CourseDescriptionSection(
-                      description: course.description ?? '',
-                      ds: ds,
-                      l10n: l10n,
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-
-                    if (course.learningObjectives != null && course.learningObjectives!.isNotEmpty) ...[
-                      Text(l10n.whatYouWillLearn, style: AppTextStyles.h3),
-                      const SizedBox(height: AppSpacing.md),
-                      ...course.learningObjectives!.map((obj) => _buildBulletPoint(ds, obj)),
-                      const SizedBox(height: AppSpacing.xl),
-                    ],
-
-                    if (course.prerequisites != null && course.prerequisites!.isNotEmpty) ...[
-                      Text(l10n.coursePrerequisites, style: AppTextStyles.h3),
-                      const SizedBox(height: AppSpacing.md),
-                      ...course.prerequisites!.map((req) => _buildBulletPoint(ds, req)),
-                      const SizedBox(height: AppSpacing.xl),
-                    ],
-
-                    Text(l10n.instructorLabel, style: AppTextStyles.h3),
-                    const SizedBox(height: AppSpacing.md),
-                    _buildInstructorSection(course, ds, l10n),
-                  ]),
+                  delegate: SliverChildListDelegate(
+                    buildCourseAboutTabContent(course: course, l10n: l10n, ds: ds),
+                  ),
                 ),
               ),
             ],
@@ -281,37 +249,6 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
         _buildStickyFooter(context, course, ref, l10n, ds),
       ],
     );
-  }
-
-  Widget _buildBulletPoint(DesignSystemColors ds, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.check_circle_rounded,
-            color: AppColors.primary,
-            size: 20,
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              text,
-              style: AppTextStyles.bodyMedium.copyWith(color: ds.textSecondary),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInstructorSection(
-    Course course,
-    DesignSystemColors ds,
-    AppLocalizations l10n,
-  ) {
-    return InstructorCard(course: course, ds: ds, l10n: l10n);
   }
 
   Widget _buildStickyFooter(
@@ -461,51 +398,6 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
     AppLocalizations l10n,
     DesignSystemColors ds,
   ) {
-    return Row(
-      children: [
-        Expanded(
-          child: CoursePriceBlock(course: course, l10n: l10n, ds: ds),
-        ),
-        const SizedBox(width: AppSpacing.md),
-        Expanded(
-          flex: 2,
-          child: EnrollActionButton(l10n: l10n),
-        ),
-      ],
-    );
-  }
-}
-
-class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
-  _SliverAppBarDelegate(this._tabBar, this.backgroundColor);
-
-  final TabBar _tabBar;
-  final Color backgroundColor;
-
-  @override
-  double get minExtent => _tabBar.preferredSize.height;
-  @override
-  double get maxExtent => _tabBar.preferredSize.height;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return ColoredBox(
-      color: backgroundColor,
-      child: Column(
-        children: [
-          _tabBar,
-          Divider(height: 1, color: AppColors.of(context).border),
-        ],
-      ),
-    );
-  }
-
-  @override
-  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
-    return false;
+    return CourseEnrollPriceRow(course: course, l10n: l10n, ds: ds);
   }
 }
