@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/error/exceptions.dart';
@@ -7,8 +6,25 @@ import '../../domain/entities/course.dart';
 import '../../domain/entities/course_enrollment.dart';
 import '../../domain/entities/course_progress_summary.dart';
 import '../../domain/entities/lesson_content.dart';
+import 'courses_json_mapper.dart';
+import 'courses_queries.dart';
 import 'courses_remote_ds.dart';
 import 'lesson_access_error_classifier.dart';
+
+// ─────────────────────────────────────────────────────────────────────────
+// كان هذا الملف أصلاً 551 سطرًا. الجزء الأكبر من الحجم كان منطق تحويل JSON
+// (تسطيح بيانات المعلّم، إعادة حساب عدد الدروس، ترتيب الأهداف/المتطلبات
+// السابقة، فلترة تقدّم المستخدم) وكان **مكرراً حرفياً** بين 2-3 methods.
+// استخرجته إلى courses_json_mapper.dart:
+//   - CoursesJsonMapper.applyInstructorFields()          (مكرر 3 مرات → 1)
+//   - CoursesJsonMapper.backfillTotalLessons()            (مكرر مرتين → 1)
+//   - CoursesJsonMapper.flattenLearningObjectives()
+//   - CoursesJsonMapper.flattenPrerequisites()
+//   - CoursesJsonMapper.filterUserProgressForCurrentUser()
+// كل هذه الدوال صرفة (Map في → Map معدَّل)، بلا أي اعتماد على Supabase،
+// وبالتالي قابلة للاختبار مباشرة بدون mocking شبكة على الإطلاق — وهو ما لم
+// يكن ممكناً قبل الفصل (كان لازم تمر عبر كامل هذا الـ datasource).
+// ─────────────────────────────────────────────────────────────────────────
 
 class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
   @override
@@ -23,13 +39,7 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
             *,
             course:courses!course_id(
               *,
-              sections(
-                id,
-                course_id,
-                tenant_id,
-                title,
-                lessons(id, section_id, course_id, title, is_preview, duration_sec)
-              )
+              ${CoursesQueries.lightSectionsWithLessons}
             )
           ''')
           .eq('status', 'active')
@@ -68,7 +78,7 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
           .from('courses')
           .select('''
             *,
-            teacher:users!teacher_id(first_name, last_name, avatar_url),
+            ${CoursesQueries.teacherJoin},
             learning_objectives:course_learning_objectives(id, objective, order_index),
             prerequisites:course_prerequisites!course_prerequisites_course_tenant_fkey(
               prerequisite_course_id,
@@ -120,62 +130,16 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
       final fullData = Map<String, dynamic>.from(courseResponse);
 
       // Defensive client-side filter to keep only user_progress for current user
-      if (fullData['sections'] is List) {
-        for (final section in fullData['sections'] as List) {
-          if (section is Map && section['lessons'] is List) {
-            for (final lesson in section['lessons'] as List) {
-              if (lesson is Map && lesson['user_progress'] is List) {
-                final rawProgressList = lesson['user_progress'] as List;
-                if (userId == null) {
-                  lesson['user_progress'] = [];
-                } else {
-                  lesson['user_progress'] = rawProgressList
-                      .where((p) => p is Map && p['user_id'] == userId)
-                      .toList();
-                }
-              }
-            }
-          }
-        }
-      }
+      CoursesJsonMapper.filterUserProgressForCurrentUser(fullData, userId);
 
       // Map joined teacher data to flat instructor fields
-      final teacher = courseResponse['teacher'] as Map?;
-      if (teacher != null) {
-        final firstName = teacher['first_name'] as String? ?? '';
-        final lastName = teacher['last_name'] as String? ?? '';
-        fullData['instructor_name'] = '$firstName $lastName'.trim();
-        fullData['instructor_avatar'] = teacher['avatar_url'];
-      }
+      CoursesJsonMapper.applyInstructorFields(
+        target: fullData,
+        teacherJson: courseResponse['teacher'] as Map?,
+      );
 
-      // Flatten & sort learning_objectives: [{objective: "...", order_index: 0}] -> ["..."]
-      final rawObjectives = fullData['learning_objectives'];
-      if (rawObjectives is List) {
-        final sortedObjs = List<Map<String, dynamic>>.from(
-          rawObjectives.whereType<Map>().map((e) => Map<String, dynamic>.from(e)),
-        )..sort((a, b) => ((a['order_index'] as int? ?? 0)).compareTo(b['order_index'] as int? ?? 0));
-
-        fullData['learning_objectives'] = sortedObjs
-            .map((o) => o['objective'] as String? ?? '')
-            .where((s) => s.isNotEmpty)
-            .toList();
-      }
-
-      // Flatten prerequisites: [{prerequisite_course_id: "...", prerequisite_course: {title: "..."}}] -> ["Title"]
-      final rawPrereqs = fullData['prerequisites'];
-      if (rawPrereqs is List) {
-        fullData['prerequisites'] = rawPrereqs
-            .whereType<Map>()
-            .map((p) {
-              final prereqCourse = p['prerequisite_course'] as Map?;
-              if (prereqCourse != null && prereqCourse['title'] is String) {
-                return prereqCourse['title'] as String;
-              }
-              return p['prerequisite_course_id'] as String? ?? '';
-            })
-            .where((s) => s.isNotEmpty)
-            .toList();
-      }
+      CoursesJsonMapper.flattenLearningObjectives(fullData);
+      CoursesJsonMapper.flattenPrerequisites(fullData);
 
       return Course.fromJson(fullData);
     } catch (e) {
@@ -293,14 +257,8 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
           .from('courses')
           .select('''
             *,
-            teacher:users!teacher_id(first_name, last_name, avatar_url),
-            sections(
-              id,
-              course_id,
-              tenant_id,
-              title,
-              lessons(id, section_id, course_id, title, is_preview, duration_sec)
-            )
+            ${CoursesQueries.teacherJoin},
+            ${CoursesQueries.lightSectionsWithLessons}
           ''')
           .eq('status', 'published')
           .eq('is_discoverable', true);
@@ -321,41 +279,15 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
         final rawJson = json as Map<String, dynamic>;
         final fullData = Map<String, dynamic>.from(rawJson);
 
-        // ── Instructor name ──────────────────────────────────────────────
-        final teacher = rawJson['teacher'] as Map?;
-        if (teacher != null) {
-          final firstName = teacher['first_name'] as String? ?? '';
-          final lastName = teacher['last_name'] as String? ?? '';
-          fullData['instructor_name'] = '$firstName $lastName'.trim();
-          fullData['instructor_avatar'] = teacher['avatar_url'];
-        }
-
-        // ── Lesson count backfill ────────────────────────────────────────
-        // courses.total_lessons is a stored counter (NOT NULL DEFAULT 0).
-        // Courses seeded before the patch-16 trigger still carry 0 instead
-        // of the real count. Because 0 != null, the ?? fallback in the
-        // presenter never fires. We recompute from the already-joined
-        // sections → lessons payload at zero extra network cost.
-        final storedTotal = (rawJson['total_lessons'] as num?)?.toInt() ?? 0;
-        if (storedTotal == 0) {
-          final sections = rawJson['sections'] as List? ?? const [];
-          final computed = sections.fold<int>(0, (acc, s) {
-            final lessons = (s as Map)['lessons'] as List? ?? const [];
-            return acc + lessons.length;
-          });
-          fullData['total_lessons'] = computed;
-        }
-
-        if (kDebugMode) {
-          final id = rawJson['id'];
-          final title = rawJson['title'];
-          final stored = (rawJson['total_lessons'] as num?)?.toInt() ?? 0;
-          final inMap = fullData['total_lessons'];
-          debugPrint(
-            '[Discover] $title ($id) '
-            'stored=$stored → injected=$inMap',
-          );
-        }
+        CoursesJsonMapper.applyInstructorFields(
+          target: fullData,
+          teacherJson: rawJson['teacher'] as Map?,
+        );
+        CoursesJsonMapper.backfillTotalLessons(
+          rawJson: rawJson,
+          target: fullData,
+          debugLog: true,
+        );
 
         return Course.fromJson(fullData);
       }).toList();
@@ -504,14 +436,8 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
           .from('courses')
           .select('''
             *,
-            teacher:users!teacher_id(first_name, last_name, avatar_url),
-            sections(
-              id,
-              course_id,
-              tenant_id,
-              title,
-              lessons(id, section_id, course_id, title, is_preview, duration_sec)
-            )
+            ${CoursesQueries.teacherJoin},
+            ${CoursesQueries.lightSectionsWithLessons}
           ''')
           .inFilter('id', ids)
           .eq('status', 'published');
@@ -520,25 +446,14 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
         final rawJson = json as Map<String, dynamic>;
         final fullData = Map<String, dynamic>.from(rawJson);
 
-        // ── Instructor name ──────────────────────────────────────────────
-        final teacher = rawJson['teacher'] as Map?;
-        if (teacher != null) {
-          final firstName = teacher['first_name'] as String? ?? '';
-          final lastName = teacher['last_name'] as String? ?? '';
-          fullData['instructor_name'] = '$firstName $lastName'.trim();
-          fullData['instructor_avatar'] = teacher['avatar_url'];
-        }
-
-        // ── Lesson count backfill (same logic as getPublicCourses) ───────
-        final storedTotal = (rawJson['total_lessons'] as num?)?.toInt() ?? 0;
-        if (storedTotal == 0) {
-          final sections = rawJson['sections'] as List? ?? const [];
-          final computed = sections.fold<int>(0, (acc, s) {
-            final lessons = (s as Map)['lessons'] as List? ?? const [];
-            return acc + lessons.length;
-          });
-          fullData['total_lessons'] = computed;
-        }
+        CoursesJsonMapper.applyInstructorFields(
+          target: fullData,
+          teacherJson: rawJson['teacher'] as Map?,
+        );
+        CoursesJsonMapper.backfillTotalLessons(
+          rawJson: rawJson,
+          target: fullData,
+        );
 
         return Course.fromJson(fullData);
       }).toList();
