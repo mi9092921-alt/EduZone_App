@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/supabase_client.dart';
+import '../../domain/entities/lesson_progress_sync_item.dart';
 
 /// Remote data source for video progress operations.
 ///
@@ -19,54 +20,74 @@ class VideoPlayerRemoteDataSource {
     required double progressPct,
     int? watchTimeSec,
   }) async {
+    return syncProgressBatch([
+      LessonProgressSyncItem(
+        courseId: courseId,
+        lessonId: lessonId,
+        completed: completed,
+        progressPct: progressPct,
+        watchTimeSec: watchTimeSec,
+      ),
+    ]);
+  }
+
+  /// Upserts multiple progress rows in one PostgREST request.
+  Future<void> syncProgressBatch(List<LessonProgressSyncItem> items) async {
+    if (items.isEmpty) return;
+
     try {
       final userId = _client.auth.currentUser?.id;
       if (userId == null) throw const ServerException('User not authenticated'); // check-ignore
 
-      var tenantId = _client.auth.currentUser?.appMetadata['tenant_id'] ??
-          _client.auth.currentUser?.userMetadata?['tenant_id'];
-      if (tenantId == null) {
-        final courseData = await _client
-            .from('courses')
-            .select('tenant_id')
-            .eq('id', courseId)
-            .single();
-        tenantId = courseData['tenant_id'] as String?;
-      }
-      if (tenantId == null) {
-        throw const ServerException(
-          'Could not determine tenant_id for progress update', // check-ignore
-        );
-      }
+      final tenantId = await _resolveTenantId(items);
+      final now = DateTime.timestamp().toIso8601String();
+      final rows = items
+          .map(
+            (item) => {
+              'user_id': userId,
+              'course_id': item.courseId,
+              'lesson_id': item.lessonId,
+              'tenant_id': tenantId,
+              'completed': item.completed,
+              'progress_pct': item.progressPct,
+              if (item.completed) 'completed_at': now,
+              if (item.watchTimeSec != null) 'watch_time_sec': item.watchTimeSec,
+              'last_watched': now,
+            },
+          )
+          .toList(growable: false);
 
-      await _client.from('user_progress').upsert({
-        'user_id': userId,
-        'course_id': courseId,
-        'lesson_id': lessonId,
-        'tenant_id': tenantId,
-        'completed': completed,
-        'progress_pct': progressPct,
-        if (completed) 'completed_at': DateTime.timestamp().toIso8601String(),
-        'watch_time_sec': ?watchTimeSec,
-        'last_watched': DateTime.timestamp().toIso8601String(),
-      }, onConflict: 'user_id,course_id,lesson_id');
+      await _client.from('user_progress').upsert(
+            rows,
+            onConflict: 'user_id,course_id,lesson_id',
+          );
 
-      // Log activity
-      await _client.rpc('log_activity_async', params: {
-        'p_user_id': userId,
-        'p_type': completed ? 'lesson_completed' : 'lesson_progress',
-        'p_details': {
-          'course_id': courseId,
-          'lesson_id': lessonId,
-          'progress_pct': progressPct,
-        },
-      });
     } on PostgrestException catch (e) {
       throw ServerException(e.message);
     } catch (e) {
       if (e is ServerException) rethrow;
       throw ServerException(e.toString());
     }
+  }
+
+  Future<dynamic> _resolveTenantId(List<LessonProgressSyncItem> items) async {
+    final jwtTenantId = _client.auth.currentUser?.appMetadata['tenant_id'] ??
+        _client.auth.currentUser?.userMetadata?['tenant_id'];
+    if (jwtTenantId != null) return jwtTenantId;
+
+    final courseData = await _client
+        .from('courses')
+        .select('tenant_id')
+        .eq('id', items.first.courseId)
+        .single();
+    final tenantId = courseData['tenant_id'];
+    if (tenantId == null) {
+      throw const ServerException(
+        'Could not determine tenant_id for progress update', // check-ignore
+      );
+    }
+
+    return tenantId;
   }
 
   /// Logs an activity event (best-effort, never throws).

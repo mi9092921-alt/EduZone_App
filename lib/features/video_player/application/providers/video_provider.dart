@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../data/datasources/video_player_remote_ds.dart';
 import '../../data/repositories/video_player_repo_impl.dart';
+import '../../domain/entities/lesson_progress_sync_item.dart';
 import '../../domain/repositories/video_player_repository.dart';
 import '../../domain/usecases/sync_lesson_progress.dart';
+import '../services/lesson_progress_sync_engine.dart';
 
 part 'video_provider.g.dart';
 
@@ -24,6 +27,14 @@ VideoPlayerRepository videoPlayerRepository(Ref ref) {
 SyncLessonProgress syncLessonProgress(Ref ref) {
   return SyncLessonProgress(ref.watch(videoPlayerRepositoryProvider));
 }
+
+final lessonProgressSyncEngineProvider = Provider<LessonProgressSyncEngine>((ref) {
+  final engine = LessonProgressSyncEngine(
+    syncLessonProgress: ref.watch(syncLessonProgressProvider),
+  );
+  ref.onDispose(engine.dispose);
+  return engine;
+});
 
 // ─── Video Progress State ───────────────────────────────────────
 
@@ -73,8 +84,8 @@ class VideoProgress extends _$VideoProgress {
   int _lastWatchTimeSec = 0;
   double _lastProgressPct = 0.0;
 
-  late final SyncLessonProgress _syncUsecase;
   late final VideoPlayerRepository _repo;
+  late final LessonProgressSyncEngine _syncEngine;
 
   @override
   VideoState build(String courseId, String lessonId) {
@@ -85,15 +96,15 @@ class VideoProgress extends _$VideoProgress {
     // Resolve dependencies once, while ref is still valid. These are plain
     // object references from here on — safe to use even after this
     // provider itself has been disposed.
-    _syncUsecase = ref.read(syncLessonProgressProvider);
     _repo = ref.read(videoPlayerRepositoryProvider);
+    _syncEngine = ref.read(lessonProgressSyncEngineProvider);
 
     ref.onDispose(() {
       _syncTimer?.cancel();
       // Final sync on dispose if progress was made. Safe: _syncToDb no
       // longer touches ref or state.
       if (_lastWatchTimeSec > 0) {
-        _syncToDb(courseId, lessonId);
+        _queueSync(courseId, lessonId, flushNow: true);
       }
     });
 
@@ -125,7 +136,7 @@ class VideoProgress extends _$VideoProgress {
     if (_markedComplete && !wasCompleted) {
       // Force immediate sync on completion
       _syncTimer?.cancel();
-      _syncToDb(courseId, lessonId);
+      _queueSync(courseId, lessonId, flushNow: true);
       _logCompletion(courseId, lessonId);
     } else {
       _scheduleDebouncedSync(courseId, lessonId);
@@ -138,7 +149,7 @@ class VideoProgress extends _$VideoProgress {
       _lastProgressPct = 100.0;
       state = state.copyWith(isCompleted: true);
       _syncTimer?.cancel();
-      _syncToDb(courseId, lessonId);
+      _queueSync(courseId, lessonId, flushNow: true);
       _logCompletion(courseId, lessonId);
     }
   }
@@ -146,18 +157,25 @@ class VideoProgress extends _$VideoProgress {
   void _scheduleDebouncedSync(String courseId, String lessonId) {
     _syncTimer?.cancel();
     _syncTimer = Timer(const Duration(seconds: 10), () {
-      _syncToDb(courseId, lessonId);
+      _queueSync(courseId, lessonId, flushNow: true);
     });
   }
 
   /// Does NOT use `ref` or `state` — safe to call from onDispose or after disposal.
-  Future<void> _syncToDb(String courseId, String lessonId) async {
-    await _syncUsecase(
-      courseId: courseId,
-      lessonId: lessonId,
-      completed: _markedComplete,
-      progressPct: _lastProgressPct,
-      watchTimeSec: _lastWatchTimeSec,
+  void _queueSync(
+    String courseId,
+    String lessonId, {
+    bool flushNow = false,
+  }) {
+    _syncEngine.enqueue(
+      LessonProgressSyncItem(
+        courseId: courseId,
+        lessonId: lessonId,
+        completed: _markedComplete,
+        progressPct: _lastProgressPct,
+        watchTimeSec: _lastWatchTimeSec,
+      ),
+      flushNow: flushNow,
     );
   }
 

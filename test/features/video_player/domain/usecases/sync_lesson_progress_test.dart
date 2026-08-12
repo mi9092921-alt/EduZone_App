@@ -1,3 +1,4 @@
+import 'package:app/features/video_player/domain/entities/lesson_progress_sync_item.dart';
 import 'package:app/features/video_player/domain/repositories/video_player_repository.dart';
 import 'package:app/features/video_player/domain/usecases/sync_lesson_progress.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,10 @@ class MockVideoPlayerRepository extends Mock implements VideoPlayerRepository {}
 void main() {
   late SyncLessonProgress usecase;
   late MockVideoPlayerRepository mockRepository;
+
+  setUpAll(() {
+    registerFallbackValue(<LessonProgressSyncItem>[]);
+  });
 
   setUp(() {
     mockRepository = MockVideoPlayerRepository();
@@ -22,18 +27,10 @@ void main() {
   const tWatchTimeSec = 600;
 
   test('should delegate to repository.syncProgress', () async {
-    // arrange
     when(
-      () => mockRepository.syncProgress(
-        courseId: any(named: 'courseId'),
-        lessonId: any(named: 'lessonId'),
-        completed: any(named: 'completed'),
-        progressPct: any(named: 'progressPct'),
-        watchTimeSec: any(named: 'watchTimeSec'),
-      ),
+      () => mockRepository.syncProgressBatch(any()),
     ).thenAnswer((_) async => const Right(null));
 
-    // act
     final result = await usecase(
       courseId: tCourseId,
       lessonId: tLessonId,
@@ -42,15 +39,19 @@ void main() {
       watchTimeSec: tWatchTimeSec,
     );
 
-    // assert
     expect(result, const Right(null));
     verify(
-      () => mockRepository.syncProgress(
-        courseId: tCourseId,
-        lessonId: tLessonId,
-        completed: tCompleted,
-        progressPct: tProgressPct,
-        watchTimeSec: tWatchTimeSec,
+      () => mockRepository.syncProgressBatch(
+        any(
+          that: predicate<List<LessonProgressSyncItem>>((items) {
+            return items.length == 1 &&
+                items.single.courseId == tCourseId &&
+                items.single.lessonId == tLessonId &&
+                items.single.completed == tCompleted &&
+                items.single.progressPct == tProgressPct &&
+                items.single.watchTimeSec == tWatchTimeSec;
+          }),
+        ),
       ),
     ).called(1);
     verifyNoMoreInteractions(mockRepository);

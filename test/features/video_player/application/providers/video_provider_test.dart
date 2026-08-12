@@ -1,6 +1,7 @@
+import 'package:app/features/video_player/application/providers/video_provider.dart';
+import 'package:app/features/video_player/domain/entities/lesson_progress_sync_item.dart';
 import 'package:app/features/video_player/domain/repositories/video_player_repository.dart';
 import 'package:app/features/video_player/domain/usecases/sync_lesson_progress.dart';
-import 'package:app/features/video_player/application/providers/video_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
@@ -24,19 +25,16 @@ void main() {
     // Needed by mocktail for named-argument matchers like `any(named: ...)`
     // when the argument type isn't a primitive.
     registerFallbackValue(<String, dynamic>{});
+    registerFallbackValue(<LessonProgressSyncItem>[]);
   });
 
   setUp(() {
     mockRepo = MockVideoPlayerRepository();
     mockSync = MockSyncLessonProgress();
 
-    when(() => mockSync.call(
-          courseId: any(named: 'courseId'),
-          lessonId: any(named: 'lessonId'),
-          completed: any(named: 'completed'),
-          progressPct: any(named: 'progressPct'),
-          watchTimeSec: any(named: 'watchTimeSec'),
-        )).thenAnswer((_) async => const Right(null));
+    when(
+      () => mockSync.batch(any()),
+    ).thenAnswer((_) async => const Right(null));
 
     when(() => mockRepo.logActivity(
           eventType: any(named: 'eventType'),
@@ -83,13 +81,20 @@ void main() {
       final state = container.read(videoProgressProvider(courseId, lessonId));
       expect(state.isCompleted, true);
 
-      verify(() => mockSync.call(
-            courseId: courseId,
-            lessonId: lessonId,
-            completed: true,
-            progressPct: 91.0,
-            watchTimeSec: 600,
-          )).called(1);
+      verify(
+        () => mockSync.batch(
+          any(
+            that: predicate<List<LessonProgressSyncItem>>((items) {
+              return items.length == 1 &&
+                  items.single.courseId == courseId &&
+                  items.single.lessonId == lessonId &&
+                  items.single.completed &&
+                  items.single.progressPct == 91.0 &&
+                  items.single.watchTimeSec == 600;
+            }),
+          ),
+        ),
+      ).called(1);
 
       verify(() => mockRepo.logActivity(
             eventType: 'lesson_completed',
@@ -108,13 +113,7 @@ void main() {
       notifier.updateProgress(10.0, 30, courseId, lessonId);
       await Future<void>.delayed(Duration.zero);
 
-      verifyNever(() => mockSync.call(
-            courseId: any(named: 'courseId'),
-            lessonId: any(named: 'lessonId'),
-            completed: any(named: 'completed'),
-            progressPct: any(named: 'progressPct'),
-            watchTimeSec: any(named: 'watchTimeSec'),
-          ));
+      verifyNever(() => mockSync.batch(any()));
     });
 
     test('disposing the container triggers a final sync without throwing', () async {
@@ -130,13 +129,20 @@ void main() {
 
       await Future<void>.delayed(Duration.zero);
 
-      verify(() => mockSync.call(
-            courseId: courseId,
-            lessonId: lessonId,
-            completed: false,
-            progressPct: 55.0,
-            watchTimeSec: 200,
-          )).called(1);
+      verify(
+        () => mockSync.batch(
+          any(
+            that: predicate<List<LessonProgressSyncItem>>((items) {
+              return items.length == 1 &&
+                  items.single.courseId == courseId &&
+                  items.single.lessonId == lessonId &&
+                  !items.single.completed &&
+                  items.single.progressPct == 55.0 &&
+                  items.single.watchTimeSec == 200;
+            }),
+          ),
+        ),
+      ).called(1);
     });
 
     test('markAsCompleted syncs and logs only once even if called twice', () async {

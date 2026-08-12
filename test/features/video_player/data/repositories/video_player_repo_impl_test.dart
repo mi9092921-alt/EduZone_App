@@ -2,6 +2,7 @@ import 'package:app/core/error/exceptions.dart';
 import 'package:app/core/error/failures.dart';
 import 'package:app/features/video_player/data/datasources/video_player_remote_ds.dart';
 import 'package:app/features/video_player/data/repositories/video_player_repo_impl.dart';
+import 'package:app/features/video_player/domain/entities/lesson_progress_sync_item.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:mocktail/mocktail.dart';
@@ -13,6 +14,10 @@ void main() {
   late VideoPlayerRepositoryImpl repository;
   late MockVideoPlayerRemoteDataSource mockDataSource;
 
+  setUpAll(() {
+    registerFallbackValue(<LessonProgressSyncItem>[]);
+  });
+
   setUp(() {
     mockDataSource = MockVideoPlayerRemoteDataSource();
     repository = VideoPlayerRepositoryImpl(mockDataSource);
@@ -21,13 +26,7 @@ void main() {
   group('syncProgress', () {
     test('should return Right(null) when data source succeeds', () async {
       when(
-        () => mockDataSource.syncProgress(
-          courseId: 'c1',
-          lessonId: 'l1',
-          completed: true,
-          progressPct: 100.0,
-          watchTimeSec: 60,
-        ),
+        () => mockDataSource.syncProgressBatch(any()),
       ).thenAnswer((_) async => Future.value());
 
       final result = await repository.syncProgress(
@@ -43,13 +42,7 @@ void main() {
 
     test('should return Left(ServerFailure) on exception', () async {
       when(
-        () => mockDataSource.syncProgress(
-          courseId: 'c1',
-          lessonId: 'l1',
-          completed: true,
-          progressPct: 100.0,
-          watchTimeSec: 60,
-        ),
+        () => mockDataSource.syncProgressBatch(any()),
       ).thenThrow(const ServerException('Failed'));
 
       final result = await repository.syncProgress(
@@ -61,6 +54,26 @@ void main() {
       );
 
       expect(result, isA<Left<Failure, void>>());
+    });
+
+    test('syncProgressBatch should pass items to data source', () async {
+      const items = [
+        LessonProgressSyncItem(
+          courseId: 'c1',
+          lessonId: 'l1',
+          completed: false,
+          progressPct: 40.0,
+          watchTimeSec: 30,
+        ),
+      ];
+      when(
+        () => mockDataSource.syncProgressBatch(items),
+      ).thenAnswer((_) async => Future.value());
+
+      final result = await repository.syncProgressBatch(items);
+
+      expect(result, isA<Right<Failure, void>>());
+      verify(() => mockDataSource.syncProgressBatch(items)).called(1);
     });
   });
 

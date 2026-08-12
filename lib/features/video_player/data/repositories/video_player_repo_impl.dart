@@ -1,6 +1,7 @@
 import 'package:fpdart/fpdart.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
+import '../../domain/entities/lesson_progress_sync_item.dart';
 import '../../domain/repositories/video_player_repository.dart';
 import '../datasources/video_player_remote_ds.dart';
 
@@ -22,13 +23,28 @@ class VideoPlayerRepositoryImpl implements VideoPlayerRepository {
     int? watchTimeSec,
   }) async {
     try {
-      await remoteDataSource.syncProgress(
-        courseId: courseId,
-        lessonId: lessonId,
-        completed: completed,
-        progressPct: progressPct,
-        watchTimeSec: watchTimeSec,
-      );
+      return await syncProgressBatch([
+        LessonProgressSyncItem(
+          courseId: courseId,
+          lessonId: lessonId,
+          completed: completed,
+          progressPct: progressPct,
+          watchTimeSec: watchTimeSec,
+        ),
+      ]);
+    } on ServerException catch (e) {
+      return Left(ServerFailure(e.message));
+    } catch (e) {
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> syncProgressBatch(
+    List<LessonProgressSyncItem> items,
+  ) async {
+    try {
+      await remoteDataSource.syncProgressBatch(items);
       return const Right(null);
     } on ServerException catch (e) {
       return Left(ServerFailure(e.message));

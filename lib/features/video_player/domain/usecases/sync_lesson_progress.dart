@@ -1,5 +1,6 @@
 import 'package:fpdart/fpdart.dart';
 import '../../../../core/error/failures.dart';
+import '../entities/lesson_progress_sync_item.dart';
 import '../repositories/video_player_repository.dart';
 
 /// Use case for syncing lesson progress to the database.
@@ -18,12 +19,32 @@ class SyncLessonProgress {
     required double progressPct,
     int? watchTimeSec,
   }) {
-    return repository.syncProgress(
-      courseId: courseId,
-      lessonId: lessonId,
-      completed: completed,
-      progressPct: progressPct,
-      watchTimeSec: watchTimeSec,
+    return repository.syncProgressBatch([
+      LessonProgressSyncItem(
+        courseId: courseId,
+        lessonId: lessonId,
+        completed: completed,
+        progressPct: progressPct.clamp(0, 100).toDouble(),
+        watchTimeSec: watchTimeSec,
+      ),
+    ]);
+  }
+
+  Future<Either<Failure, void>> batch(List<LessonProgressSyncItem> items) {
+    if (items.isEmpty) return Future.value(const Right(null));
+
+    return repository.syncProgressBatch(
+      items
+          .map(
+            (item) => LessonProgressSyncItem(
+              courseId: item.courseId,
+              lessonId: item.lessonId,
+              completed: item.completed,
+              progressPct: item.progressPct.clamp(0, 100).toDouble(),
+              watchTimeSec: item.watchTimeSec,
+            ),
+          )
+          .toList(growable: false),
     );
   }
 }

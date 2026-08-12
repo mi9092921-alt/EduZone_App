@@ -1,5 +1,6 @@
 import 'package:fpdart/fpdart.dart';
 import '../../../../core/error/failures.dart';
+import '../entities/lesson_progress_sync_item.dart';
 
 /// Repository contract for video progress operations.
 ///
@@ -14,6 +15,11 @@ abstract class VideoPlayerRepository {
     required double progressPct,
     int? watchTimeSec,
   });
+
+  /// Upserts multiple lesson progress rows in one network request.
+  Future<Either<Failure, void>> syncProgressBatch(
+    List<LessonProgressSyncItem> items,
+  );
 
   /// Logs an activity event (e.g. lesson_started, lesson_completed).
   Future<void> logActivity({
