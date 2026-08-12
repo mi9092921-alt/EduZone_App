@@ -543,18 +543,29 @@ ON CONFLICT (tenant_id, flag_id) DO NOTHING;
 -- PHASE 19: Devices
 -- ============================================================================
 
-INSERT INTO public.devices (id, user_id, tenant_id, device_id, platform, is_active, trust_score, device_info, last_seen)
+INSERT INTO public.devices (
+  id,
+  user_id,
+  tenant_id,
+  device_id,
+  fingerprint_version,
+  platform,
+  is_active,
+  trust_score,
+  device_info,
+  last_seen
+)
 VALUES
   ('dddddddd-0000-0000-0000-000000000001',
    'aaaaaaaa-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001',
-   'chrome_desktop_001', 'web', true, 85,
-   '{"browser": "Chrome 120", "os": "Windows 11", "screen": "1920x1080", "user_agent": "Mozilla/5.0"}',
+   'chrome_desktop_001', 'v1', 'web', true, 85,
+   '{"fingerprint_version": "v1", "browser": "Chrome 120", "os": "Windows 11", "screen": "1920x1080", "user_agent": "Mozilla/5.0"}',
    now() - interval '1 hour'),
 
   ('dddddddd-0000-0000-0000-000000000002',
    'aaaaaaaa-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001',
-   'iphone_14_001', 'ios', true, 95,
-   '{"model": "iPhone 14", "os": "iOS 17.2", "app_version": "2.1.0", "push_token": "abc123"}',
+   'iphone_14_001', 'v1', 'ios', true, 95,
+   '{"fingerprint_version": "v1", "model": "iPhone 14", "os": "iOS 17.2", "app_version": "2.1.0", "push_token": "abc123"}',
    now() - interval '30 minutes')
 
 ON CONFLICT (id) DO NOTHING;

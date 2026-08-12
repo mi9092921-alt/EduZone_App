@@ -119,6 +119,29 @@ void main() {
       expect(result.status, BindDeviceStatus.bound);
     });
 
+    test('passes fingerprint version to bind device RPC', () async {
+      const versionedDeviceInfo = {
+        'model': 'Pixel 7',
+        'fingerprint_version': 'v2',
+      };
+      stubRpc('bind_device_for_current_user', {'status': 'verified'},
+          withParams: true);
+
+      await dataSource.bindDevice(tDeviceId, versionedDeviceInfo, tPlatform);
+
+      final captured = verify(
+        () => mockClient.rpc(
+          'bind_device_for_current_user',
+          params: captureAny(named: 'params'),
+        ),
+      ).captured.single as Map<String, dynamic>;
+
+      expect(captured['p_device_id'], tDeviceId);
+      expect(captured['p_device_info'], versionedDeviceInfo);
+      expect(captured['p_fingerprint_version'], 'v2');
+      expect(captured['p_platform'], tPlatform);
+    });
+
     test('throws MaxDevicesReachedException on MAX_DEVICES_REACHED', () async {
       stubRpcThrows(
         'bind_device_for_current_user',

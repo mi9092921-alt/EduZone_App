@@ -642,6 +642,8 @@ CREATE TABLE IF NOT EXISTS public.devices (
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE RESTRICT,
   tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE RESTRICT,
   device_id text NOT NULL CHECK (btrim(device_id) <> ''),
+  fingerprint_version text NOT NULL DEFAULT 'v2'
+    CHECK (fingerprint_version IN ('v1', 'v2')),
   platform text CHECK (platform IN ('android', 'ios', 'web')),
   is_active boolean NOT NULL DEFAULT true,
   trust_score smallint NOT NULL DEFAULT 100 CHECK (trust_score BETWEEN 0 AND 100),
@@ -650,6 +652,9 @@ CREATE TABLE IF NOT EXISTS public.devices (
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (user_id, device_id)
 );
+
+ALTER TABLE public.devices
+  ADD COLUMN IF NOT EXISTS fingerprint_version text NOT NULL DEFAULT 'v2';
 
 CREATE TABLE IF NOT EXISTS public.sessions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

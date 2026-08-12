@@ -27,6 +27,7 @@ import 'package:uuid/uuid.dart';
 /// with the app on most platforms) — this is expected and acceptable,
 /// matching pre-existing `identifierForVendor` reinstall behavior.
 class DeviceInfoHelper {
+  static const String fingerprintVersion = 'v2';
   static final DeviceInfoPlugin _plugin = DeviceInfoPlugin();
   static const FlutterSecureStorage _storage = FlutterSecureStorage();
   static const String _installIdKey = 'device_install_id_v1';
@@ -50,7 +51,10 @@ class DeviceInfoHelper {
         'unknown-${DateTime.now().millisecondsSinceEpoch}',
       );
       _isEmulator = true;
-      _deviceInfoJson = {'platform': 'unknown'};
+      _deviceInfoJson = {
+        'platform': 'unknown',
+        'fingerprint_version': fingerprintVersion,
+      };
       _deviceModel = 'Unknown Device';
     }
 
@@ -112,6 +116,7 @@ class DeviceInfoHelper {
 
     _deviceInfoJson = {
       'platform': 'android',
+      'fingerprint_version': fingerprintVersion,
       'model': info.model,
       'brand': info.brand,
       'device': info.device,
@@ -154,6 +159,7 @@ class DeviceInfoHelper {
 
     _deviceInfoJson = {
       'platform': 'ios',
+      'fingerprint_version': fingerprintVersion,
       'model': info.model,
       'machine': info.utsname.machine,
       'system_name': info.systemName,

@@ -569,6 +569,16 @@ BEGIN
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.devices'::regclass
+      AND conname = 'chk_devices_fingerprint_version'
+  ) THEN
+    ALTER TABLE public.devices
+      ADD CONSTRAINT chk_devices_fingerprint_version
+      CHECK (fingerprint_version IN ('v1', 'v2'));
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
     WHERE conrelid = 'public.feature_flags'::regclass
       AND conname = 'chk_feature_flags_metadata_size'
   ) THEN

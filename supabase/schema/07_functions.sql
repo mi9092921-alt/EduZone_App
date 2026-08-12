@@ -1927,10 +1927,13 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.bind_device_for_current_user(text, jsonb, text);
+
 CREATE OR REPLACE FUNCTION public.bind_device_for_current_user(
   p_device_id text,
   p_device_info jsonb DEFAULT '{}',
-  p_platform text DEFAULT NULL
+  p_platform text DEFAULT NULL,
+  p_fingerprint_version text DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -1941,6 +1944,8 @@ DECLARE
   v_tenant_id uuid := public.get_current_tenant_id();
   v_max integer := coalesce((public.get_setting('max_devices_per_user') #>> '{}')::integer, 1);
   v_count integer;
+  v_device_info jsonb := coalesce(p_device_info, '{}');
+  v_fingerprint_version text;
 BEGIN
   IF v_uid IS NULL OR v_tenant_id IS NULL THEN
     RAISE EXCEPTION 'AUTH_REQUIRED';
@@ -1958,6 +1963,16 @@ BEGIN
 
   IF btrim(coalesce(p_device_id, '')) = '' THEN
     RAISE EXCEPTION 'INVALID_DEVICE_ID';
+  END IF;
+
+  v_fingerprint_version := coalesce(
+    nullif(btrim(p_fingerprint_version), ''),
+    nullif(btrim(v_device_info ->> 'fingerprint_version'), ''),
+    'v1'
+  );
+
+  IF v_fingerprint_version NOT IN ('v1', 'v2') THEN
+    RAISE EXCEPTION 'INVALID_FINGERPRINT_VERSION';
   END IF;
 
   IF EXISTS (
@@ -1979,7 +1994,8 @@ BEGIN
     UPDATE public.devices
     SET last_seen = pg_catalog.now(),
         platform = coalesce(p_platform, platform),
-        device_info = coalesce(p_device_info, device_info),
+        fingerprint_version = v_fingerprint_version,
+        device_info = v_device_info,
         is_active = true
     WHERE user_id = v_uid
       AND tenant_id = v_tenant_id
@@ -1998,8 +2014,27 @@ BEGIN
     RAISE EXCEPTION 'MAX_DEVICES_REACHED';
   END IF;
 
-  INSERT INTO public.devices (user_id, tenant_id, device_id, platform, device_info)
-  VALUES (v_uid, v_tenant_id, p_device_id, p_platform, coalesce(p_device_info, '{}'));
+  BEGIN
+    INSERT INTO public.devices (
+      user_id,
+      tenant_id,
+      device_id,
+      fingerprint_version,
+      platform,
+      device_info
+    )
+    VALUES (
+      v_uid,
+      v_tenant_id,
+      p_device_id,
+      v_fingerprint_version,
+      p_platform,
+      v_device_info
+    );
+  EXCEPTION
+    WHEN unique_violation THEN
+      RAISE EXCEPTION 'DEVICE_ALREADY_BOUND';
+  END;
 
   RETURN jsonb_build_object('status', 'bound');
 END;

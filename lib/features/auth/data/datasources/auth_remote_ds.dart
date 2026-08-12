@@ -186,6 +186,7 @@ class AuthRemoteDataSource {
         params: {
           'p_device_id': deviceId,
           'p_device_info': deviceInfo,
+          'p_fingerprint_version': deviceInfo['fingerprint_version'] ?? 'v1',
           'p_platform': platform,
         },
       );

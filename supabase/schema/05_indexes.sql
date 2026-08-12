@@ -116,6 +116,10 @@ CREATE INDEX IF NOT EXISTS idx_devices_user_active ON public.devices (user_id) W
 
 CREATE INDEX IF NOT EXISTS idx_devices_tenant ON public.devices (tenant_id);
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_devices_active_device_id
+  ON public.devices (device_id)
+  WHERE is_active;
+
 CREATE INDEX IF NOT EXISTS idx_sessions_one_active_per_user_lookup
   ON public.sessions (user_id, started_at DESC)
   WHERE is_active = true;
