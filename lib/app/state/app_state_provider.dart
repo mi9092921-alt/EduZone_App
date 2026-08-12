@@ -23,6 +23,7 @@ AppAuthState appState(Ref ref) {
     AuthRestricted(status: AccountStatus.suspended)    => AppAuthState.suspended,
     AuthRestricted(status: AccountStatus.locked)       => AppAuthState.locked,
     AuthRestricted(status: AccountStatus.maintenance)  => AppAuthState.maintenance,
+    AuthRestricted(status: AccountStatus.appLocked)    => AppAuthState.appLocked,
     AuthRestricted()     => AppAuthState.unauthenticated,
   };
 }

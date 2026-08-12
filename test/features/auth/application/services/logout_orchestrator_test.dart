@@ -21,6 +21,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(Duration.zero);
+    registerFallbackValue(SignOutScope.local);
   });
 
   late MockSupabaseClient mockClient;
@@ -109,17 +110,20 @@ void main() {
   group('forceLocalCleanup', () {
     test('calls signOut with local scope', () async {
       when(
-        () => mockAuth.signOut(),
+        () => mockAuth.signOut(scope: any(named: 'scope')),
       ).thenAnswer((_) async {});
 
       await orchestrator.forceLocalCleanup();
 
-      verify(() => mockAuth.signOut()).called(1);
+      const localScope = SignOutScope.local;
+      // ignore: avoid_redundant_argument_values
+      verify(() => mockAuth.signOut(scope: localScope)).called(1);
+      verifyNever(() => mockAuth.signOut());
     });
 
     test('continues cleanup even if signOut throws', () async {
       when(
-        () => mockAuth.signOut(),
+        () => mockAuth.signOut(scope: any(named: 'scope')),
       ).thenThrow(Exception('signOut failed'));
 
       await expectLater(orchestrator.forceLocalCleanup(), completes);

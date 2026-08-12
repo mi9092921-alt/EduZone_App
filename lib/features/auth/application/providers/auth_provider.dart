@@ -19,8 +19,11 @@ import '../policies/auth_error_policy.dart';
 import '../services/check_user_access_service.dart';
 import '../services/logout_orchestrator.dart';
 import '../../data/datasources/auth_remote_ds.dart';
+import '../../domain/entities/app_user.dart';
 import '../../domain/entities/auth_state.dart';
 import '../../domain/entities/update_info.dart';
+import '../../domain/entities/user_access.dart';
+import '../../domain/enums/user_role.dart';
 import 'auth_di_providers.dart';
 
 export 'auth_di_providers.dart';
@@ -91,6 +94,8 @@ class Auth extends _$Auth {
       state = nextState;
     }
   }
+
+  bool _isStudentUser(AppUser user) => user.primaryRole == UserRole.student;
 
   // ─── Session Initialization (App Start) ──────────────────────────────────
 
@@ -165,6 +170,13 @@ class Auth extends _$Auth {
       if (access.isAllowed) {
         final appUser = await ref.read(getCurrentUserUseCaseProvider)();
         if (appUser != null) {
+          if (!_isStudentUser(appUser)) {
+            debugPrint('[Auth] Non-student user blocked from student app.');
+            await _forceLocalSignOutOnly(client);
+            _safeSetStateIfStillInitializing(const AuthUnauthenticated());
+            return;
+          }
+
           _safeSetStateIfStillInitializing(
             AuthAuthenticated(
               user: appUser,
@@ -257,6 +269,13 @@ class Auth extends _$Auth {
       final access = await ref.read(checkUserAccessUseCaseProvider)();
 
       if (access.isAllowed) {
+        if (!_isStudentUser(appUser)) {
+          debugPrint('[Auth] Non-student login blocked from student app.');
+          await _forceLocalSignOutOnly(ref.read(supabaseClientProvider));
+          _safeSetState(const AuthUnauthenticated(error: 'errorAuth'));
+          return;
+        }
+
         _safeSetState(AuthAuthenticated(user: appUser, access: access));
 
         // Track activity and session in the background (skip bindDevice — already done above)
@@ -331,6 +350,8 @@ class Auth extends _$Auth {
       supabase: ref.read(supabaseClientProvider),
       onAccessDenied: ({required String reason}) =>
           handleAccessDenied(reason: reason),
+      onAccessRestricted: ({required UserAccess access}) =>
+          handleAccessRestricted(access: access),
     );
     _accessService!.start(userId: userId, tenantId: tenantId);
   }
@@ -344,6 +365,13 @@ class Auth extends _$Auth {
       if (access.isAllowed) {
         final appUser = await ref.read(getCurrentUserUseCaseProvider)();
         if (appUser != null) {
+          if (!_isStudentUser(appUser)) {
+            debugPrint('[Auth] Non-student user blocked during access verify.');
+            await _forceLocalSignOutOnly(ref.read(supabaseClientProvider));
+            _safeSetState(const AuthUnauthenticated(error: 'errorAuth'));
+            return;
+          }
+
           _safeSetState(AuthAuthenticated(user: appUser, access: access));
         } else {
           _safeSetState(const AuthUnauthenticated());
@@ -403,6 +431,22 @@ class Auth extends _$Auth {
         );
 
     logout(flow: 'forced_$reason');
+  }
+
+  void handleAccessRestricted({required UserAccess access}) {
+    debugPrint('[Auth] Access restricted without logout: ${access.status}');
+    _safeSetState(AuthRestricted(status: access.status, access: access));
+  }
+
+  Future<void> _forceLocalSignOutOnly(SupabaseClient client) async {
+    final orchestrator = LogoutOrchestrator(
+      supabase: client,
+      secureStorage: const FlutterSecureStorage(),
+      cancellationManager: ref.read(requestCancellationManagerProvider),
+      fcmConfigured: AppConfig.fcmEnabled,
+    );
+    await orchestrator.forceLocalCleanup();
+    _invalidateAllUserProviders();
   }
 
   // ─── Logout (Centralized) ────────────────────────────────────────────────

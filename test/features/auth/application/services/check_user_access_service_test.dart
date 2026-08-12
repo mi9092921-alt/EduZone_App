@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:app/features/auth/application/services/check_user_access_service.dart';
+import 'package:app/features/auth/domain/entities/user_access.dart';
+import 'package:app/features/auth/domain/enums/account_status.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -49,6 +51,7 @@ void main() {
   late MockGoTrueClient auth;
   late MockSession session;
   late List<String> deniedReasons;
+  late List<UserAccess> restrictedAccesses;
 
   // Mutable holders so setUp can register stubs once with thenAnswer,
   // and individual tests simply update these variables.
@@ -62,6 +65,7 @@ void main() {
     auth = MockGoTrueClient();
     session = MockSession();
     deniedReasons = [];
+    restrictedAccesses = [];
 
     // Default values — overridden per-test by reassigning the variables above.
     mockRpcResponse = {'token_version': 5, 'allowed': true};
@@ -80,6 +84,8 @@ void main() {
     return CheckUserAccessService(
       supabase: supabase,
       onAccessDenied: ({required String reason}) => deniedReasons.add(reason),
+      onAccessRestricted: ({required UserAccess access}) =>
+          restrictedAccesses.add(access),
     );
   }
 
@@ -139,6 +145,40 @@ void main() {
       await service.checkNow();
 
       expect(deniedReasons, ['token_version_mismatch']);
+    });
+  });
+
+  group('restricted states without logout', () {
+    test('maintenance_mode emits restricted access without denied callback',
+        () async {
+      mockRpcResponse = {
+        'allowed': false,
+        'reason': 'maintenance_mode',
+        'token_version': 5,
+      };
+      mockAccessToken = _fakeJwt({'sub': 'user-123', 'token_version': 5});
+
+      final service = buildService();
+      await service.checkNow();
+
+      expect(deniedReasons, isEmpty);
+      expect(restrictedAccesses.single.status, AccountStatus.maintenance);
+    });
+
+    test('app_locked emits restricted access without denied callback',
+        () async {
+      mockRpcResponse = {
+        'allowed': false,
+        'reason': 'app_locked',
+        'token_version': 5,
+      };
+      mockAccessToken = _fakeJwt({'sub': 'user-123', 'token_version': 5});
+
+      final service = buildService();
+      await service.checkNow();
+
+      expect(deniedReasons, isEmpty);
+      expect(restrictedAccesses.single.status, AccountStatus.appLocked);
     });
   });
 }

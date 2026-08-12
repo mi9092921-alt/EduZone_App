@@ -2,13 +2,17 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../domain/entities/user_access.dart';
 import '../../domain/enums/account_status.dart';
 
 typedef AccessDeniedCallback = void Function({required String reason});
+typedef AccessRestrictedCallback = void Function({required UserAccess access});
 
 class CheckUserAccessService {
   final SupabaseClient _supabase;
   final AccessDeniedCallback _onAccessDenied;
+  final AccessRestrictedCallback? _onAccessRestricted;
 
   Timer? _pollingTimer;
   RealtimeChannel? _realtimeChannel;
@@ -25,9 +29,11 @@ class CheckUserAccessService {
   CheckUserAccessService({
     required SupabaseClient supabase,
     required AccessDeniedCallback onAccessDenied,
+    AccessRestrictedCallback? onAccessRestricted,
     this.pollingInterval = const Duration(minutes: 5),
   }) : _supabase = supabase,
-       _onAccessDenied = onAccessDenied;
+       _onAccessDenied = onAccessDenied,
+       _onAccessRestricted = onAccessRestricted;
 
   /// Start polling + Realtime listener.
   void start({required String userId, required String tenantId}) {
@@ -101,6 +107,11 @@ class CheckUserAccessService {
             if (status == AccountStatus.banned ||
                 status == AccountStatus.locked) {
               _onAccessDenied(reason: 'account_${status.toDbString}');
+              return;
+            }
+
+            if (status == AccountStatus.appLocked) {
+              _onAccessRestricted?.call(access: UserAccess(status: status));
             }
           },
         )
@@ -151,9 +162,21 @@ class CheckUserAccessService {
       if (data['allowed'] == false) {
         final reason = data['reason'] as String? ?? 'unknown';
         final status = AccountStatus.fromString(reason);
+        final access = UserAccess(
+          status: status,
+          message: data['message'] as String?,
+          until: data['until'] != null ? DateTime.tryParse(data['until']) : null,
+          endsAt: data['ends_at'] != null
+              ? DateTime.tryParse(data['ends_at'])
+              : null,
+        );
 
-        // maintenance_mode: show UI but DO NOT logout
-        if (status == AccountStatus.maintenance) return;
+        // maintenance_mode/app_locked: show UI but DO NOT logout
+        if (status == AccountStatus.maintenance ||
+            status == AccountStatus.appLocked) {
+          _onAccessRestricted?.call(access: access);
+          return;
+        }
 
         _onAccessDenied(reason: reason);
       }

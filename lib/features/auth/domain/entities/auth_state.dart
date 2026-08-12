@@ -35,6 +35,9 @@ enum AppAuthState {
   /// Platform is in maintenance mode. Router redirects to /maintenance.
   maintenance,
 
+  /// App is temporarily locked. Router redirects to /app-locked.
+  appLocked,
+
   /// App version is below the minimum — access is blocked until update.
   /// This is an APP-LEVEL restriction, not an account restriction.
   forceUpdate,

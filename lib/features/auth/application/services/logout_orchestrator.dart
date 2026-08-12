@@ -116,8 +116,11 @@ class LogoutOrchestrator {
     // logged in". The SDK uses its own SharedPreferences key internally;
     // we must let it handle that key itself.
     try {
+      const localScope = SignOutScope.local;
       await _supabase.auth
-          .signOut()
+          // Explicit because local-only cleanup must never depend on network.
+          // ignore: avoid_redundant_argument_values
+          .signOut(scope: localScope)
           .timeout(const Duration(seconds: 2));
       debugPrint('[LogoutOrchestrator] Supabase local signOut ✓');
     } catch (e) {

@@ -34,14 +34,20 @@ class AuthRemoteDataSource {
       final data = res as Map<String, dynamic>;
       final allowed = data['allowed'] as bool? ?? false;
       final reason = data['reason'] as String?;
+      final role = UserRole.fromString(
+        data['role'] as String? ??
+            data['primary_role'] as String? ??
+            'student',
+      );
 
       if (allowed) {
-        return const UserAccess(status: AccountStatus.active);
+        return UserAccess(status: AccountStatus.active, role: role);
       }
 
       final status = AccountStatus.fromString(reason ?? 'locked');
       return UserAccess(
         status: status,
+        role: role,
         message: data['message'] as String?,
         until: data['until'] != null ? DateTime.tryParse(data['until']) : null,
         endsAt: data['ends_at'] != null

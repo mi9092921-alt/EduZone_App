@@ -14,6 +14,7 @@ class AppRoutes {
   static const splash = '/';
   static const login = '/login';
   static const locked = '/locked';
+  static const appLocked = '/app-locked';
   static const suspended = '/suspended';
   static const banned = '/banned';
   static const maintenance = '/maintenance';

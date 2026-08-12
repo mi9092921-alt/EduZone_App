@@ -99,6 +99,7 @@ GoRouter router(Ref ref) {
       // Restricted-state routes (screens for banned/suspended/locked/maintenance)
       final restrictedRoutes = {
         AppRoutes.locked,
+        AppRoutes.appLocked,
         AppRoutes.suspended,
         AppRoutes.banned,
         AppRoutes.maintenance,
@@ -148,6 +149,9 @@ GoRouter router(Ref ref) {
         case AppAuthState.locked:
           return location == AppRoutes.locked ? null : AppRoutes.locked;
 
+        case AppAuthState.appLocked:
+          return location == AppRoutes.appLocked ? null : AppRoutes.appLocked;
+
         case AppAuthState.maintenance:
           return location == AppRoutes.maintenance
               ? null
@@ -177,6 +181,11 @@ GoRouter router(Ref ref) {
       ),
       GoRoute(
         path: AppRoutes.locked,
+        pageBuilder: (context, state) =>
+            buildTransitionPage(state: state, child: const LockedScreen()),
+      ),
+      GoRoute(
+        path: AppRoutes.appLocked,
         pageBuilder: (context, state) =>
             buildTransitionPage(state: state, child: const LockedScreen()),
       ),
