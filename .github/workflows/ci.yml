@@ -1,0 +1,67 @@
+name: CI
+on:
+  pull_request:
+    branches: [ "develop", "main" ]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Generate l10n
+        run: flutter gen-l10n
+      - name: Analyze code
+        run: flutter analyze
+      - name: Accessibility Guard
+        run: make check-a11y
+      - name: Architecture Guard
+        run: make check-architecture
+      - name: RTL Guard
+        run: make check-rtl
+      - name: Design Token Guard
+        run: make check-design-tokens
+      - name: Performance Guard
+        run: make check-performance
+      - name: Localization Guard
+        run: make check-localizations
+      - name: Run tests with coverage
+        run: flutter test --coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage/lcov.info
+          fail_ci_if_error: false
+      - name: Write .env.staging from secret (if configured)
+        env:
+          ENV_STAGING: ${{ secrets.ENV_STAGING }}
+        run: |
+          if [ -n "$ENV_STAGING" ]; then
+            printf '%s' "$ENV_STAGING" > .env.staging
+          fi
+      - name: Build APK (Staging)
+        run: |
+          if [ ! -f .env.staging ]; then
+            echo "⚠️ .env.staging not found — APK build skipped. Set the ENV_STAGING repo secret (Settings → Secrets and variables → Actions) to enable this build."
+            exit 0
+          fi
+          flutter build apk --release --dart-define-from-file=.env.staging
+        continue-on-error: true
+
+  dependency_check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - name: Install dependencies
+        run: dart pub get
+      - name: Audit dependencies (OSV-Scanner)
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src ghcr.io/google/osv-scanner:v2.3.8 \
+            scan --lockfile=pubspec.lock

@@ -1,0 +1,119 @@
+name: app
+description: "A modern education platform for students."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.1
+
+
+dependencies:
+  # Core & State Management
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  flutter_riverpod: ^3.3.1
+  riverpod_annotation: ^4.0.2
+  go_router: ^17.2.0
+  equatable: ^2.0.5
+  fpdart: ^1.1.0
+  freezed_annotation: ^3.1.0
+  json_annotation: ^4.11.0
+  uuid: ^4.5.1
+
+  # Backend & Services
+  http: ^1.2.0
+  supabase_flutter: ^2.6.0
+
+  firebase_core: ^4.6.0
+  firebase_messaging: ^16.1.3
+  sentry_flutter: ^8.14.2
+
+  # Local Integration & Utilities
+  permission_handler: ^11.3.1
+  geolocator: ^13.0.2
+  device_info_plus: ^12.4.0
+  package_info_plus: ^9.0.1
+  connectivity_plus: ^7.1.1
+  flutter_secure_storage: ^10.0.0
+  shared_preferences: ^2.3.2
+  flutter_local_notifications: ^21.0.0
+  workmanager: ^0.9.0+3
+  path_provider: ^2.1.5
+  sqflite: ^2.4.2
+  path: ^1.9.1
+  crypto: ^3.0.5
+  encrypt: ^5.0.3
+  intl: ^0.20.2
+  timeago: ^3.7.1
+
+  # UI, Icons & Media
+  cupertino_icons: ^1.0.8
+  cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1
+  skeletonizer: ^2.1.3
+  youtube_player_flutter: ^9.0.1
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_video: ^1.0.7
+  image_picker: ^1.1.2
+  url_launcher: ^6.3.1
+  font_awesome_flutter: ^11.0.0
+  dio: ^5.9.2
+  webview_flutter: ^4.13.1
+  flutter_inappwebview: ^6.1.5
+  freerasp: ^8.0.0
+  screen_protector: ^1.5.2
+  installed_apps: ^2.1.1
+  background_downloader: ^9.5.7
+
+
+dev_dependencies:
+  # Testing
+  flutter_test:
+    sdk: flutter
+  mocktail: ^1.0.5
+  sqflite_common_ffi: ^2.3.3
+
+  # Code Generation
+  build_runner: ^2.4.12
+  riverpod_generator: ^4.0.3
+  freezed: ^3.2.5
+  json_serializable: ^6.8.0
+
+  # Linting
+  flutter_lints: ^6.0.0
+
+
+flutter:
+  generate: true
+  uses-material-design: true
+
+  # As of this audit, nothing in lib/ calls Image.asset/AssetImage/
+  # SvgPicture.asset, so this section isn't fixing a currently-broken
+  # screen — it's here so the first time someone DOES add
+  # Image.asset('assets/icons/...'), it doesn't silently fail to build.
+  # assets/l10n/*.json appear to be unused leftovers — real localization
+  # is driven by the .arb files under lib/core/l10n/arb/ via l10n.yaml.
+  # Listed here anyway since they're real files in the repo; safe to
+  # delete assets/l10n/ separately if confirmed unused.
+  assets:
+    - assets/icons/
+    - assets/lottie/
+    - assets/certs/
+
+  fonts:
+    - family: Cairo
+      fonts:
+        - asset: assets/fonts/Cairo-Variable.ttf
+          weight: 400
+        - asset: assets/fonts/Cairo-Variable.ttf
+          weight: 500
+        - asset: assets/fonts/Cairo-Variable.ttf
+          weight: 600
+        - asset: assets/fonts/Cairo-Variable.ttf
+          weight: 700
+        - asset: assets/fonts/Cairo-Variable.ttf
+          weight: 800

@@ -1,0 +1,141 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Security and Keys
+.env*
+*.keystore
+*.jks
+android/key.properties
+google-services.json
+GoogleService-Info.plist
+
+# Auto-generated entries
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.security.example
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+analyze_output.txt
+out_pub_outdated.json
+response.json
+video-info.json
+flutter_01.log
+
+# Sensitive files (auto-detected)
+.env
+build
+
+
+# Local scripts / experiments (may contain secrets or admin credentials)
+scratch/
+scripts/
+supabase/
+CourseVideoPage  media_kit.txt
+supabase/deploy_functions.ps1
+test/datasource_instructor_test.dart
+test/get_path_test.dart
+test/inspect_db_test.dart
+test/instructor_query_test.dart
+test/scratch_test.dart
+test/widget_test.dart
+
+Secure Offline Video System/
+The_requirement/
+docs/
+.agents/
+.amazonq/
+.devin/
+AGENTS.md
+CLAUDE.md
+ROLE.md
+Auth Security and Functional Audit Report.md
+tools/
+TASK.md
+SECURITY.md
+issues.md
+IMPLEMENTATION.md
+implementation_plan.md
+engineering_report.md
+
+# Golden test failure diffs (auto-generated on golden test mismatch, never commit)
+**/failures/
+TASK.md
+SECURITY.md
+issues.md
+IMPLEMENTATION.md
+EDUZONE_FIX_PLAN.md
+EduZone_App_Audit_Report_ar.md
+CONTRIBUTING.md
+CHANGELOG.md
+ACCESSIBILITY_FIXES.md
+test_output.json
+

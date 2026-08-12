@@ -1,0 +1,569 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:fpdart/fpdart.dart';
+import 'package:uuid/uuid.dart';
+
+import '../../../../core/error/exceptions.dart';
+import '../../../../core/error/failures.dart';
+import '../../../../core/services/encryption_service.dart';
+import '../../domain/entities/download_enums.dart';
+import '../../domain/entities/download_progress.dart';
+import '../../domain/entities/downloaded_lesson.dart';
+import '../../domain/repositories/download_repository.dart';
+import '../datasources/download_local_ds.dart';
+import '../datasources/download_remote_ds.dart';
+import '../services/download_manager.dart';
+import '../services/download_notification_helper.dart';
+import 'download_execution_service.dart';
+import 'download_format_selector.dart';
+import 'download_link_refresher.dart';
+import 'download_query_service.dart';
+
+/// Implementation of the download repository.
+///
+/// Coordinates between remote and local data sources, download manager,
+/// and encryption service to provide a complete download management solution.
+class DownloadRepositoryImpl implements DownloadRepository {
+  final DownloadRemoteDataSource _remoteDataSource;
+  final DownloadLocalDataSource _localDataSource;
+  final DownloadManager _downloadManager;
+  final EncryptionService _encryptionService;
+  final DownloadQueryService _queryService;
+  final DownloadFormatSelector _formatSelector;
+  final DownloadLinkRefresher _linkRefresher;
+
+  // Assigned in the constructor body (not the initializer list) so it can
+  // be wired to the exact same _progressControllers/_downloadManagerIds/
+  // _pausedDownloads/_cancelledDownloads/_changeController instances
+  // declared below — see the class-level doc comment on those fields.
+  late final DownloadExecutionService _executionService;
+  final Uuid _uuid;
+
+  // Stream controllers for progress updates. Owned here (not inside
+  // DownloadExecutionService) because pauseDownload/resumeDownload/
+  // cancelDownload/watchProgress/dispose all need to read or mutate them
+  // directly — they're passed to DownloadExecutionService by reference so
+  // both sides observe the same session state. See ARCH-006.
+  final Map<String, StreamController<DownloadProgress>> _progressControllers = {};
+  final Map<String, String> _downloadManagerIds = {};
+  final Set<String> _pausedDownloads = {};
+  final Set<String> _cancelledDownloads = {};
+  final StreamController<void> _changeController = StreamController<void>.broadcast();
+
+  DownloadRepositoryImpl({
+    required DownloadRemoteDataSource remoteDataSource,
+    required DownloadLocalDataSource localDataSource,
+    required DownloadManager downloadManager,
+    required EncryptionService encryptionService,
+    Uuid? uuid,
+  })  : _remoteDataSource = remoteDataSource,
+        _localDataSource = localDataSource,
+        _downloadManager = downloadManager,
+        _encryptionService = encryptionService,
+        _queryService = DownloadQueryService(localDataSource),
+        _formatSelector = const DownloadFormatSelector(),
+        _linkRefresher = DownloadLinkRefresher(
+          remoteDataSource: remoteDataSource,
+          localDataSource: localDataSource,
+        ),
+        _uuid = uuid ?? const Uuid() {
+    DownloadNotificationHelper.init();
+    _executionService = DownloadExecutionService(
+      remoteDataSource: remoteDataSource,
+      localDataSource: localDataSource,
+      downloadManager: downloadManager,
+      encryptionService: encryptionService,
+      // Shared by reference with this repository's own session-state
+      // fields — see the field-level doc comment above.
+      progressControllers: _progressControllers,
+      downloadManagerIds: _downloadManagerIds,
+      pausedDownloads: _pausedDownloads,
+      cancelledDownloads: _cancelledDownloads,
+      changeController: _changeController,
+    );
+  }
+
+  @override
+  Stream<void> get changeStream => _changeController.stream;
+
+  @override
+  Future<Either<Failure, DownloadedLesson>> startDownload({
+    required String lessonId,
+    required String courseId,
+    required String courseTitle,
+    required String title,
+    required String videoUrl,
+    required VideoQuality quality,
+  }) async {
+    try {
+      // Validate URL
+      final uri = Uri.tryParse(videoUrl);
+      if (uri == null ||
+          !uri.isAbsolute ||
+          (uri.scheme != 'http' && uri.scheme != 'https')) {
+        return const Left(UnknownFailure('Invalid video URL')); // check-ignore
+      }
+
+      // Check if already downloaded
+      final existing = await _localDataSource.getDownloadByLessonId(lessonId);
+      if (existing != null) {
+        return const Left(AlreadyDownloadedFailure());
+      }
+
+      // Validate course/lesson access through Supabase Edge Function
+      final accessResult = await _remoteDataSource.validateCourseAccess(
+        lessonId: lessonId,
+        courseId: courseId,
+      );
+      if (!accessResult.allowed) {
+        return const Left(
+          UnknownFailure('Offline access is not available for this lesson'), // check-ignore
+        );
+      }
+
+      // Fetch video metadata and format URLs
+      if (kDebugMode) debugPrint('🔍 getVideoInfo → calling with url: $videoUrl');
+      final videoInfo = await _remoteDataSource.getVideoInfo(videoUrl);
+      if (kDebugMode) {
+        debugPrint('🔍 getVideoInfo → formats count: ${videoInfo.formats.length}');
+        for (final f in videoInfo.formats) {
+          debugPrint(
+            '  format: quality=${f.quality}, requiresMerge=${f.requiresMerge}, '
+            'url=${f.videoUrl.substring(0, f.videoUrl.length.clamp(0, 80))}...',
+          );
+        }
+      }
+      final selected = _formatSelector.select(videoInfo, quality);
+      if (kDebugMode) {
+        debugPrint(
+          '🔍 selectedFormat → quality=${selected.videoFormat.quality}, '
+          'isDualTrack=${selected.isDualTrack}',
+        );
+      }
+
+      // Check storage quota
+      final totalStorageUsed = await _localDataSource.getTotalStorageUsed();
+      const maxStorageBytes = 2 * 1024 * 1024 * 1024; // 2 GB limit
+      final estimatedVideoSize = selected.videoFormat.sizeBytes ?? 0;
+      final estimatedAudioSize = selected.audioTrack?.sizeBytes ?? 0;
+      final estimatedTotal = estimatedVideoSize + estimatedAudioSize;
+      if (estimatedTotal > 0 && totalStorageUsed + estimatedTotal > maxStorageBytes) {
+        return const Left(StorageFailure('Insufficient storage space')); // check-ignore
+      }
+
+      // Generate download ID and paths
+      final generatedDownloadId = _localDataSource.generateDownloadId();
+      final downloadId =
+          generatedDownloadId.isEmpty ? _uuid.v4() : generatedDownloadId;
+      final encryptedPath = await _localDataSource.createFilePath(
+        lessonId: lessonId,
+        quality: quality.label,
+        ext: selected.videoFormat.ext,
+      );
+      final audioPath = selected.isDualTrack
+          ? await _localDataSource.createAudioFilePath(
+              lessonId: lessonId,
+              quality: quality.label,
+              ext: selected.audioTrack!.ext,
+            )
+          : null;
+
+      // Cap content retention at 30 days or the subscription expiry,
+      // whichever is sooner.  The previous fallback (3650 days) would grant
+      // 10-year offline access to a lesson whose subscription expired — a
+      // commercial and security bug.
+      final maxRetention = DateTime.now().add(const Duration(days: 30));
+      final subscriptionExpiry = accessResult.expiresAt;
+      final expiresAt =
+          (subscriptionExpiry == null ||
+                  subscriptionExpiry.isAfter(maxRetention))
+              ? maxRetention
+              : subscriptionExpiry;
+
+      // Generate encryption key (shared for both video and audio files)
+      final encryptionKey = _encryptionService.generateEncryptionKey();
+      await _encryptionService.storeKey(downloadId, encryptionKey);
+
+      // Create download entity
+      final download = DownloadedLesson(
+        id: downloadId,
+        lessonId: lessonId,
+        courseId: courseId,
+        courseTitle: courseTitle,
+        title: title,
+        localPath: encryptedPath,
+        encryptedPath: encryptedPath,
+        audioPath: audioPath,
+        videoUrl: selected.videoFormat.videoUrl,
+        audioUrl: selected.audioTrack?.url,
+        quality: quality,
+        fileSize: 0,
+        status: DownloadStatus.pending,
+        downloadedAt: DateTime.now(),
+        expiresAt: expiresAt,
+      );
+
+      // Insert into database and start the download in the background.
+      await _localDataSource.insertDownload(download);
+      // Persist the original source URL (the parameter passed to startDownload)
+      // separately from video_url (which holds the resolved short-lived server
+      // link).  source_url is used by resumeDownload() to obtain a fresh link
+      // when the existing one has gone stale (TTL < 6h).
+      await _localDataSource.updateDownload(downloadId, {
+        'source_url': videoUrl,
+        'link_validated_at': DateTime.now().millisecondsSinceEpoch,
+      });
+      _changeController.add(null);
+      unawaited(
+        _executionService.execute(
+          downloadId: downloadId,
+          title: title,
+          videoUrl: selected.videoFormat.videoUrl,
+          videoSavePath: encryptedPath,
+          audioUrl: selected.audioTrack?.url,
+          audioSavePath: audioPath,
+          encryptionKey: encryptionKey,
+          lessonId: lessonId,
+          quality: quality,
+          accessExpiresAt: accessResult.expiresAt,
+          sourceUrl: videoUrl,
+        ).catchError((Object e, StackTrace stack) {
+          if (kDebugMode) debugPrint('❌ startDownload background error: $e\n$stack');
+        }),
+      );
+
+      return Right(download);
+    } on ServerException catch (e) {
+      return Left(ServerFailure(e.message));
+    } catch (e) {
+      return Left(UnknownFailure(e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> pauseDownload(String downloadId) async {
+    try {
+      final managerDownloadId = _downloadManagerIds[downloadId] ?? downloadId;
+      _pausedDownloads.add(downloadId);
+      await _downloadManager.pauseDownload(managerDownloadId);
+      await _localDataSource.updateDownloadStatus(downloadId, 'paused');
+      _changeController.add(null);
+      await DownloadNotificationHelper.cancel(downloadId: downloadId);
+      return const Right(null);
+    } catch (e) {
+      return Left(UnknownFailure(e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> resumeDownload(String downloadId) async {
+    try {
+      final downloadData = await _localDataSource.getDownloadById(downloadId);
+
+      if (downloadData == null) {
+        return const Left(NotFoundFailure('Download not found')); // check-ignore
+      }
+
+      final title = downloadData['title'] as String? ?? 'Lesson';
+      final videoUrl = (downloadData['video_url'] as String?)?.trim();
+      final encryptedPath = downloadData['encrypted_path'] as String?;
+      final audioPath = downloadData['audio_path'] as String?;
+      final audioUrl = (downloadData['audio_url'] as String?)?.trim();
+      final lessonId = downloadData['lesson_id'] as String?;
+      final qualityLabel = downloadData['quality'] as String?;
+      if (videoUrl == null ||
+          videoUrl.isEmpty ||
+          encryptedPath == null ||
+          lessonId == null) {
+        return const Left(UnknownFailure('Download metadata is incomplete')); // check-ignore
+      }
+
+      final quality = qualityLabel != null
+          ? VideoQuality.fromLabel(qualityLabel)
+          : VideoQuality.p720;
+      final accessExpiresAt = downloadData['expires_at'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(
+              (downloadData['expires_at'] as num).toInt(),
+            )
+          : null;
+
+      // ── Link-refresh ─────────────────────────────────────────────────────
+      // Delegated to DownloadLinkRefresher (see ARCH-006): if the stored
+      // link is old enough to plausibly have expired, it fetches and
+      // persists a fresh one via the original source URL before we execute
+      // the download.
+      final sourceUrl = (downloadData['source_url'] as String?)?.trim();
+      final rawLinkValidatedAt = downloadData['link_validated_at'];
+      final linkValidatedAt = rawLinkValidatedAt != null
+          ? DateTime.fromMillisecondsSinceEpoch(
+              (rawLinkValidatedAt as num).toInt(),
+            )
+          : null;
+
+      final refreshResult = await _linkRefresher.refreshIfStale(
+        downloadId: downloadId,
+        currentVideoUrl: videoUrl,
+        currentAudioUrl:
+            (audioUrl == null || audioUrl.isEmpty) ? null : audioUrl,
+        sourceUrl: sourceUrl,
+        linkValidatedAt: linkValidatedAt,
+        quality: quality,
+      );
+      final effectiveVideoUrl = refreshResult.videoUrl;
+      final effectiveAudioUrl = refreshResult.audioUrl;
+      // ────────────────────────────────────────────────────────────────────
+
+      final existingKey = await _encryptionService.retrieveKey(downloadId);
+      if (existingKey == null) {
+        for (final path in [
+          '$encryptedPath.tmp',
+          if (audioPath != null) '$audioPath.tmp',
+        ]) {
+          final tmpFile = File(path);
+          if (await tmpFile.exists()) await tmpFile.delete();
+        }
+      }
+      final encryptionKey =
+          existingKey ?? _encryptionService.generateEncryptionKey();
+      await _encryptionService.storeKey(downloadId, encryptionKey);
+
+      await _localDataSource.updateDownloadStatus(downloadId, 'downloading');
+      _changeController.add(null);
+      _pausedDownloads.remove(downloadId);
+      _cancelledDownloads.remove(downloadId);
+
+      unawaited(
+        _executionService.execute(
+          downloadId: downloadId,
+          title: title,
+          videoUrl: effectiveVideoUrl,
+          videoSavePath: encryptedPath,
+          audioUrl: effectiveAudioUrl,
+          audioSavePath: audioPath,
+          encryptionKey: encryptionKey,
+          lessonId: lessonId,
+          quality: quality,
+          accessExpiresAt: accessExpiresAt,
+          sourceUrl: sourceUrl,
+        ).catchError((Object e, StackTrace stack) {
+          if (kDebugMode) {
+            debugPrint('❌ resumeDownload background error: $e\n$stack');
+          }
+        }),
+      );
+
+      return const Right(null);
+    } catch (e) {
+      return Left(UnknownFailure(e.toString()));
+    }
+  }
+
+
+  @override
+  Future<Either<Failure, void>> cancelDownload(String downloadId) async {
+    try {
+      final managerDownloadId = _downloadManagerIds[downloadId] ?? downloadId;
+      _cancelledDownloads.add(downloadId);
+      
+      try {
+        await _downloadManager.cancelDownload(managerDownloadId);
+      } catch (e) {
+        debugPrint('⚠️ Error cancelling download in manager: $e');
+      }
+
+      try {
+        await _localDataSource.updateDownloadStatus(downloadId, 'failed');
+      } catch (e) {
+        debugPrint('⚠️ Error updating download status: $e');
+      }
+
+      final downloadData = await _localDataSource.getDownloadById(downloadId);
+      if (downloadData != null) {
+        final encryptedPath = downloadData['encrypted_path'] as String?;
+        final audioPath = downloadData['audio_path'] as String?;
+        await _cleanupDownloadFiles(encryptedPath, audioPath);
+      }
+
+      try {
+        await _encryptionService.deleteKey(downloadId);
+      } catch (e) {
+        debugPrint('⚠️ Error deleting key: $e');
+      }
+
+      await _localDataSource.deleteDownload(downloadId);
+      _changeController.add(null);
+      
+      try {
+        await _executionService.closeProgressController(downloadId);
+      } catch (e) {
+        debugPrint('⚠️ Error closing progress controller: $e');
+      }
+
+      try {
+        await DownloadNotificationHelper.cancel(downloadId: downloadId);
+      } catch (e) {
+        debugPrint('⚠️ Error cancelling notification: $e');
+      }
+
+      return const Right(null);
+    } catch (e) {
+      return Left(UnknownFailure(e.toString()));
+    }
+  }
+
+  Future<void> _cleanupDownloadFiles(
+    String? encryptedPath,
+    String? audioPath,
+  ) async {
+    if (encryptedPath != null && encryptedPath.isNotEmpty) {
+      try {
+        await _localDataSource.deleteEncryptedFile(encryptedPath);
+      } catch (e) {
+        debugPrint('⚠️ Error deleting encrypted file: $e');
+      }
+
+      try {
+        await _localDataSource.deleteEncryptedFile('$encryptedPath.tmp');
+      } catch (e) {
+        debugPrint('⚠️ Error deleting temp file: $e');
+      }
+    }
+
+    if (audioPath != null && audioPath.isNotEmpty) {
+      try {
+        await _localDataSource.deleteEncryptedFile(audioPath);
+      } catch (e) {
+        debugPrint('⚠️ Error deleting audio file: $e');
+      }
+
+      try {
+        await _localDataSource.deleteEncryptedFile('$audioPath.tmp');
+      } catch (e) {
+        debugPrint('⚠️ Error deleting audio temp file: $e');
+      }
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> deleteDownload(String downloadId) async {
+    try {
+      final downloadData = await _localDataSource.getDownloadById(downloadId);
+
+      if (downloadData == null) {
+        return const Left(NotFoundFailure('Download not found')); // check-ignore
+      }
+
+      final encryptedPath = downloadData['encrypted_path'] as String?;
+      final audioPath = downloadData['audio_path'] as String?;
+      await _cleanupDownloadFiles(encryptedPath, audioPath);
+
+      try {
+        await _encryptionService.deleteKey(downloadId);
+      } catch (e) {
+        debugPrint('⚠️ Error deleting encryption key: $e');
+      }
+
+      await _localDataSource.deleteDownload(downloadId);
+      _changeController.add(null);
+
+      try {
+        await _executionService.closeProgressController(downloadId);
+      } catch (e) {
+        debugPrint('⚠️ Error closing progress controller: $e');
+      }
+
+      try {
+        await DownloadNotificationHelper.cancel(downloadId: downloadId);
+      } catch (e) {
+        debugPrint('⚠️ Error cancelling notification: $e');
+      }
+
+      return const Right(null);
+    } catch (e) {
+      return Left(UnknownFailure(e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, List<DownloadedLesson>>> getDownloads() =>
+      _queryService.getDownloads();
+
+  @override
+  Future<Either<Failure, DownloadedLesson?>> getDownloadByLessonId(
+    String lessonId,
+  ) =>
+      _queryService.getDownloadByLessonId(lessonId);
+
+  @override
+  Future<Either<Failure, DownloadedLesson?>> getDownloadById(
+    String downloadId,
+  ) =>
+      _queryService.getDownloadById(downloadId);
+
+  @override
+  Future<Either<Failure, List<DownloadedLesson>>> getDownloadsByCourse(
+    String courseId,
+  ) =>
+      _queryService.getDownloadsByCourse(courseId);
+
+  @override
+  Future<Either<Failure, List<DownloadedLesson>>> getDownloadsByStatus(
+    DownloadStatus status,
+  ) =>
+      _queryService.getDownloadsByStatus(status);
+
+  @override
+  Stream<DownloadProgress> watchProgress(String downloadId) {
+    final stream = _progressControllers[downloadId]?.stream;
+    return stream?.asBroadcastStream() ?? const Stream.empty();
+  }
+
+  @override
+  Future<Either<Failure, List<DownloadedLesson>>> getExpiredDownloads() =>
+      _queryService.getExpiredDownloads();
+
+  @override
+  Future<Either<Failure, int>> cleanupExpiredDownloads() async {
+    try {
+      final expiredResult = await getExpiredDownloads();
+      return await expiredResult.fold<Future<Either<Failure, int>>>(
+        (failure) async => Left(failure),
+        (expiredDownloads) async {
+          var deletedCount = 0;
+          for (final download in expiredDownloads) {
+            await deleteDownload(download.id);
+            deletedCount++;
+          }
+          return Right(deletedCount);
+        },
+      );
+    } catch (e) {
+      return Left(UnknownFailure(e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, int>> getTotalStorageUsed() =>
+      _queryService.getTotalStorageUsed();
+
+  @override
+  Future<Either<Failure, void>> updateLastAccessed(String downloadId) =>
+      _queryService.updateLastAccessed(downloadId);
+
+  Future<void> dispose() async {
+    final controllers = _progressControllers.values.toList(growable: false);
+    _progressControllers.clear();
+    for (final controller in controllers) {
+      if (!controller.isClosed) {
+        await controller.close();
+      }
+    }
+    if (!_changeController.isClosed) {
+      await _changeController.close();
+    }
+    _downloadManager.dispose();
+  }
+}
+

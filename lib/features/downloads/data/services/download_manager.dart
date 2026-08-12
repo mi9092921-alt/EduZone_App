@@ -1,0 +1,1055 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:background_downloader/background_downloader.dart';
+import 'package:dio/dio.dart'
+    show CancelToken, Dio, Options, ProgressCallback, ResponseBody, ResponseType;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding;
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../../core/constants/app_constants.dart';
+import '../../../../core/network/certificate_pinning.dart';
+import '../../../../core/network/supabase_client.dart';
+import '../../../../core/services/encryption_service.dart'
+    show
+        PlannedChunk,
+        chunkIndexFromPlan,
+        chunkedFormatHeaderBytes,
+        encryptChunkBatch,
+        planChunkLayout,
+        totalEncryptedSizeForPlan;
+
+import '../../data/datasources/download_remote_ds.dart';
+import '../../domain/entities/download_enums.dart';
+
+/// Top-level callback triggered by background_downloader when a task's
+/// server link is nearing expiration (TTL < 6h).
+///
+/// Refreshes the short-lived server URL via Supabase Edge Function
+/// before any HTTP request attempt (start, retry, resume).
+@pragma('vm:entry-point')
+Future<Task?> handleTokenRefresh(Task task) async {
+  try {
+    if (task is! DownloadTask || task.metaData.isEmpty) return null;
+    final data = jsonDecode(task.metaData) as Map<String, dynamic>;
+    final sourceUrl = data['sourceUrl'] as String?;
+    final qualityLabel = data['qualityLabel'] as String?;
+    final trackType = data['trackType'] as String? ?? 'video';
+
+    if (sourceUrl == null || sourceUrl.isEmpty) return null;
+
+    final client = await _supabaseClientForBackgroundCallback();
+    final remoteDs = DownloadRemoteDataSource(client);
+    final freshInfo = await remoteDs.getVideoInfo(sourceUrl);
+
+    final quality = qualityLabel != null
+        ? VideoQuality.fromLabel(qualityLabel)
+        : VideoQuality.p720;
+
+    final matchingFormats = freshInfo.formats
+        .where((format) => format.quality == quality.label)
+        .toList();
+    final selectedFormat =
+        matchingFormats.isNotEmpty ? matchingFormats.first : null;
+
+    final freshUrl = trackType == 'audio'
+        ? (selectedFormat?.audioUrl ?? freshInfo.audio?.url ?? task.url)
+        : (selectedFormat?.videoUrl ??
+            (freshInfo.formats.isNotEmpty
+                ? freshInfo.formats.first.videoUrl
+                : task.url));
+
+    if (kDebugMode) {
+      debugPrint(
+        '🔄 [handleTokenRefresh] Refreshed $trackType link for task ${task.taskId}',
+      );
+    }
+
+    return task.copyWith(url: freshUrl);
+  } catch (e, stack) {
+    if (kDebugMode) {
+      debugPrint('⚠️ [handleTokenRefresh] Link refresh failed: $e\n$stack');
+    }
+    return null;
+  }
+}
+
+Future<SupabaseClient> _supabaseClientForBackgroundCallback() async {
+  try {
+    return Supabase.instance.client;
+  } catch (_) {
+    await SupabaseService.initialize();
+    return Supabase.instance.client;
+  }
+}
+
+/// Download manager backed by [FileDownloader] (background_downloader).
+///
+/// Supports background persistence across app kills/pauses, native iOS/Android
+/// background workers, progress callbacks, and automatic server link refresh.
+class DownloadManager {
+  final FileDownloader _downloader;
+  final Dio Function() _dioFactory;
+  final bool _isAndroid;
+  final Map<String, StreamSubscription<TaskUpdate>> _subscriptions = {};
+  final Map<String, CancelToken> _dioCancelTokens = {};
+  final Set<String> _activeDownloadIds = {};
+  static const int _maxConcurrentDownloads = 3;
+  static const int _parallelDownloadMinBytes = 8 * 1024 * 1024;
+  static const int _parallelDownloadLargeBytes = 80 * 1024 * 1024;
+
+  /// [dioFactory], [isAndroid], and [configureOnInit] exist purely as
+  /// testing seams — production code should never pass them.
+  ///
+  /// - [dioFactory]/[isAndroid]: without them, `flutter test` (host, not a
+  ///   real Android device) can never exercise the Android-direct-Dio
+  ///   download path, since `Platform.isAndroid` is always false on host.
+  /// - [configureOnInit]: skips the one-time `_configureDownloader()` call
+  ///   (notification channel + Android config), which talks to the real
+  ///   `background_downloader` plugin API. Tests that don't care about
+  ///   notification wiring can set this to `false` to avoid depending on
+  ///   that API surface entirely.
+  DownloadManager({
+    FileDownloader? downloader,
+    @visibleForTesting Dio Function()? dioFactory,
+    @visibleForTesting bool? isAndroid,
+    @visibleForTesting bool configureOnInit = true,
+  })  : _downloader = downloader ?? FileDownloader(),
+        _dioFactory = dioFactory ?? (() => Dio()),
+        _isAndroid = isAndroid ?? Platform.isAndroid {
+    if (configureOnInit) _configureDownloader();
+  }
+
+  /// Whether the fast parallel-range Dio path should be attempted for this
+  /// platform/moment, instead of falling back to the plugin-driven
+  /// `background_downloader` queue.
+  ///
+  /// Android: always eligible — downloads already run in a foreground
+  /// service (`Config.runInForeground` in [_configureDownloader]), so a raw
+  /// Dio connection surviving isn't a concern.
+  ///
+  /// iOS: a raw Dio HTTP connection is *not* a native `URLSession`
+  /// background transfer the way `background_downloader`'s tasks are — if
+  /// the app is backgrounded mid-download, iOS can suspend or drop the
+  /// connection outright, silently failing a download that would otherwise
+  /// have survived via the plugin's native background session. So on iOS
+  /// the fast path is only taken while the app is confirmed to be in the
+  /// foreground; otherwise every call site here falls back to the
+  /// `background_downloader` queue path, same as before this change.
+  /// `lifecycleState == null` (e.g. very early in app startup, before the
+  /// first frame) is treated as foreground rather than blocking downloads
+  /// that legitimately start there.
+  bool get _dioParallelEligiblePlatform {
+    if (_isAndroid) return true;
+    final state = WidgetsBinding.instance.lifecycleState;
+    return state == AppLifecycleState.resumed;
+  }
+
+  void _configureDownloader() {
+    _downloader.configureNotification(
+      running: const TaskNotification(
+        'EduZone download', // check-ignore
+        'Downloading {filename}: {progress}', // check-ignore
+      ),
+      complete: const TaskNotification(
+        'EduZone download', // check-ignore
+        'Download complete', // check-ignore
+      ),
+      error: const TaskNotification(
+        'EduZone download', // check-ignore
+        'Download failed', // check-ignore
+      ),
+      paused: const TaskNotification(
+        'EduZone download', // check-ignore
+        'Download paused', // check-ignore
+      ),
+      canceled: const TaskNotification(
+        'EduZone download', // check-ignore
+        'Download canceled', // check-ignore
+      ),
+      progressBar: true,
+    );
+    _downloader.configure(
+      androidConfig: (Config.runInForeground, Config.always),
+    );
+  }
+
+  /// Starts or enqueues a download task from [url] to [savePath].
+  ///
+  /// [onProgress] callback receives (receivedBytes, totalBytes).
+  /// [sourceUrl] and [qualityLabel] enable automatic server link renewal
+  /// if the download pauses and resumes after link expiration.
+  Future<String> startDownload({
+    String? downloadId,
+    required String url,
+    required String savePath,
+    required ProgressCallback onProgress,
+    Map<String, String>? headers,
+    String? sourceUrl,
+    String? qualityLabel,
+    String trackType = 'video',
+  }) async {
+    if (_activeDownloadIds.length >= _maxConcurrentDownloads) {
+      throw Exception('Maximum concurrent downloads limit reached'); // check-ignore
+    }
+
+    final effectiveDownloadId =
+        downloadId ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+    _activeDownloadIds.add(effectiveDownloadId);
+
+    BaseDirectory baseDirectory = BaseDirectory.applicationDocuments;
+    String directory = 'downloads';
+    final fileName = p.basename(savePath);
+
+    try {
+      final appDocDir = await getApplicationDocumentsDirectory();
+      if (savePath.startsWith(appDocDir.path)) {
+        baseDirectory = BaseDirectory.applicationDocuments;
+        final relDir = p.dirname(savePath.substring(appDocDir.path.length));
+        directory = relDir.startsWith('/') ? relDir.substring(1) : relDir;
+      } else {
+        final tempDir = await getTemporaryDirectory();
+        if (savePath.startsWith(tempDir.path)) {
+          baseDirectory = BaseDirectory.temporary;
+          final relDir = p.dirname(savePath.substring(tempDir.path.length));
+          directory = relDir.startsWith('/') ? relDir.substring(1) : relDir;
+        }
+      }
+    } catch (_) {
+      // Fall back to applicationDocuments + downloads
+    }
+
+    final metaDataMap = <String, dynamic>{
+      if (sourceUrl != null && sourceUrl.isNotEmpty) 'sourceUrl': sourceUrl,
+      if (qualityLabel != null && qualityLabel.isNotEmpty)
+        'qualityLabel': qualityLabel,
+      if (sourceUrl != null && sourceUrl.isNotEmpty) 'trackType': trackType,
+    };
+
+    final effectiveHeaders = <String, String>{
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) '
+          'AppleWebKit/537.36 (KHTML, like Gecko) '
+          'Chrome/120.0.0.0 Mobile Safari/537.36',
+      'Referer': 'https://www.youtube.com/',
+      ...?headers,
+    };
+
+    final task = DownloadTask(
+      taskId: effectiveDownloadId,
+      url: url,
+      headers: effectiveHeaders,
+      baseDirectory: baseDirectory,
+      directory: directory,
+      filename: fileName,
+      allowPause: true,
+      updates: Updates.statusAndProgress,
+      metaData: metaDataMap.isEmpty ? '' : jsonEncode(metaDataMap),
+      options: sourceUrl == null || sourceUrl.isEmpty
+          ? null
+          : TaskOptions(onTaskStart: handleTokenRefresh),
+    );
+
+    if (_dioParallelEligiblePlatform) {
+      final cancelToken = CancelToken();
+      _dioCancelTokens[effectiveDownloadId] = cancelToken;
+      try {
+        await _downloadWithDio(
+          task: task,
+          originalUrl: url,
+          savePath: savePath,
+          headers: effectiveHeaders,
+          cancelToken: cancelToken,
+          onProgress: onProgress,
+        );
+        return effectiveDownloadId;
+      } finally {
+        _activeDownloadIds.remove(effectiveDownloadId);
+        _dioCancelTokens.remove(effectiveDownloadId);
+      }
+    }
+
+    final completer = Completer<String>();
+
+    // ignore: cancel_subscriptions
+    final sub = _downloader.updates.listen((update) {
+      if (update.task.taskId != effectiveDownloadId) return;
+
+      if (update is TaskProgressUpdate) {
+        final total =
+            update.hasExpectedFileSize ? update.expectedFileSize : 100;
+        final received = (update.progress * total).round();
+        onProgress(received, total);
+      } else if (update is TaskStatusUpdate) {
+        switch (update.status) {
+          case TaskStatus.complete:
+            _activeDownloadIds.remove(effectiveDownloadId);
+            _cleanSubscription(effectiveDownloadId);
+            if (!completer.isCompleted) {
+              unawaited(_ensureFileAtSavePath(update.task, savePath).then((_) {
+                if (!completer.isCompleted) {
+                  completer.complete(effectiveDownloadId);
+                }
+              }).catchError((Object e) {
+                if (!completer.isCompleted) {
+                  completer.complete(effectiveDownloadId);
+                }
+              }));
+            }
+            break;
+          case TaskStatus.canceled:
+            _activeDownloadIds.remove(effectiveDownloadId);
+            _cleanSubscription(effectiveDownloadId);
+            if (!completer.isCompleted) {
+              completer.completeError(
+                Exception('Download canceled with status: ${update.status}'), // check-ignore
+              );
+            }
+            break;
+          case TaskStatus.failed:
+          case TaskStatus.notFound:
+            _activeDownloadIds.remove(effectiveDownloadId);
+            _cleanSubscription(effectiveDownloadId);
+            if (!completer.isCompleted) {
+              final failureDetails = _formatFailureDetails(update);
+              if (kDebugMode) {
+                debugPrint(
+                  'Download task $effectiveDownloadId failed: $failureDetails',
+                );
+              }
+              unawaited(
+                _downloadWithDio(
+                  task: update.task,
+                  originalUrl: url,
+                  savePath: savePath,
+                  headers: effectiveHeaders,
+                  cancelToken: CancelToken(),
+                  onProgress: onProgress,
+                ).then((_) {
+                  if (!completer.isCompleted) {
+                    completer.complete(effectiveDownloadId);
+                  }
+                }).catchError((Object e) {
+                  if (!completer.isCompleted) {
+                    completer.completeError(
+                      Exception('$failureDetails | Dio retry failed: $e'), // check-ignore
+                    );
+                  }
+                }),
+              );
+            }
+            break;
+          case TaskStatus.paused:
+            _activeDownloadIds.remove(effectiveDownloadId);
+            break;
+          default:
+            break;
+        }
+      }
+    });
+
+    _subscriptions[effectiveDownloadId] = sub;
+
+    final enqueued = await _downloader.enqueue(task);
+    if (!enqueued) {
+      _activeDownloadIds.remove(effectiveDownloadId);
+      _cleanSubscription(effectiveDownloadId);
+      throw Exception('Failed to enqueue download task: $effectiveDownloadId'); // check-ignore
+    }
+
+    return completer.future;
+  }
+
+  /// Downloads [url] and writes it directly as an AES-256-GCM chunked
+  /// encrypted file at [encryptedSavePath] — plaintext never touches disk.
+  ///
+  /// Supersedes the old two-step flow used by callers today (download
+  /// plaintext to a `.tmp` file via [startDownload], then run
+  /// [EncryptionService.encryptFile] as a separate sequential pass over the
+  /// whole file afterward): those two steps were each other's biggest
+  /// source of "wait more after the download already finished" — this
+  /// makes them the same pass. Each parallel range worker encrypts the
+  /// bytes it receives as they arrive and writes them straight to their
+  /// final position in [encryptedSavePath]. Concurrent, out-of-order writes
+  /// to the same destination file are safe here because every chunk's
+  /// on-disk offset is deterministic from its index alone — see
+  /// [PlannedChunk] for why — so workers never need to coordinate beyond
+  /// "who owns which chunk indices".
+  ///
+  /// Returns `null` if the pipelined path isn't usable for this download —
+  /// callers MUST fall back to the existing [startDownload] +
+  /// [EncryptionService.encryptFile] flow in that case. Reasons this
+  /// returns `null`:
+  /// - The server doesn't support Range requests, or the file is smaller
+  ///   than [_parallelDownloadMinBytes] (not worth parallelizing).
+  /// - [_dioParallelEligiblePlatform] is false (iOS, app backgrounded).
+  /// - Any error during setup/download/encryption (network failure mid-way,
+  ///   disk full, etc.) — the caller's existing plaintext-then-encrypt path
+  ///   is the fallback of last resort, not a second copy of this one.
+  ///
+  /// Known limitation carried over unchanged from the existing
+  /// `_tryDownloadWithParallelRanges` plaintext path: pausing a download
+  /// using this method and resuming it later restarts from zero rather than
+  /// resuming from the last downloaded byte — true partial-byte resume for
+  /// the Dio-driven parallel path doesn't exist yet on either path, and
+  /// adding it is a separate task from this one.
+  Future<String?> startEncryptedDownload({
+    required String url,
+    required String encryptedSavePath,
+    required String encryptionKeyBase64,
+    required ProgressCallback onProgress,
+    String? downloadId,
+    Map<String, String>? headers,
+  }) async {
+    if (!_dioParallelEligiblePlatform) return null;
+    if (_activeDownloadIds.length >= _maxConcurrentDownloads) {
+      throw Exception('Maximum concurrent downloads limit reached'); // check-ignore
+    }
+
+    final effectiveDownloadId =
+        downloadId ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+    final effectiveHeaders = <String, String>{
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) '
+          'AppleWebKit/537.36 (KHTML, like Gecko) '
+          'Chrome/120.0.0.0 Mobile Safari/537.36',
+      'Referer': 'https://www.youtube.com/',
+      ...?headers,
+    };
+
+    final dio = _dioFactory();
+    if (isSupabaseHost(url, configuredSupabaseUrl: AppConstants.supabaseUrl)) {
+      final certs = await loadPinnedCertificatesAsset();
+      if (certs.isNotEmpty) {
+        applyCertificatePinning(dio, pinnedCertificatesPem: certs);
+      }
+    }
+
+    final cancelToken = CancelToken();
+    _dioCancelTokens[effectiveDownloadId] = cancelToken;
+    _activeDownloadIds.add(effectiveDownloadId);
+
+    RandomAccessFile? raf;
+    try {
+      final probe = await _probeRangeDownload(
+        dio: dio,
+        url: url,
+        headers: effectiveHeaders,
+        cancelToken: cancelToken,
+      );
+      if (probe == null || probe.totalBytes < _parallelDownloadMinBytes) {
+        return null;
+      }
+
+      final plan = planChunkLayout(probe.totalBytes);
+      final destFile = File(encryptedSavePath);
+      await destFile.parent.create(recursive: true);
+      if (await destFile.exists()) await destFile.delete();
+
+      // Single open here — deliberately NOT one `File.open()` per worker
+      // the way the plaintext `_downloadRange` path does. `FileMode.write`
+      // truncates on *every* open, so if each worker opened its own handle
+      // on this same path, whichever worker's open() call happened to land
+      // last would silently wipe out bytes already written by the others.
+      // Opening exactly once here (before any worker starts) and sharing
+      // this single handle — serialized through [_AsyncFileWriteLock] below
+      // — sidesteps that risk entirely rather than depending on the exact
+      // truncate/seek semantics of any particular `FileMode`.
+      raf = await destFile.open(mode: FileMode.write);
+      await raf.writeFrom(chunkedFormatHeaderBytes);
+      await raf.truncate(totalEncryptedSizeForPlan(plan));
+
+      final chunkCount = probe.totalBytes >= _parallelDownloadLargeBytes ? 6 : 4;
+      final workerChunkGroups = _splitChunksAcrossWorkers(plan, chunkCount);
+      final progressByWorker = List<int>.filled(workerChunkGroups.length, 0);
+      final writeLock = _AsyncFileWriteLock();
+
+      if (kDebugMode) {
+        debugPrint(
+          'Encrypted parallel download: ${workerChunkGroups.length} workers, '
+          '${plan.length} chunks, ${probe.totalBytes} plaintext bytes',
+        );
+      }
+
+      await Future.wait([
+        for (var w = 0; w < workerChunkGroups.length; w++)
+          _downloadAndEncryptChunkGroup(
+            dio: dio,
+            url: url,
+            headers: effectiveHeaders,
+            raf: raf,
+            writeLock: writeLock,
+            chunks: workerChunkGroups[w],
+            workerIndex: w,
+            progressByWorker: progressByWorker,
+            totalPlaintextBytes: probe.totalBytes,
+            keyBase64: encryptionKeyBase64,
+            cancelToken: cancelToken,
+            onProgress: onProgress,
+          ),
+      ]);
+
+      onProgress(probe.totalBytes, probe.totalBytes);
+
+      // The index is fully deterministic from the plan — no need to
+      // accumulate it chunk-by-chunk the way the single-isolate whole-file
+      // encrypt path does; write it once, now that every chunk is on disk.
+      final idx = chunkIndexFromPlan(plan, probe.totalBytes);
+      final idxFile = File('$encryptedSavePath.idx');
+      await idxFile.writeAsString(jsonEncode(idx.toJson()), flush: true);
+
+      return effectiveDownloadId;
+    } catch (e) {
+      if (cancelToken.isCancelled) rethrow;
+      if (kDebugMode) {
+        debugPrint(
+          'Encrypted parallel download failed, caller should fall back: $e',
+        );
+      }
+      return null;
+    } finally {
+      await raf?.close();
+      _activeDownloadIds.remove(effectiveDownloadId);
+      _dioCancelTokens.remove(effectiveDownloadId);
+    }
+  }
+
+  List<List<PlannedChunk>> _splitChunksAcrossWorkers(
+    List<PlannedChunk> plan,
+    int workerCount,
+  ) {
+    if (plan.isEmpty) return const [];
+    final effectiveWorkers = workerCount < plan.length ? workerCount : plan.length;
+    final perWorker = (plan.length / effectiveWorkers).ceil();
+    final groups = <List<PlannedChunk>>[];
+    for (var start = 0; start < plan.length; start += perWorker) {
+      final end = start + perWorker < plan.length ? start + perWorker : plan.length;
+      groups.add(plan.sublist(start, end));
+    }
+    return groups;
+  }
+
+  /// Downloads the byte range covering [chunks] (a contiguous, chunk-aligned
+  /// slice of the overall plan — see [_splitChunksAcrossWorkers]), encrypts
+  /// each chunk as soon as enough bytes for it have arrived, and writes the
+  /// result straight to its precomputed position via [raf]/[writeLock].
+  Future<void> _downloadAndEncryptChunkGroup({
+    required Dio dio,
+    required String url,
+    required Map<String, String> headers,
+    required RandomAccessFile raf,
+    required _AsyncFileWriteLock writeLock,
+    required List<PlannedChunk> chunks,
+    required int workerIndex,
+    required List<int> progressByWorker,
+    required int totalPlaintextBytes,
+    required String keyBase64,
+    required CancelToken cancelToken,
+    required ProgressCallback onProgress,
+  }) async {
+    if (chunks.isEmpty) return;
+    final rangeStart = chunks.first.plaintextStart;
+    final rangeEnd = chunks.last.plaintextEnd;
+
+    final response = await dio.get<ResponseBody>(
+      url,
+      options: Options(
+        headers: {...headers, 'Range': 'bytes=$rangeStart-$rangeEnd'},
+        followRedirects: true,
+        responseType: ResponseType.stream,
+        receiveTimeout: Duration.zero,
+        sendTimeout: const Duration(seconds: 30),
+        validateStatus: (status) => status == 206,
+      ),
+      cancelToken: cancelToken,
+    );
+
+    final body = response.data;
+    if (body == null) throw StateError('Range response body is empty');
+
+    // FIFO of not-yet-consumed network packets, so a chunk boundary that
+    // falls mid-packet doesn't require re-copying everything received so
+    // far — only the (small) remainder of the packet that straddles it.
+    final pending = <Uint8List>[];
+    var pendingLength = 0;
+    var chunkCursor = 0;
+    var batchChunks = <PlannedChunk>[];
+    var batchPlaintexts = <Uint8List>[];
+    // ~2 MB of plaintext per `Isolate.run` call at the default 512 KB chunk
+    // size — batched so a worker handling hundreds of chunks doesn't pay
+    // isolate-spawn overhead per chunk (every chunk here is unique, unlike
+    // the read-side LRU cache in `EdzLocalProxy`, so there's no cache to
+    // fall back on to absorb that cost).
+    const batchChunkCount = 4;
+
+    Uint8List takeExactly(int n) {
+      final out = Uint8List(n);
+      var written = 0;
+      while (written < n) {
+        final first = pending.first;
+        final need = n - written;
+        if (first.length <= need) {
+          out.setRange(written, written + first.length, first);
+          written += first.length;
+          pending.removeAt(0);
+        } else {
+          out.setRange(written, n, first);
+          pending[0] = first.sublist(need);
+          written = n;
+        }
+      }
+      pendingLength -= n;
+      return out;
+    }
+
+    Future<void> flushBatch() async {
+      if (batchChunks.isEmpty) return;
+      final toEncrypt = batchChunks;
+      final toEncryptPlaintexts = batchPlaintexts;
+      batchChunks = [];
+      batchPlaintexts = [];
+
+      final encrypted = await encryptChunkBatch(toEncryptPlaintexts, keyBase64);
+      await writeLock.run(() async {
+        for (var i = 0; i < toEncrypt.length; i++) {
+          final c = toEncrypt[i];
+          final rec = encrypted[i];
+          final lengthBytes = ByteData(4)..setInt32(0, rec.cipherWithTag.length);
+          await raf.setPosition(c.encryptedOffset);
+          await raf.writeFrom(rec.iv);
+          await raf.writeFrom(lengthBytes.buffer.asUint8List());
+          await raf.writeFrom(rec.cipherWithTag);
+        }
+      });
+    }
+
+    await for (final data in body.stream) {
+      if (cancelToken.isCancelled) {
+        throw cancelToken.cancelError ?? StateError('Download canceled');
+      }
+      pending.add(data);
+      pendingLength += data.length;
+      progressByWorker[workerIndex] += data.length;
+      final received = progressByWorker.fold<int>(0, (s, v) => s + v);
+      onProgress(received, totalPlaintextBytes);
+
+      while (chunkCursor < chunks.length &&
+          pendingLength >= chunks[chunkCursor].plaintextLength) {
+        final c = chunks[chunkCursor];
+        batchChunks.add(c);
+        batchPlaintexts.add(takeExactly(c.plaintextLength));
+        chunkCursor++;
+        if (batchChunks.length >= batchChunkCount) {
+          await flushBatch();
+        }
+      }
+    }
+
+    await flushBatch();
+
+    if (chunkCursor < chunks.length) {
+      throw StateError(
+        'Range download for worker $workerIndex ended with '
+        '${chunks.length - chunkCursor} chunk(s) unfilled '
+        '(server closed the connection early)',
+      );
+    }
+  }
+
+  /// Pauses an active download by its ID.
+  Future<void> pauseDownload(String downloadId) async {
+    _cancelDioDownload(downloadId);
+    final task = await _downloader.taskForId(downloadId);
+    if (task != null && task is DownloadTask) {
+      await _downloader.pause(task);
+    }
+    _activeDownloadIds.remove(downloadId);
+  }
+
+  /// Cancels an active download by its ID.
+  Future<void> cancelDownload(String downloadId) async {
+    _cancelDioDownload(downloadId);
+    await _downloader.cancelTaskWithId(downloadId);
+    _activeDownloadIds.remove(downloadId);
+    _cleanSubscription(downloadId);
+  }
+
+  /// Checks if a download is currently active.
+  bool isDownloadActive(String downloadId) {
+    return _activeDownloadIds.contains(downloadId);
+  }
+
+  /// Gets the count of active downloads.
+  int get activeDownloadsCount => _activeDownloadIds.length;
+
+  /// Cancels all active downloads.
+  Future<void> cancelAllDownloads() async {
+    await _downloader.cancelAll();
+    for (final token in _dioCancelTokens.values) {
+      token.cancel('All downloads canceled');
+    }
+    _dioCancelTokens.clear();
+    _activeDownloadIds.clear();
+    for (final sub in _subscriptions.values) {
+      await sub.cancel();
+    }
+    _subscriptions.clear();
+  }
+
+  /// Gets the file size from the URL headers using a HEAD request.
+  Future<int?> getFileSize(String url, {Map<String, String>? headers}) async {
+    try {
+      final client = HttpClient();
+      final request = await client.headUrl(Uri.parse(url));
+      headers?.forEach((key, value) {
+        request.headers.set(key, value);
+      });
+      final response = await request.close();
+      final contentLength = response.contentLength;
+      return contentLength > 0 ? contentLength : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  void _cleanSubscription(String downloadId) {
+    final sub = _subscriptions.remove(downloadId);
+    sub?.cancel();
+  }
+
+  void _cancelDioDownload(String downloadId) {
+    final matchingIds = _dioCancelTokens.keys
+        .where((id) => id == downloadId || id.startsWith('${downloadId}_'))
+        .toList();
+    for (final id in matchingIds) {
+      _dioCancelTokens.remove(id)?.cancel('Download canceled');
+      _activeDownloadIds.remove(id);
+    }
+  }
+
+  String _formatFailureDetails(TaskStatusUpdate update) {
+    final parts = <String>[
+      'Download failed with status: ${update.status}',
+      if (update.responseStatusCode != null)
+        'HTTP ${update.responseStatusCode}',
+      if (update.exception != null) update.exception.toString(),
+      if (update.responseBody != null && update.responseBody!.isNotEmpty)
+        update.responseBody!,
+    ];
+    return parts.join(' | ');
+  }
+
+  Future<void> _downloadWithDio({
+    required Task task,
+    required String originalUrl,
+    required String savePath,
+    required Map<String, String> headers,
+    required CancelToken cancelToken,
+    required ProgressCallback onProgress,
+  }) async {
+    final fallbackTask = await handleTokenRefresh(task);
+    final fallbackUrl = fallbackTask?.url ?? task.url;
+    final effectiveUrl = fallbackUrl.isEmpty ? originalUrl : fallbackUrl;
+    final targetFile = File(savePath);
+
+    if (!await targetFile.parent.exists()) {
+      await targetFile.parent.create(recursive: true);
+    }
+    if (await targetFile.exists()) {
+      await targetFile.delete();
+    }
+
+    if (kDebugMode) {
+      debugPrint('Download via Dio for task ${task.taskId}');
+    }
+
+    final dio = _dioFactory();
+    if (isSupabaseHost(effectiveUrl, configuredSupabaseUrl: AppConstants.supabaseUrl)) {
+      final certs = await loadPinnedCertificatesAsset();
+      if (certs.isNotEmpty) {
+        applyCertificatePinning(dio, pinnedCertificatesPem: certs);
+      }
+    } else if (kDebugMode) {
+      debugPrint(
+        'ℹ️ [DownloadManager] URL domain (${Uri.tryParse(effectiveUrl)?.host}) is an external CDN. '
+        'Using standard TLS validation (Supabase pinning bypassed for external CDN).',
+      );
+    }
+    final usedParallelDownload = await _tryDownloadWithParallelRanges(
+
+      dio: dio,
+      url: effectiveUrl,
+      savePath: savePath,
+      headers: headers,
+      cancelToken: cancelToken,
+      onProgress: onProgress,
+    );
+    if (usedParallelDownload) return;
+
+    await dio.download(
+      effectiveUrl,
+      savePath,
+      options: Options(
+        headers: headers,
+        followRedirects: true,
+        receiveTimeout: Duration.zero,
+        sendTimeout: const Duration(seconds: 30),
+        validateStatus: (status) =>
+            status != null && status >= 200 && status < 300,
+      ),
+      cancelToken: cancelToken,
+      onReceiveProgress: onProgress,
+    );
+  }
+
+  Future<bool> _tryDownloadWithParallelRanges({
+    required Dio dio,
+    required String url,
+    required String savePath,
+    required Map<String, String> headers,
+    required CancelToken cancelToken,
+    required ProgressCallback onProgress,
+  }) async {
+    try {
+      final probe = await _probeRangeDownload(
+        dio: dio,
+        url: url,
+        headers: headers,
+        cancelToken: cancelToken,
+      );
+      if (probe == null || probe.totalBytes < _parallelDownloadMinBytes) {
+        return false;
+      }
+
+      final chunkCount =
+          probe.totalBytes >= _parallelDownloadLargeBytes ? 6 : 4;
+      final ranges = _splitRanges(probe.totalBytes, chunkCount);
+      final targetFile = File(savePath);
+      final progressByRange = List<int>.filled(ranges.length, 0);
+
+      final raf = await targetFile.open(mode: FileMode.write);
+      try {
+        await raf.truncate(probe.totalBytes);
+      } finally {
+        await raf.close();
+      }
+
+      if (kDebugMode) {
+        debugPrint(
+          'Parallel range download: ${ranges.length} parts, '
+          '${probe.totalBytes} bytes',
+        );
+      }
+
+      await Future.wait([
+        for (var i = 0; i < ranges.length; i++)
+          _downloadRange(
+            dio: dio,
+            url: url,
+            savePath: savePath,
+            headers: headers,
+            range: ranges[i],
+            rangeIndex: i,
+            progressByRange: progressByRange,
+            totalBytes: probe.totalBytes,
+            cancelToken: cancelToken,
+            onProgress: onProgress,
+          ),
+      ]);
+
+      onProgress(probe.totalBytes, probe.totalBytes);
+      return true;
+    } catch (e) {
+      if (cancelToken.isCancelled) rethrow;
+      if (kDebugMode) {
+        debugPrint('Parallel range download unavailable, falling back: $e');
+      }
+      return false;
+    }
+  }
+
+  Future<_RangeProbe?> _probeRangeDownload({
+    required Dio dio,
+    required String url,
+    required Map<String, String> headers,
+    required CancelToken cancelToken,
+  }) async {
+    final response = await dio.get<ResponseBody>(
+      url,
+      options: Options(
+        headers: {
+          ...headers,
+          'Range': 'bytes=0-0',
+        },
+        followRedirects: true,
+        responseType: ResponseType.stream,
+        receiveTimeout: const Duration(seconds: 30),
+        sendTimeout: const Duration(seconds: 30),
+        validateStatus: (status) => status == 206,
+      ),
+      cancelToken: cancelToken,
+    );
+
+    await _drainResponse(response.data);
+    final contentRange = response.headers.value('content-range');
+    final totalBytes = _parseTotalBytesFromContentRange(contentRange);
+    if (totalBytes == null || totalBytes <= 0) return null;
+    return _RangeProbe(totalBytes);
+  }
+
+  Future<void> _downloadRange({
+    required Dio dio,
+    required String url,
+    required String savePath,
+    required Map<String, String> headers,
+    required _ByteRange range,
+    required int rangeIndex,
+    required List<int> progressByRange,
+    required int totalBytes,
+    required CancelToken cancelToken,
+    required ProgressCallback onProgress,
+  }) async {
+    final response = await dio.get<ResponseBody>(
+      url,
+      options: Options(
+        headers: {
+          ...headers,
+          'Range': 'bytes=${range.start}-${range.end}',
+        },
+        followRedirects: true,
+        responseType: ResponseType.stream,
+        receiveTimeout: Duration.zero,
+        sendTimeout: const Duration(seconds: 30),
+        validateStatus: (status) => status == 206,
+      ),
+      cancelToken: cancelToken,
+    );
+
+    final body = response.data;
+    if (body == null) {
+      throw StateError('Range response body is empty');
+    }
+
+    final file = File(savePath);
+    final raf = await file.open(mode: FileMode.write);
+    try {
+      await raf.setPosition(range.start);
+      await for (final chunk in body.stream) {
+        if (cancelToken.isCancelled) {
+          throw cancelToken.cancelError ?? StateError('Download canceled');
+        }
+        await raf.writeFrom(chunk);
+        progressByRange[rangeIndex] += chunk.length;
+        final received = progressByRange.fold<int>(
+          0,
+          (sum, item) => sum + item,
+        );
+        onProgress(received, totalBytes);
+      }
+    } finally {
+      await raf.close();
+    }
+  }
+
+  List<_ByteRange> _splitRanges(int totalBytes, int chunkCount) {
+    final chunkSize = (totalBytes / chunkCount).ceil();
+    return [
+      for (var start = 0; start < totalBytes; start += chunkSize)
+        _ByteRange(
+          start,
+          start + chunkSize - 1 > totalBytes - 1
+              ? totalBytes - 1
+              : start + chunkSize - 1,
+        ),
+    ];
+  }
+
+  int? _parseTotalBytesFromContentRange(String? contentRange) {
+    if (contentRange == null) return null;
+    final match = RegExp(r'bytes\s+\d+-\d+/(\d+)$').firstMatch(contentRange);
+    return int.tryParse(match?.group(1) ?? '');
+  }
+
+  Future<void> _drainResponse(ResponseBody? body) async {
+    if (body == null) return;
+    await for (final _ in body.stream) {}
+  }
+
+  Future<void> _ensureFileAtSavePath(Task task, String savePath) async {
+    try {
+      final actualPath = await task.filePath();
+      final downloadedFile = File(actualPath);
+      final targetFile = File(savePath);
+
+      if (downloadedFile.path != targetFile.path &&
+          await downloadedFile.exists()) {
+        if (!await targetFile.parent.exists()) {
+          await targetFile.parent.create(recursive: true);
+        }
+        if (await targetFile.exists()) {
+          await targetFile.delete();
+        }
+        try {
+          await downloadedFile.rename(targetFile.path);
+        } catch (_) {
+          await downloadedFile.copy(targetFile.path);
+          await downloadedFile.delete();
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('⚠️ [_ensureFileAtSavePath] File move warning: $e');
+      }
+    }
+  }
+
+  /// Disposes the download manager and cleans up active subscriptions.
+  void dispose() {
+    for (final sub in _subscriptions.values) {
+      sub.cancel();
+    }
+    _subscriptions.clear();
+    for (final token in _dioCancelTokens.values) {
+      token.cancel('Download manager disposed');
+    }
+    _dioCancelTokens.clear();
+    _activeDownloadIds.clear();
+  }
+}
+
+class _RangeProbe {
+  final int totalBytes;
+
+  const _RangeProbe(this.totalBytes);
+}
+
+class _ByteRange {
+  final int start;
+  final int end;
+
+  const _ByteRange(this.start, this.end);
+}
+
+/// Minimal async mutex: serializes calls to [run] in submission order by
+/// chaining onto a tail future, so concurrent workers sharing a single
+/// [RandomAccessFile] (see `startEncryptedDownload`) never interleave a
+/// `setPosition` from one worker with a `writeFrom` from another.
+class _AsyncFileWriteLock {
+  Future<void> _tail = Future.value();
+
+  Future<T> run<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    _tail = _tail.then((_) async {
+      try {
+        completer.complete(await action());
+      } catch (e, st) {
+        completer.completeError(e, st);
+      }
+    });
+    return completer.future;
+  }
+}

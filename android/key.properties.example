@@ -1,0 +1,26 @@
+# REL-001 — Android release signing configuration.
+#
+# 1. Copy this file to `android/key.properties` (same folder, no `.example`).
+# 2. Fill in the real values below.
+# 3. NEVER commit `android/key.properties` or the .jks/.keystore file it
+#    points to — both are already excluded in .gitignore.
+#
+# Generate a strong high-entropy password for keystore generation:
+#   openssl rand -base64 24
+#
+# Generate the production keystore once with:
+#   keytool -genkey -v -keystore release.keystore -alias eduzone \
+#     -keyalg RSA -keysize 2048 -validity 10000
+#
+# Then get its SHA-256 fingerprint (needed for SECURITY_ANDROID_SIGNING_HASH
+# in .env.security, so freeRASP's signature check is meaningful):
+#   keytool -list -v -keystore release.keystore -alias eduzone
+#
+# Store `release.keystore` itself outside the repo entirely (e.g. a password
+# manager / secrets vault) and back it up securely — losing it means you can
+# never publish an update to the same app listing on Google Play again.
+
+storeFile=release.keystore
+storePassword=REPLACE_WITH_HIGH_ENTROPY_RANDOM_PASSWORD
+keyAlias=eduzone
+keyPassword=REPLACE_WITH_HIGH_ENTROPY_RANDOM_PASSWORD

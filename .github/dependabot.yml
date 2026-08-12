@@ -1,0 +1,55 @@
+version: 2
+updates:
+  # حزم Dart/Flutter (pubspec.yaml)
+  - package-ecosystem: "pub"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "pub"
+    commit-message:
+      prefix: "chore(deps)"
+    # تجميع تحديثات الإصدارات الصغيرة/patch في PR واحد لتقليل الضجيج
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    # استبعد هذه الحزم من الترقية التلقائية — تحتاج مراجعة يدوية بسبب حساسيتها
+    # (تشفير، أمان، أو تغييرات سلوك معروفة بين الإصدارات الرئيسية).
+    ignore:
+      - dependency-name: "freerasp"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "encrypt"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "flutter_secure_storage"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "supabase_flutter"
+        update-types: ["version-update:semver-major"]
+
+  # تحديثات GitHub Actions نفسها (ci.yml, deploy.yml)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(ci)"
+
+  # حزم Android (Gradle) — Kotlin/AGP plugins
+  - package-ecosystem: "gradle"
+    directory: "/android"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "android"
+    commit-message:
+      prefix: "chore(android)"
