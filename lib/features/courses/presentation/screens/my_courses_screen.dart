@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
-import '../providers/courses_provider.dart';
+import '../../application/providers/courses_provider.dart';
 import '../widgets/my_courses_preview.dart';
 
 class MyCoursesScreen extends ConsumerWidget {

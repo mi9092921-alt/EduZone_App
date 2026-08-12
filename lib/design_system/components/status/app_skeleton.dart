@@ -65,16 +65,18 @@ class AppSkeleton extends StatelessWidget {
       );
     }
 
-    return Skeletonizer(
-      enabled: enabled,
-      ignoreContainers: ignoreContainers,
-      containersColor: baseColor,
-      effect: effect,
-      textBoneBorderRadius: textBoneBorderRadius,
-      // Pad placeholder bones for more realistic appearance
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xs),
-        child: child,
+    return RepaintBoundary(
+      child: Skeletonizer(
+        enabled: enabled,
+        ignoreContainers: ignoreContainers,
+        containersColor: baseColor,
+        effect: effect,
+        textBoneBorderRadius: textBoneBorderRadius,
+        // Pad placeholder bones for more realistic appearance
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xs),
+          child: child,
+        ),
       ),
     );
   }
@@ -84,7 +86,8 @@ class AppSkeleton extends StatelessWidget {
 class AppSkeletonData {
   static const String dummyTitle = 'Loading Course Title...';
   static const String dummyShortText = 'Loading...';
-  static const String dummyLongText = 'This is a longer placeholder text meant to fill space during the skeleton loading state...';
+  static const String dummyLongText =
+      'This is a longer placeholder text meant to fill space during the skeleton loading state...';
   static const String dummyCategory = 'CATEGORY';
 }
 

@@ -5,4 +5,4 @@
 /// progress back. See `auth_shared.dart` for the full rationale.
 library;
 
-export '../../features/courses/presentation/providers/courses_provider.dart';
+export '../../features/courses/application/providers/courses_provider.dart';

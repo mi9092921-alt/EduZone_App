@@ -6,7 +6,7 @@ import 'package:app/shared/utils/app_snackbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../providers/downloads_provider.dart';
+import '../../../application/providers/downloads_provider.dart';
 
 /// Runs a [DownloadsNotifier] action and surfaces a [Failure] (or any
 /// other error) as an error SnackBar instead of letting it become an

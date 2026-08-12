@@ -12,9 +12,9 @@ import '../../../../shared/cross_feature/todo_shared.dart';
 import '../../../auth/domain/entities/auth_state.dart';
 import '../../../auth/domain/entities/update_info.dart';
 import '../../../todo/domain/entities/todo_item.dart';
+import '../../application/providers/home_provider.dart';
 import '../../domain/entities/home_course_summary.dart';
 import '../../domain/entities/home_todo_summary.dart';
-import '../providers/home_provider.dart';
 import '../widgets/discovery_banner.dart';
 import '../widgets/notifications_preview.dart';
 import '../widgets/resume_card.dart';
@@ -146,10 +146,14 @@ class _RecentCoursesSection extends ConsumerWidget {
                   onActionPressed: () => context.go(AppRoutes.courses),
                 );
               }
+              final visibleCourseCount = courses.length < 3
+                  ? courses.length
+                  : 3;
+
               return ListView.separated(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                 scrollDirection: Axis.horizontal,
-                itemCount: 3,
+                itemCount: visibleCourseCount,
                 separatorBuilder: (_, _) =>
                     const SizedBox(width: AppSpacing.md),
                 itemBuilder: (context, index) {
@@ -189,12 +193,9 @@ class _RecentCoursesSection extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
               scrollDirection: Axis.horizontal,
               itemCount: 3,
-              separatorBuilder: (_, _) =>
-                  const SizedBox(width: AppSpacing.md),
-              itemBuilder: (_, index) => const SizedBox(
-                width: 180,
-                child: RecentCourseCardShimmer(),
-              ),
+              separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.md),
+              itemBuilder: (_, index) =>
+                  const SizedBox(width: 180, child: RecentCourseCardShimmer()),
             ),
             error: (err, _) => AppEmptyState(
               isFullPage: false,
@@ -222,14 +223,14 @@ class _DailyTasksSection extends ConsumerWidget {
   /// presentation-layer concern only — `home`'s domain/data layers never
   /// construct a [TodoItem] themselves (see ARCH-004).
   static TodoItem _toDisplayTodoItem(HomeTodoSummary t) => TodoItem(
-        id: t.id,
-        userId: t.userId,
-        tenantId: t.tenantId,
-        title: t.title,
-        dueAt: t.dueAt,
-        isCompleted: t.isCompleted,
-        priority: t.priority,
-      );
+    id: t.id,
+    userId: t.userId,
+    tenantId: t.tenantId,
+    title: t.title,
+    dueAt: t.dueAt,
+    isCompleted: t.isCompleted,
+    priority: t.priority,
+  );
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -256,17 +257,22 @@ class _DailyTasksSection extends ConsumerWidget {
                 onActionPressed: () => context.go(AppRoutes.todo),
               );
             }
-            return Column(
-              children: todos
-                  .map((todo) => TodoPreviewTile(todo: _toDisplayTodoItem(todo)))
-                  .toList(),
+            return ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: todos.length,
+              itemBuilder: (context, index) {
+                return TodoPreviewTile(todo: _toDisplayTodoItem(todos[index]));
+              },
             );
           },
           loading: () => AppSkeleton(
-            child: Column(
-              children: List.generate(
-                3,
-                (index) => TodoPreviewTile(
+            child: ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: 3,
+              itemBuilder: (context, index) {
+                return TodoPreviewTile(
                   todo: TodoItem(
                     id: 'skeleton_$index',
                     title: 'Loading Task Title', // check-ignore
@@ -274,8 +280,8 @@ class _DailyTasksSection extends ConsumerWidget {
                     userId: '',
                     tenantId: '',
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ),
           error: (err, _) => AppEmptyState(

@@ -345,7 +345,7 @@
   "priceLabel": "Price",
   "freeLabel": "Free",
   "enrollNow": "Enroll Now",
-  "enrollmentComingSoon": "Enrollment functionality is coming soon!",
+  "enrollmentComingSoon": "The subscription feature will be available soon!",
   "resumeLearning": "Continue Learning",
   "allFilter": "All",
   "unreadFilter": "Unread",
@@ -588,4 +588,3 @@
   "taskInputHint": "What needs to be done?",
   "dismissOfflineNotice": "Dismiss offline notice"
 }
-

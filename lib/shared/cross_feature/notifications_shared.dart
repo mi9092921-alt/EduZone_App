@@ -5,5 +5,5 @@
 /// import-indirection pattern applied to notifications.
 library;
 
-export '../../features/notifications/presentation/providers/notifications_provider.dart';
+export '../../features/notifications/application/providers/notifications_provider.dart';
 export '../../features/notifications/presentation/widgets/notification_tile.dart';

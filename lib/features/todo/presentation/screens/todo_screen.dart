@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/utils/app_snackbar.dart';
 import '../../domain/entities/todo_item.dart';
-import '../providers/todo_provider.dart';
+import '../../application/providers/todo_provider.dart';
 import '../widgets/add_todo_bottom_sheet.dart';
 import '../widgets/variants/todo_list_tile.dart';
 

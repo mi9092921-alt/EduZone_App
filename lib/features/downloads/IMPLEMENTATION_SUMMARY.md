@@ -126,7 +126,7 @@ This session completed the full integration of the downloads feature into the Ed
 
 ### 4. Presentation Layer ✅
 
-#### Riverpod Providers (`lib/features/downloads/presentation/providers/downloads_provider.dart`)
+#### Riverpod Providers (`lib/features/downloads/application/providers/downloads_provider.dart`)
 - Service providers (encryption, storage, download manager)
 - Repository provider
 - Use case providers

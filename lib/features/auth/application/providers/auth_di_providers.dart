@@ -3,8 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/device_service.dart';
-import '../../application/services/auth_activity_sync_service.dart';
-import '../../application/services/update_service.dart';
+import '../services/auth_activity_sync_service.dart';
+import '../services/update_service.dart';
 import '../../data/datasources/auth_remote_ds.dart';
 import '../../data/datasources/update_remote_ds.dart';
 import '../../data/repositories/auth_repo_impl.dart';

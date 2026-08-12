@@ -11,7 +11,7 @@ import '../../../../shared/cross_feature/auth_shared.dart';
 import '../../../../shared/utils/app_snackbar.dart';
 import '../../../auth/domain/entities/auth_state.dart';
 import '../../domain/entities/todo_item.dart';
-import '../providers/todo_provider.dart';
+import '../../application/providers/todo_provider.dart';
 
 class AddTodoBottomSheet extends ConsumerStatefulWidget {
   final TodoItem? todoToEdit;

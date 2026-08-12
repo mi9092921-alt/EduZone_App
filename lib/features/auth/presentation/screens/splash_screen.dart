@@ -89,7 +89,8 @@ class _SplashScreenState extends State<SplashScreen>
   // below (copyWith is not a const constructor). Kept numerically
   // identical to AppTextStyles.brandLogo -- update both together if this
   // ever changes.
-  static const TextStyle _boldStyle = TextStyle( // check-ignore
+  static const TextStyle _boldStyle = TextStyle(
+    // check-ignore
     fontSize: SplashConstants.fontSize,
     fontWeight: FontWeight.w800,
     color: AppColors.primary,
@@ -161,11 +162,11 @@ class _SplashScreenState extends State<SplashScreen>
     // ✅ Parallax خفيف: الخلفية تتحرك بعكس اللوغو بمقدار أقل
     _bgParallax = Tween<double>(begin: SplashConstants.parallaxRange, end: 0)
         .animate(
-      CurvedAnimation(
-        parent: _main,
-        curve: const Interval(0.0, 0.3, curve: Curves.easeOut),
-      ),
-    );
+          CurvedAnimation(
+            parent: _main,
+            curve: const Interval(0.0, 0.3, curve: Curves.easeOut),
+          ),
+        );
 
     // ✅ حركة نبضية خفيفة جداً للخلفية
     _bgPulseScale = Tween<double>(
@@ -252,13 +253,15 @@ class _SplashScreenState extends State<SplashScreen>
           fit: StackFit.expand,
           children: [
             // ✅ Parallax and Pulse background
-            AnimatedBuilder(
-              animation: Listenable.merge([_main, _pulse]),
-              builder: (context, child) => Transform.translate(
-                offset: Offset(0, _bgParallax.value),
-                child: Transform.scale(
-                  scale: _bgPulseScale.value,
-                  child: const SplashGradientBackground(),
+            RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: Listenable.merge([_main, _pulse]),
+                builder: (context, child) => Transform.translate(
+                  offset: Offset(0, _bgParallax.value),
+                  child: Transform.scale(
+                    scale: _bgPulseScale.value,
+                    child: const SplashGradientBackground(),
+                  ),
                 ),
               ),
             ),
@@ -273,28 +276,32 @@ class _SplashScreenState extends State<SplashScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // ✅ Widget معزول → rebuild scope محدود
-                    SplashAnimatedLogo(
-                      main: _main,
-                      pulse: _pulse,
-                      opacity: _logoOpacity,
-                      translateY: _logoTranslateY,
-                      scaleBase: _logoScaleBase,
-                      logoPulse: _logoPulse,
-                      wobble: _logoWobble,
+                    RepaintBoundary(
+                      child: SplashAnimatedLogo(
+                        main: _main,
+                        pulse: _pulse,
+                        opacity: _logoOpacity,
+                        translateY: _logoTranslateY,
+                        scaleBase: _logoScaleBase,
+                        logoPulse: _logoPulse,
+                        wobble: _logoWobble,
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     // ✅ Widget معزول → rebuild scope محدود
-                    SplashAnimatedBrandName(
-                      main: _main,
-                      letterWidths: _brandMetrics.letterWidths,
-                      letterOffsets: _brandMetrics.letterOffsets,
-                      fullCationWidth: _brandMetrics.fullCationWidth,
-                      spaceWidth: _brandMetrics.spaceWidth,
-                      letterOpacities: _letterOpacities,
-                      letterSlideX: _letterSlideX,
-                      spaceOpacity: _spaceOpacity,
-                      finalTextScale: _finalTextScale,
-                      boldStyle: boldStyle,
+                    RepaintBoundary(
+                      child: SplashAnimatedBrandName(
+                        main: _main,
+                        letterWidths: _brandMetrics.letterWidths,
+                        letterOffsets: _brandMetrics.letterOffsets,
+                        fullCationWidth: _brandMetrics.fullCationWidth,
+                        spaceWidth: _brandMetrics.spaceWidth,
+                        letterOpacities: _letterOpacities,
+                        letterSlideX: _letterSlideX,
+                        spaceOpacity: _spaceOpacity,
+                        finalTextScale: _finalTextScale,
+                        boldStyle: boldStyle,
+                      ),
                     ),
                   ],
                 ),

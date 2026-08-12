@@ -8,7 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/components/course_card.dart';
 import '../../domain/entities/course.dart';
-import '../providers/courses_provider.dart';
+import '../../application/providers/courses_provider.dart';
 
 class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});

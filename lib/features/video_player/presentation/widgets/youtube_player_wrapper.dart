@@ -6,7 +6,7 @@ import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../../../shared/cross_feature/courses_shared.dart';
-import '../providers/video_provider.dart';
+import '../../application/providers/video_provider.dart';
 import 'youtube_player_widget.dart';
 
 class YoutubePlayerWrapper extends ConsumerStatefulWidget {

@@ -85,6 +85,7 @@ void main() {
       // must swallow the AssetBundle error and return [] rather than throwing.
       final certs = await loadPinnedCertificatesAsset(
         assetPaths: ['assets/certs/supabase.pem', 'assets/certs/backup_ca.pem'],
+        onlyInRelease: false,
       );
       expect(certs, isA<List<List<int>>>());
       // In unit tests there is no real asset bundle, so we just verify the

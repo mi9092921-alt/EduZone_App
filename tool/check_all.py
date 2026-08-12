@@ -32,6 +32,7 @@ CHECKS = [
     ("RTL Guard", "check_rtl.py"),
     ("Design Token Guard", "check_design_tokens.py"),
     ("Performance Guard", "check_performance.py"),
+    ("Memory Hygiene Guard", "check_memory_hygiene.py"),
     ("Localization Guard", "check_localizations.py"),
 ]
 

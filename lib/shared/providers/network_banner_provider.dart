@@ -35,7 +35,7 @@ class NetworkBannerState {
 /// Notifier that tracks connectivity and lets the user dismiss the banner.
 ///
 /// Follows the same `Notifier<State>` pattern used by `TodoNotifier`
-/// (see `features/todo/presentation/providers/todo_provider.dart`) so the
+/// (see `features/todo/application/providers/todo_provider.dart`) so the
 /// UI layer only ever reacts to `state`, instead of owning a
 /// StreamSubscription/AnimationController itself.
 class NetworkBannerNotifier extends Notifier<NetworkBannerState> {
@@ -88,6 +88,6 @@ class NetworkBannerNotifier extends Notifier<NetworkBannerState> {
 }
 
 final networkBannerProvider =
-    NotifierProvider<NetworkBannerNotifier, NetworkBannerState>(
+    NotifierProvider.autoDispose<NetworkBannerNotifier, NetworkBannerState>(
   NetworkBannerNotifier.new,
 );

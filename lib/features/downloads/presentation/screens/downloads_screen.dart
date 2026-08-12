@@ -7,7 +7,7 @@ import '../../../../design_system/design_system.dart';
 import '../../../../shared/utils/app_snackbar.dart';
 import '../../domain/entities/download_enums.dart';
 import '../../domain/entities/downloaded_lesson.dart';
-import '../providers/downloads_provider.dart';
+import '../../application/providers/downloads_provider.dart';
 import '../widgets/download_tile.dart';
 
 /// Screen displaying all downloaded lessons grouped by status.

@@ -16,15 +16,13 @@ void main() {
       expect(skeleton.isSliver, isTrue);
     });
 
-    testWidgets('shows the real child content once disabled (enabled: false)',
-        (tester) async {
+    testWidgets('shows the real child content once disabled (enabled: false)', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: AppSkeleton(
-              enabled: false,
-              child: Text('Real content'),
-            ),
+            body: AppSkeleton(enabled: false, child: Text('Real content')),
           ),
         ),
       );
@@ -33,15 +31,14 @@ void main() {
       expect(find.text('Real content'), findsOneWidget);
     });
 
-    testWidgets('does not throw while actively skeletonizing (enabled: true)',
-        (tester) async {
+    testWidgets('does not throw while actively skeletonizing (enabled: true)', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
             // `enabled` defaults to true -- left implicit here.
-            body: AppSkeleton(
-              child: Text('Loading course title...'),
-            ),
+            body: AppSkeleton(child: Text('Loading course title...')),
           ),
         ),
       );
@@ -49,8 +46,28 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('the .sliver variant works inside a CustomScrollView',
-        (tester) async {
+    testWidgets('isolates non-sliver shimmer repaint work', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: AppSkeleton(child: Text('Loading course title...')),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.descendant(
+          of: find.byType(AppSkeleton),
+          matching: find.byType(RepaintBoundary),
+        ),
+        findsAtLeastNWidgets(1),
+      );
+    });
+
+    testWidgets('the .sliver variant works inside a CustomScrollView', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
@@ -100,8 +117,9 @@ void main() {
       expect(size.width, 120);
     });
 
-    testWidgets('uses AppRadius.sm as its default corner radius',
-        (tester) async {
+    testWidgets('uses AppRadius.sm as its default corner radius', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(body: Center(child: AppSkeletonTile())),
@@ -119,8 +137,9 @@ void main() {
       expect(decoration.borderRadius, BorderRadius.circular(AppRadius.sm));
     });
 
-    testWidgets('fills with the surface2 token color from AppColors',
-        (tester) async {
+    testWidgets('fills with the surface2 token color from AppColors', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(body: Center(child: AppSkeletonTile())),

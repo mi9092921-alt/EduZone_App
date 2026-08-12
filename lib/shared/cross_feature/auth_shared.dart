@@ -3,7 +3,7 @@
 /// Several other features (courses, home, profile, todo) legitimately need
 /// read access to [authProvider] — e.g. to read the current user id for a
 /// scoped query, or to call `logout()`/`refreshUser()`. Importing
-/// `features/auth/presentation/providers/auth_provider.dart` directly from
+/// `features/auth/application/providers/auth_provider.dart` directly from
 /// another feature is exactly the tight cross-feature coupling that
 /// `tool/check_architecture.py` warns about, because it reaches into
 /// auth's presentation layer instead of a shared contract.
@@ -19,5 +19,5 @@
 /// in the same audit pass.
 library;
 
-export '../../features/auth/presentation/providers/auth_provider.dart';
+export '../../features/auth/application/providers/auth_provider.dart';
 export '../../features/auth/presentation/widgets/optional_update_dialog.dart';

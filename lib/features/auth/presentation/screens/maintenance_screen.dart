@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../domain/entities/auth_state.dart';
-import '../providers/auth_provider.dart';
+import '../../application/providers/auth_provider.dart';
 
 /// Screen shown when the system is under maintenance.
 ///

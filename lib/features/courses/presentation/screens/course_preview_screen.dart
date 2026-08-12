@@ -12,7 +12,7 @@ import '../../../../shared/widgets/collapsing_tab_bar_delegate.dart';
 import '../../../auth/domain/entities/auth_state.dart';
 import '../../domain/entities/course.dart';
 import '../../domain/entities/course_enrollment.dart';
-import '../providers/courses_provider.dart';
+import '../../application/providers/courses_provider.dart';
 import '../widgets/bookmark_button.dart';
 import '../widgets/course_about_tab_content.dart';
 import '../widgets/course_curriculum_preview.dart';

@@ -1,4 +1,4 @@
-.PHONY: run-dev run-staging build-prod gen-l10n gen-code analyze check-a11y check-architecture check-rtl check-design-tokens check-performance check-localizations check-all test clean
+.PHONY: run-dev run-staging build-prod gen-l10n gen-code analyze check-a11y check-architecture check-rtl check-design-tokens check-performance check-memory-hygiene check-localizations check-all test clean
 
 ## ─── Development ───────────────────────────────────────────────────────
 
@@ -50,10 +50,13 @@ check-design-tokens:
 check-performance:
 	@python3 tool/check_performance.py
 
+check-memory-hygiene:
+	@python3 tool/check_memory_hygiene.py
+
 check-localizations:
 	@python3 tool/check_localizations.py
 
-check-all: check-a11y check-architecture check-rtl check-design-tokens check-performance check-localizations
+check-all: check-a11y check-architecture check-rtl check-design-tokens check-performance check-memory-hygiene check-localizations
 
 test:
 	flutter test --coverage

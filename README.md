@@ -179,7 +179,7 @@ lib/
 │   │   │   ├── login_screen.dart
 │   │   │   ├── forgot_password_screen.dart
 │   │   │   └── widgets/
-│   │   └── providers/
+│   │   └── application/providers/
 │   │       └── auth_provider.dart
 │   │
 │   ├── home/
@@ -189,7 +189,7 @@ lib/
 │   │   │       ├── enrolled_courses_section.dart
 │   │   │       ├── continue_watching_card.dart
 │   │   │       └── stats_row.dart
-│   │   └── providers/
+│   │   └── application/providers/
 │   │
 │   ├── courses/
 │   │   ├── data/
@@ -203,7 +203,7 @@ lib/
 │   │   │       ├── section_tile.dart
 │   │   │       ├── lesson_tile.dart
 │   │   │       └── progress_bar.dart
-│   │   └── providers/
+│   │   └── application/providers/
 │   │       ├── courses_provider.dart
 │   │       └── video_progress_provider.dart
 │   │
@@ -214,7 +214,7 @@ lib/
 │   │   │   ├── notifications_screen.dart
 │   │   │   └── widgets/
 │   │   │       └── notification_tile.dart
-│   │   └── providers/
+│   │   └── application/providers/
 │   │       └── notifications_provider.dart
 │   │
 │   ├── warnings/
@@ -224,7 +224,7 @@ lib/
 │   │   │   ├── warnings_screen.dart
 │   │   │   └── widgets/
 │   │   │       └── warning_tile.dart
-│   │   └── providers/
+│   │   └── application/providers/
 │   │
 │   └── profile/
 │       ├── data/
@@ -234,7 +234,7 @@ lib/
 │       │   └── widgets/
 │       │       ├── session_tile.dart
 │       │       └── device_tile.dart
-│       └── providers/
+│       └── application/providers/
 │           └── profile_provider.dart
 │
 └── main.dart                      ← Entry point + ProviderScope

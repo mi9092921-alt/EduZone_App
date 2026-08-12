@@ -4,4 +4,4 @@
 /// its dashboard greeting. See `auth_shared.dart` for the full rationale.
 library;
 
-export '../../features/profile/presentation/providers/profile_provider.dart';
+export '../../features/profile/application/providers/profile_provider.dart';

@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
-import '../providers/courses_provider.dart';
+import '../../application/providers/courses_provider.dart';
 
 class BookmarkButton extends ConsumerStatefulWidget {
   final String courseId;

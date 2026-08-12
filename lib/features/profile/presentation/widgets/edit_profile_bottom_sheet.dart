@@ -9,7 +9,7 @@ import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/utils/app_snackbar.dart';
 import '../../../../shared/widgets/app_avatar.dart';
 import '../../domain/entities/student_profile.dart';
-import '../providers/profile_provider.dart';
+import '../../application/providers/profile_provider.dart';
 
 /// Bottom sheet for editing profile name and avatar.
 ///

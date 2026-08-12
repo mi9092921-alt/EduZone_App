@@ -3,7 +3,7 @@ import 'package:app/features/downloads/domain/entities/download_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../providers/downloads_provider.dart';
+import '../../../application/providers/downloads_provider.dart';
 
 /// The linear progress bar + percent/bytes row shown under an active
 /// download tile.

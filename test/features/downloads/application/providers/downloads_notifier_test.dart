@@ -5,7 +5,7 @@ import 'package:app/features/downloads/domain/entities/download_enums.dart';
 import 'package:app/features/downloads/domain/entities/download_progress.dart';
 import 'package:app/features/downloads/domain/entities/downloaded_lesson.dart';
 import 'package:app/features/downloads/domain/repositories/download_repository.dart';
-import 'package:app/features/downloads/presentation/providers/downloads_provider.dart';
+import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';

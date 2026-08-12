@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/utils/app_snackbar.dart';
-import '../providers/notifications_provider.dart';
+import '../../application/providers/notifications_provider.dart';
 
 /// A global widget that listens to the notification stream and shows
 /// in-app alerts (toasts/snackbars) when new notifications arrive.

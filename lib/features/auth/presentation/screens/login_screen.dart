@@ -9,7 +9,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/utils/app_snackbar.dart';
 import '../../domain/entities/auth_state.dart';
-import '../providers/auth_provider.dart';
+import '../../application/providers/auth_provider.dart';
 
 /// Login screen with state-driven navigation per PRD §7.2.
 ///

@@ -1,8 +1,8 @@
-import 'package:app/features/courses/presentation/providers/courses_provider.dart';
-import 'package:app/features/home/presentation/providers/home_provider.dart';
-import 'package:app/features/notifications/presentation/providers/notifications_provider.dart';
-import 'package:app/features/profile/presentation/providers/profile_provider.dart';
-import 'package:app/features/todo/presentation/providers/todo_provider.dart';
+import 'package:app/features/courses/application/providers/courses_provider.dart';
+import 'package:app/features/home/application/providers/home_provider.dart';
+import 'package:app/features/notifications/application/providers/notifications_provider.dart';
+import 'package:app/features/profile/application/providers/profile_provider.dart';
+import 'package:app/features/todo/application/providers/todo_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 /// Composition-root aggregator for "invalidate everything user-scoped on

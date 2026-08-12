@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 /// Default asset paths for pinned certificates.
@@ -43,12 +43,20 @@ bool isSupabaseHost(String url, {String? configuredSupabaseUrl}) {
 /// Returns a list of byte arrays representing PEM certificates that were found
 /// and loaded successfully.
 ///
+/// By default, in non-release modes (`!kReleaseMode`), pinning is bypassed (returns `[]`)
+/// to prevent TLS handshake failures caused by local environment or placeholder certificates.
+/// Pass [onlyInRelease: false] to force loading certs in non-release modes if needed.
+///
 /// Emits a [debugPrint] warning for any asset that fails to load so that
 /// broken asset bundles are caught during development rather than silently
 /// degrading pinning coverage in production.
 Future<List<List<int>>> loadPinnedCertificatesAsset({
   List<String> assetPaths = defaultPinnedCertAssets,
+  bool onlyInRelease = true,
 }) async {
+  if (onlyInRelease && !kReleaseMode) {
+    return [];
+  }
   final List<List<int>> certs = [];
   for (final path in assetPaths) {
     try {

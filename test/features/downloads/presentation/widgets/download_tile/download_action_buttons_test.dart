@@ -4,7 +4,7 @@ import 'package:app/core/error/failures.dart';
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/features/downloads/domain/entities/download_enums.dart';
 import 'package:app/features/downloads/domain/repositories/download_repository.dart';
-import 'package:app/features/downloads/presentation/providers/downloads_provider.dart';
+import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:app/features/downloads/presentation/widgets/download_tile/download_action_buttons.dart';
 import 'package:app/shared/utils/app_snackbar.dart';
 import 'package:flutter/material.dart';

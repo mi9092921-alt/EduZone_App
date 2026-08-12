@@ -1,6 +1,6 @@
 import 'package:app/features/video_player/domain/repositories/video_player_repository.dart';
 import 'package:app/features/video_player/domain/usecases/sync_lesson_progress.dart';
-import 'package:app/features/video_player/presentation/providers/video_provider.dart';
+import 'package:app/features/video_player/application/providers/video_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';

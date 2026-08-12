@@ -3,7 +3,7 @@ import 'package:app/features/home/domain/entities/home_course_summary.dart';
 import 'package:app/features/home/domain/entities/home_todo_summary.dart';
 import 'package:app/features/home/domain/entities/resume_lesson.dart';
 import 'package:app/features/home/domain/repositories/home_repository.dart';
-import 'package:app/features/home/presentation/providers/home_provider.dart';
+import 'package:app/features/home/application/providers/home_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';

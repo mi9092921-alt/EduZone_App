@@ -8,7 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/cross_feature/courses_shared.dart';
-import '../providers/video_provider.dart';
+import '../../application/providers/video_provider.dart';
 import '../widgets/lessons_sidebar.dart';
 import 'video_player/lesson_lookup.dart';
 import 'video_player/player_switch_sheet.dart';

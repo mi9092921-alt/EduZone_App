@@ -8,7 +8,7 @@ import '../../../../shared/widgets/app_course_thumbnail.dart';
 import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/collapsing_tab_bar_delegate.dart';
 import '../../domain/entities/course.dart';
-import '../providers/courses_provider.dart';
+import '../../application/providers/courses_provider.dart';
 import '../widgets/course_about_tab_content.dart';
 import '../widgets/course_enroll_price_row.dart';
 import '../widgets/sections_accordion.dart';

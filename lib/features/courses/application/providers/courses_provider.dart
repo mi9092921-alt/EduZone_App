@@ -1,10 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import '../../../../core/logging/domain/app_event.dart';
-import '../../../../core/logging/logging_providers.dart';
 import '../../../../core/providers/storage_provider.dart';
-import '../../../../shared/cross_feature/auth_shared.dart';
-import '../../../auth/domain/entities/auth_state.dart';
 import '../../data/datasources/courses_remote_ds_impl.dart';
 import '../../data/repositories/courses_repo_impl.dart';
 import '../../domain/entities/course.dart';
@@ -118,7 +114,7 @@ GetCoursesByIds getCoursesByIds(Ref ref) {
 Future<List<CourseEnrollment>> myCourses(Ref ref) async {
   final getMyCourses = ref.watch(getMyCoursesProvider);
   final result = await getMyCourses();
-  
+
   return result.fold(
     (failure) => throw Exception(failure.message),
     (enrollments) => enrollments,
@@ -158,7 +154,6 @@ Future<LessonContent> lessonContent(Ref ref, String lessonId) async {
 
 // -- Access & Discovery Providers --
 
-
 @riverpod
 CourseAccessService courseAccessService(Ref ref) {
   return CourseAccessService();
@@ -168,51 +163,15 @@ CourseAccessService courseAccessService(Ref ref) {
 class UserSubscriptions extends _$UserSubscriptions {
   @override
   Future<Set<String>> build() async {
-    final getUserSubscribedCourseIds = ref.watch(getUserSubscribedCourseIdsProvider);
+    final getUserSubscribedCourseIds = ref.watch(
+      getUserSubscribedCourseIdsProvider,
+    );
     final result = await getUserSubscribedCourseIds();
     return result.fold((_) => <String>{}, (ids) => ids);
   }
 
-  bool _isEnrolling = false;
-
-  Future<void> enroll(String courseId) async {
-    if (_isEnrolling) return;
-    _isEnrolling = true;
-
-    final current = state.value ?? <String>{};
-
-    // Optimistic UI update
-    state = AsyncData({...current, courseId});
-
-    try {
-      final enrollInCourse = ref.read(enrollInCourseProvider);
-      final res = await enrollInCourse(courseId);
-      res.fold(
-        (_) {
-          // Rollback on failure
-          state = AsyncData(current);
-        },
-        (_) {
-          // Emit Enrollment Event
-          final authState = ref.read(authProvider);
-          if (authState is AuthAuthenticated) {
-            final user = authState.user;
-            ref.read(eventBusProvider).emit(CourseEnrolledEvent(
-              timestamp: DateTime.now(),
-              userId: user.id,
-              tenantId: user.tenantId,
-              courseId: courseId,
-            ));
-          }
-        },
-      );
-    } catch (_) {
-      // Rollback on exception
-      state = AsyncData(current);
-    } finally {
-      _isEnrolling = false;
-    }
-  }
+  // Enrollment is intentionally not triggered from the UI until payment is integrated.
+  // Later, wire the confirmed payment flow to enrollInCourseProvider.
 }
 
 // Keep track of loaded pagination to prevent duplicates
@@ -233,7 +192,7 @@ class PaginatedCoursesState {
 @riverpod
 class PublicCourses extends _$PublicCourses {
   bool _isLoadingPage = false;
-  
+
   @override
   Future<PaginatedCoursesState> build() async {
     final getPublicCourses = ref.watch(getPublicCoursesProvider);
@@ -258,13 +217,13 @@ class PublicCourses extends _$PublicCourses {
       final nextPage = currentState.page + 1;
       final getPublicCourses = ref.read(getPublicCoursesProvider);
       final result = await getPublicCourses(page: nextPage);
-      
+
       result.fold(
         (failure) {}, // handle error appropriately (e.g. snackbar)
         (newCourses) {
           final Set<String> newIds = {...currentState.loadedIds};
           final List<Course> uniqueNewCourses = [];
-          
+
           for (final course in newCourses) {
             if (!newIds.contains(course.id)) {
               newIds.add(course.id);
@@ -272,12 +231,14 @@ class PublicCourses extends _$PublicCourses {
             }
           }
 
-          state = AsyncData(PaginatedCoursesState(
-            items: [...currentState.items, ...uniqueNewCourses],
-            loadedIds: newIds,
-            page: nextPage,
-            hasMore: newCourses.length == 10,
-          ));
+          state = AsyncData(
+            PaginatedCoursesState(
+              items: [...currentState.items, ...uniqueNewCourses],
+              loadedIds: newIds,
+              page: nextPage,
+              hasMore: newCourses.length == 10,
+            ),
+          );
         },
       );
     } finally {
@@ -361,7 +322,6 @@ Future<List<Course>> savedCourses(Ref ref) async {
     (courses) => courses,
   );
 }
-
 
 // ─── Session cleanup ─────────────────────────────────────────────────────────
 

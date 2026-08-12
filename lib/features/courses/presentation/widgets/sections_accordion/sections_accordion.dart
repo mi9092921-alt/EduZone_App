@@ -14,7 +14,7 @@ import '../../../data/services/watched_lessons_service.dart';
 import '../../../domain/entities/lesson.dart';
 import '../../../domain/entities/lesson_content.dart';
 import '../../../domain/entities/section.dart';
-import '../../providers/courses_provider.dart';
+import '../../../application/providers/courses_provider.dart';
 import 'enrollment_required_dialog.dart';
 import 'lesson_tile_wrapper.dart';
 import 'player_choice_sheet.dart';
