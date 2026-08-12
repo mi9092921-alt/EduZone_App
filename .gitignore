@@ -98,7 +98,6 @@ build
 # Local scripts / experiments (may contain secrets or admin credentials)
 scratch/
 scripts/
-supabase/
 CourseVideoPage  media_kit.txt
 supabase/deploy_functions.ps1
 test/datasource_instructor_test.dart
