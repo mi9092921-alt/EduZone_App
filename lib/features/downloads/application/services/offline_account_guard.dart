@@ -63,9 +63,16 @@ class OfflineAccountGuard {
         }
       }
 
+      // Remove the AES key from secure storage. If this fails, do NOT
+      // delete the DB row below — leave it for the next login/cleanup
+      // pass to retry, same fix already applied to CleanupScheduler for
+      // the identical failure mode (an orphaned key with no record left
+      // to find and remove it later).
       try {
         await _encryptionService.deleteKey(id);
-      } catch (_) {}
+      } catch (_) {
+        continue;
+      }
 
       try {
         await _localDataSource.deleteDownload(id);
