@@ -148,6 +148,62 @@ void main() {
     });
   });
 
+  group('malformed / hostile JWT parsing (fuzz)', () {
+    // _currentJwtTokenVersion parses the access token by hand (base64url
+    // decode + jsonDecode) without any external validation library. These
+    // pin down that malformed input degrades to "jwtVersion == null"
+    // (handled by the missing-jwtVersion strike logic above) instead of
+    // throwing and crashing the polling/realtime check.
+    for (final case_ in <(String name, String token)>[
+      ('empty string', ''),
+      ('single segment, no dots', 'not-a-jwt-at-all'),
+      ('two segments only (missing signature)', 'aGVhZGVy.cGF5bG9hZA'),
+      (
+        'payload segment is not valid base64url',
+        'aGVhZGVy.!!!not-base64!!!.'
+      ),
+      (
+        'payload segment decodes but is not valid JSON',
+        '${base64Url.encode(utf8.encode('{"alg":"none"}')).replaceAll('=', '')}.'
+            '${base64Url.encode(utf8.encode('not-json-at-all')).replaceAll('=', '')}.'
+      ),
+      (
+        'payload is valid JSON but token_version is a nested object, not '
+        'int/String',
+        _fakeJwt({'token_version': {'nested': true}}),
+      ),
+    ]) {
+      test(
+          '${case_.$1} -> does not throw, resolves to no forced logout on '
+          'a single occurrence', () async {
+        mockAccessToken = case_.$2;
+
+        final service = buildService();
+
+        // Must not throw synchronously or asynchronously.
+        await expectLater(service.checkNow(), completes);
+
+        // A single malformed-token check is treated the same as "missing
+        // jwtVersion" — it must NOT force a logout on the first strike.
+        expect(deniedReasons, isEmpty);
+      });
+    }
+
+    test(
+        'three consecutive malformed tokens still trigger the same '
+        'missing-jwtVersion strike policy as a genuinely absent claim',
+        () async {
+      mockAccessToken = '!!!completely-invalid!!!';
+
+      final service = buildService();
+      await service.checkNow(); // strike 1
+      await service.checkNow(); // strike 2
+      expect(deniedReasons, isEmpty);
+      await service.checkNow(); // strike 3
+      expect(deniedReasons, ['token_version_mismatch']);
+    });
+  });
+
   group('restricted states without logout', () {
     test('maintenance_mode emits restricted access without denied callback',
         () async {

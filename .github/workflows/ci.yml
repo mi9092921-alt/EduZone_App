@@ -27,8 +27,12 @@ jobs:
         run: make check-design-tokens
       - name: Performance Guard
         run: make check-performance
+      - name: Memory Hygiene Guard
+        run: make check-memory-hygiene
       - name: Localization Guard
         run: make check-localizations
+      - name: Auth Security Guard
+        run: make check-auth-security
       - name: Run tests with coverage
         run: flutter test --coverage
       - name: Upload coverage to Codecov

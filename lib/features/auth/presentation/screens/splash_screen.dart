@@ -89,8 +89,7 @@ class _SplashScreenState extends State<SplashScreen>
   // below (copyWith is not a const constructor). Kept numerically
   // identical to AppTextStyles.brandLogo -- update both together if this
   // ever changes.
-  static const TextStyle _boldStyle = TextStyle(
-    // check-ignore
+  static const TextStyle _boldStyle = TextStyle( // check-ignore
     fontSize: SplashConstants.fontSize,
     fontWeight: FontWeight.w800,
     color: AppColors.primary,

@@ -9,9 +9,12 @@ import 'package:app/features/auth/data/datasources/auth_remote_ds.dart';
 import 'package:app/features/auth/domain/entities/app_user.dart';
 import 'package:app/features/auth/domain/entities/auth_state.dart';
 import 'package:app/features/auth/domain/entities/bind_device_result.dart';
+import 'package:app/features/auth/domain/entities/update_info.dart';
 import 'package:app/features/auth/domain/entities/user_access.dart';
 import 'package:app/features/auth/domain/enums/account_status.dart';
+import 'package:app/features/auth/domain/enums/user_role.dart';
 import 'package:app/features/auth/application/providers/auth_provider.dart';
+import 'package:app/features/auth/application/services/update_service.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +32,12 @@ class MockGoTrueClient extends Mock implements GoTrueClient {}
 class MockDeviceService extends Mock implements DeviceService {}
 
 class MockEventBus extends Mock implements EventBus {}
+
+class _MockUpdateService extends Mock implements UpdateService {}
+
+class _MockSession extends Mock implements Session {}
+
+class _MockSupabaseUser extends Mock implements User {}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -489,6 +498,342 @@ when(() => mockSupabase.rpc('check_user_access')).thenAnswer(
 
       expect(container.read(authProvider), isA<AuthUnauthenticated>());
       verify(() => mockEventBus.emit(any())).called(greaterThan(0));
+    });
+  });
+
+  // ─── handleAccessRestricted() ────────────────────────────────────────────
+
+  group('handleAccessRestricted()', () {
+    test('sets AuthRestricted without forcing a logout', () async {
+      container.read(authProvider);
+      await _settleInitialization();
+
+      stubSuccessfulLogin();
+      await container.read(authProvider.notifier).login(
+            'test@example.com',
+            'password',
+          );
+      expect(container.read(authProvider), isA<AuthAuthenticated>());
+
+      const access = UserAccess(status: AccountStatus.maintenance);
+      container
+          .read(authProvider.notifier)
+          .handleAccessRestricted(access: access);
+
+      final state = container.read(authProvider);
+      expect(state, isA<AuthRestricted>());
+      expect((state as AuthRestricted).status, AccountStatus.maintenance);
+
+      // Unlike handleAccessDenied(), a restriction (maintenance/app_locked)
+      // must NOT trigger the logout transaction — removeAllChannels() is
+      // only ever called from LogoutOrchestrator.execute().
+      verifyNever(() => mockSupabase.removeAllChannels());
+    });
+  });
+
+  // ─── refreshUser() ───────────────────────────────────────────────────────
+
+  group('refreshUser()', () {
+    test('replaces the user in AuthAuthenticated with the fresh copy',
+        () async {
+      container.read(authProvider);
+      await _settleInitialization();
+
+      stubSuccessfulLogin();
+      await container.read(authProvider.notifier).login(
+            'test@example.com',
+            'password',
+          );
+
+      const updatedUser = AppUser(
+        id: 'user-1',
+        email: 'test@example.com',
+        firstName: 'Updated',
+        tenantId: 'tenant-1',
+      );
+      when(() => mockDataSource.getCurrentUser())
+          .thenAnswer((_) async => updatedUser);
+
+      await container.read(authProvider.notifier).refreshUser();
+
+      final state = container.read(authProvider) as AuthAuthenticated;
+      expect(state.user.firstName, 'Updated');
+      // access must be preserved from the prior state, not reset.
+      expect(state.access, _tActiveAccess);
+    });
+
+    test('is a no-op when not currently authenticated', () async {
+      container.read(authProvider);
+      await _settleInitialization();
+
+      when(() => mockDataSource.getCurrentUser())
+          .thenAnswer((_) async => _tUser);
+
+      final stateBefore = container.read(authProvider);
+      await container.read(authProvider.notifier).refreshUser();
+
+      expect(container.read(authProvider), stateBefore);
+    });
+  });
+
+  // ─── login(): role gating ────────────────────────────────────────────────
+
+  group('login(): role gating', () {
+    test('blocks a non-student user and signs them out locally', () async {
+      container.read(authProvider);
+      await _settleInitialization();
+
+      const teacherUser = AppUser(
+        id: 'user-2',
+        email: 'teacher@example.com',
+        primaryRole: UserRole.teacher,
+        tenantId: 'tenant-1',
+      );
+
+      when(() => mockDataSource.login(any(), any()))
+          .thenAnswer((_) async => teacherUser);
+      when(() => mockDataSource.bindDevice(any(), any(), any()))
+          .thenAnswer((_) async => _tBindResult);
+      when(() => mockDataSource.checkUserAccess())
+          .thenAnswer((_) async => _tActiveAccess);
+
+      await container.read(authProvider.notifier).login(
+            'teacher@example.com',
+            'password',
+          );
+
+      final state = container.read(authProvider);
+      expect(state, isA<AuthUnauthenticated>());
+      expect(
+        (state as AuthUnauthenticated).error,
+        'errorAuth',
+        reason: 'a non-student role must be rejected client-side with the '
+            'same generic auth error as bad credentials — never a '
+            'role-revealing message',
+      );
+    });
+  });
+
+  // ─── _initializeSession(): device re-bind on cold start ──────────────────
+  //
+  // Covers the branch in _initializeSession() (auth_provider.dart) that
+  // handles a session whose device fingerprint is no longer registered —
+  // e.g. the backing `devices` row was deleted/deactivated out of band.
+  // Previously untested: only the happy path (device already valid) was
+  // covered indirectly by other tests.
+
+  group('_initializeSession(): device re-bind on cold start', () {
+    void stubValidSession() {
+      final mockSession = _MockSession();
+      final mockUser = _MockSupabaseUser();
+      when(() => mockUser.id).thenReturn('user-1');
+      when(() => mockSession.user).thenReturn(mockUser);
+      when(() => mockAuth.currentSession).thenReturn(mockSession);
+    }
+
+    // Root cause of the previous "Expected AuthAuthenticated, Actual
+    // AuthUnauthenticated" failure here: _initializeSession()'s Step 1
+    // does `ref.read(updateServiceProvider)`, which (when left
+    // un-overridden, as the shared `container` from setUp() leaves it)
+    // constructs a *real* UpdateRemoteDataSource() — whose constructor
+    // touches SupabaseService.client / Supabase.instance immediately.
+    // That's never initialized in this test binary, so it throws, and
+    // _initializeSession()'s outer catch short-circuits straight to
+    // AuthUnauthenticated BEFORE the device-validation/re-bind branch
+    // below ever runs — regardless of how mockDataSource is stubbed.
+    //
+    // The sibling "re-bind fails" test below happened to still pass
+    // with the bug present, because AuthUnauthenticated is also its
+    // expected outcome — but for the wrong reason, without actually
+    // exercising the re-bind-failure branch either.
+    //
+    // Fix: give this group its own container with updateServiceProvider
+    // stubbed to resolve immediately with an upToDate status, exactly
+    // like the 'session race' group below already does. This lets
+    // _initializeSession() proceed past Step 1 into the real
+    // device-validation/re-bind logic under test.
+    ProviderContainer buildRebindContainer() {
+      final mockUpdateService = _MockUpdateService();
+      when(() => mockUpdateService.checkForUpdate(any())).thenAnswer(
+        (_) async => const UpdateInfo.upToDate(latestVersion: '1.0.0'),
+      );
+
+      final rebindContainer = ProviderContainer(
+        overrides: [
+          authRemoteDataSourceProvider.overrideWithValue(mockDataSource),
+          supabaseClientProvider.overrideWithValue(mockSupabase),
+          deviceServiceProvider.overrideWithValue(mockDevice),
+          eventBusProvider.overrideWithValue(mockEventBus),
+          updateServiceProvider.overrideWithValue(mockUpdateService),
+        ],
+      );
+      addTearDown(rebindContainer.dispose);
+      return rebindContainer;
+    }
+
+    test(
+        're-binds and resumes the session when the device is missing but '
+        're-bind succeeds', () async {
+      stubValidSession();
+      when(() => mockDataSource.validateDeviceExists(any(), any()))
+          .thenAnswer((_) async => false);
+      when(() => mockDataSource.bindDevice(any(), any(), any()))
+          .thenAnswer((_) async => _tBindResult);
+      when(() => mockDataSource.checkUserAccess())
+          .thenAnswer((_) async => _tActiveAccess);
+      when(() => mockDataSource.getCurrentUser())
+          .thenAnswer((_) async => _tUser);
+      when(() => mockDataSource.syncUserActivity(
+            userId: any(named: 'userId'),
+            tenantId: any(named: 'tenantId'),
+            deviceFingerprint: any(named: 'deviceFingerprint'),
+          )).thenAnswer((_) async {});
+
+      final rebindContainer = buildRebindContainer();
+      rebindContainer.read(authProvider);
+      await _settleInitialization();
+
+      expect(rebindContainer.read(authProvider), isA<AuthAuthenticated>());
+    });
+
+    test(
+        'forces a full local logout when the device is missing AND '
+        're-bind fails (e.g. MAX_DEVICES_REACHED)', () async {
+      stubValidSession();
+      when(() => mockDataSource.validateDeviceExists(any(), any()))
+          .thenAnswer((_) async => false);
+      when(() => mockDataSource.bindDevice(any(), any(), any()))
+          .thenThrow(const MaxDevicesReachedException());
+
+      final rebindContainer = buildRebindContainer();
+      rebindContainer.read(authProvider);
+      await _settleInitialization();
+
+      expect(
+        rebindContainer.read(authProvider),
+        isA<AuthUnauthenticated>(),
+        reason: 'a device that cannot be (re-)bound must never be left in '
+            'an authenticated state — this is the security-critical branch '
+            'in _initializeSession() (auth_provider.dart)',
+      );
+    });
+  });
+
+  // ─── concurrency: overlapping login() calls ───────────────────────────────
+  //
+  // There is no app-level single-flight coordination for login() (unlike
+  // the security doc's "Refresh Race Protection" phase, which applies to
+  // *token refresh* — handled internally by the supabase_flutter/gotrue
+  // SDK, not by application code). This test does not assert single-flight
+  // behaviour (there is none to assert); it only pins down that two
+  // overlapping calls converge to one consistent, non-corrupted state
+  // instead of crashing or leaving a torn state.
+
+  group('concurrency: overlapping login() calls', () {
+    test('two overlapping login() calls converge to one consistent state',
+        () async {
+      container.read(authProvider);
+      await _settleInitialization();
+      stubSuccessfulLogin();
+
+      final notifier = container.read(authProvider.notifier);
+      final f1 = notifier.login('test@example.com', 'password');
+      final f2 = notifier.login('test@example.com', 'password');
+
+      await Future.wait([f1, f2]);
+
+      final state = container.read(authProvider);
+      expect(state, isA<AuthAuthenticated>());
+      expect((state as AuthAuthenticated).user, _tUser);
+    });
+  });
+
+  // ─── session race: logout() during in-flight _initializeSession() ────────
+  //
+  // Regression test for the race documented in _settleInitialization()'s
+  // doc comment above this file's `main()`: _initializeSession() is fired
+  // unawaited from build(). If logout() is called while it is still in
+  // flight, and _initializeSession() later resolves to AuthAuthenticated,
+  // that stale write must NOT overwrite the logout. This directly
+  // exercises the `_safeSetStateIfStillInitializing` guard in
+  // lib/features/auth/application/providers/auth_provider.dart, which
+  // implements the architecture doc's "logout always wins over late auth
+  // response" invariant (see MERHALA 32 / concurrency tests).
+  //
+  // Uses its own ProviderContainer (rather than the shared `container`
+  // from setUp) so updateServiceProvider can be overridden with a gate
+  // that lets this test control exactly when _initializeSession() resumes.
+
+  group('session race: logout() during in-flight _initializeSession()', () {
+    test(
+        'logout() wins over a slow _initializeSession() that would '
+        'otherwise resolve to AuthAuthenticated', () async {
+      final updateGate = Completer<UpdateInfo>();
+      final mockUpdateService = _MockUpdateService();
+      when(() => mockUpdateService.checkForUpdate(any()))
+          .thenAnswer((_) => updateGate.future);
+
+      final mockSession = _MockSession();
+      final mockUser = _MockSupabaseUser();
+      when(() => mockUser.id).thenReturn('user-1');
+      when(() => mockSession.user).thenReturn(mockUser);
+      when(() => mockAuth.currentSession).thenReturn(mockSession);
+
+      when(() => mockDataSource.validateDeviceExists(any(), any()))
+          .thenAnswer((_) async => true);
+      when(() => mockDataSource.checkUserAccess())
+          .thenAnswer((_) async => _tActiveAccess);
+      when(() => mockDataSource.getCurrentUser())
+          .thenAnswer((_) async => _tUser);
+      when(() => mockDataSource.syncUserActivity(
+            userId: any(named: 'userId'),
+            tenantId: any(named: 'tenantId'),
+            deviceFingerprint: any(named: 'deviceFingerprint'),
+          )).thenAnswer((_) async {});
+
+      final raceContainer = ProviderContainer(
+        overrides: [
+          authRemoteDataSourceProvider.overrideWithValue(mockDataSource),
+          supabaseClientProvider.overrideWithValue(mockSupabase),
+          deviceServiceProvider.overrideWithValue(mockDevice),
+          eventBusProvider.overrideWithValue(mockEventBus),
+          updateServiceProvider.overrideWithValue(mockUpdateService),
+        ],
+      );
+      addTearDown(raceContainer.dispose);
+
+      // build() fires the unawaited _initializeSession(), which is now
+      // permanently blocked on updateGate.future until we complete it
+      // below — state stays AuthInitializing until then.
+      raceContainer.read(authProvider);
+      expect(raceContainer.read(authProvider), isA<AuthInitializing>());
+
+      final rpcBuilder = _MockRpcBuilder();
+      when(() => mockSupabase.rpc('logout_current_user'))
+          .thenAnswer((_) => rpcBuilder);
+      when(() => rpcBuilder.timeout(any())).thenAnswer((_) async => null);
+
+      // logout()'s only re-entrancy guard is
+      // `state is AuthLoggingOut || state is AuthUnauthenticated`; the
+      // current state is AuthInitializing, so this is a legitimate call
+      // (e.g. the user backs out, or a deep link forces sign-out, during a
+      // slow cold start).
+      await raceContainer.read(authProvider.notifier).logout();
+      expect(raceContainer.read(authProvider), isA<AuthUnauthenticated>());
+
+      // Now let the stale _initializeSession() resume and run to
+      // completion. Without the `state is AuthInitializing` guard inside
+      // _safeSetStateIfStillInitializing, it would overwrite the state
+      // above with AuthAuthenticated once it finishes.
+      updateGate.complete(const UpdateInfo.upToDate(latestVersion: '1.0.0'));
+      await _settleInitialization();
+
+      expect(
+        raceContainer.read(authProvider),
+        isA<AuthUnauthenticated>(),
+        reason: 'a stale _initializeSession() result must never overwrite '
+            'an explicit logout() that happened while it was in flight',
+      );
     });
   });
 }

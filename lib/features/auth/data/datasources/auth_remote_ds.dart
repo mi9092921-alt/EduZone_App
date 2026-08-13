@@ -240,7 +240,17 @@ class AuthRemoteDataSource {
 
   // ─── Get Current User ─────────────────────────────────────────
 
-  /// Returns the currently authenticated user, or null if no session.
+  /// Returns the currently authenticated user, or null if no session /
+  /// no matching row.
+  ///
+  /// IMPORTANT: this deliberately does NOT swallow network/server failures
+  /// into `null`. A transient failure here must remain distinguishable
+  /// from "no such user" so callers (Auth._initializeSession(),
+  /// Auth.verifyAccess()) can run it through AuthErrorPolicy.isTransient()
+  /// instead of being forced into an unauthenticated state on a network
+  /// blip. See AUTH-00 audit note in
+  /// EduZone_Authentication_Session_Security_Architecture.md, phase 6
+  /// ("transient network error must never directly cause logout").
   Future<AppUser?> getCurrentUser() async {
     final session = _client.auth.currentSession;
     if (session == null) return null;
@@ -254,8 +264,8 @@ class AuthRemoteDataSource {
 
       if (userData == null) return null;
       return _mapUserData(userData);
-    } catch (_) {
-      return null;
+    } on PostgrestException catch (e) {
+      throw ServerException(e.message);
     }
   }
 

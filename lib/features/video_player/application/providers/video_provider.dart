@@ -28,7 +28,16 @@ SyncLessonProgress syncLessonProgress(Ref ref) {
   return SyncLessonProgress(ref.watch(videoPlayerRepositoryProvider));
 }
 
-final lessonProgressSyncEngineProvider = Provider<LessonProgressSyncEngine>((ref) {
+/// Intentionally NOT AutoDispose / NOT `@riverpod`-generated.
+///
+/// This engine batches and debounces lesson-progress syncs across every
+/// [VideoProgress] instance (one per courseId/lessonId pair, each of which
+/// keeps itself alive via `ref.keepAlive()`). It must stay a single
+/// app-lifetime instance so that progress queued while watching one lesson
+/// is still flushed correctly if the user immediately opens another lesson
+/// before the first sync completes. Reviewed 2026-08-13 as part of the
+/// memory-hygiene audit; see tool/check_memory_hygiene.py.
+final lessonProgressSyncEngineProvider = Provider<LessonProgressSyncEngine>((ref) { // check-ignore
   final engine = LessonProgressSyncEngine(
     syncLessonProgress: ref.watch(syncLessonProgressProvider),
   );
