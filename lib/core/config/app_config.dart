@@ -8,14 +8,16 @@ class AppConfig {
   static const Duration networkTimeout = Duration(seconds: 5);
 
   // ── Proxy Video Player ───────────────────────────────────────────────────
-  // عنوان خادم Next.js الوسيط — غيّره فقط عند النشر في Production
+  // عنوان خادم Next.js الوسيط — يُقرأ الآن من --dart-define-from-file
+  // (PROXY_BASE_URL في .env / .env.staging / .env.prod)، مع الإبقاء على
+  // نفس القيمة الحالية كـ default حتى لا يتغيّر أي سلوك لمن لا يملك
+  // متغيّر البيئة هذا بعد. غيّره فعليًا عبر ملف الـ .env المناسب لكل
+  // بيئة، وليس بتعديل هذا الملف مباشرة.
   // الابعاد الافقية  980:660 و العمودية 560:740
-  /// Production: Vercel Proxy
-  // todo add to .env file for security
-  static const String proxyBase = 'https://youtube-proxy-roan.vercel.app';
-
-  // Production — فكّ التعليق وأضف عنوانك الفعلي:
-  // static const String proxyBase = 'https://your-admin-domain.com';
+  static const String proxyBase = String.fromEnvironment(
+    'PROXY_BASE_URL',
+    defaultValue: 'https://youtube-proxy-roan.vercel.app',
+  );
 
   /// بناء رابط الـ Proxy لمعرّف الفيديو المُعطى
   static String buildVideoUrl(String videoId) =>

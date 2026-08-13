@@ -648,8 +648,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get enrollNow => 'Enroll Now';
 
   @override
-  String get enrollmentComingSoon =>
-      'Enrollment functionality is coming soon!';
+  String get enrollmentComingSoon => 'Enrollment functionality is coming soon!';
 
   @override
   String get resumeLearning => 'Continue Learning';

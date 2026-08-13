@@ -77,3 +77,27 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/src" -w /src ghcr.io/google/osv-scanner:v2.3.8 \
             scan --lockfile=pubspec.lock
+
+  integration_test:
+    # NOTE: this job (and the harness test it runs) is UNVERIFIED — written
+    # in an environment without a Flutter SDK or emulator/device to confirm
+    # `flutter test integration_test/` actually passes here as written. The
+    # `integration_test` package documents this command as supported for
+    # tests that don't need real platform channels (which the current
+    # harness-only test doesn't), but if this job fails on its first real
+    # run, the likely fix is switching to a device-backed runner (e.g.
+    # reactivecircus/android-emulator-runner) rather than the test itself
+    # being wrong. Do not remove or paper over a failure here without
+    # checking which of the two it actually is.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Generate l10n
+        run: flutter gen-l10n
+      - name: Run integration tests
+        run: flutter test integration_test/

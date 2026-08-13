@@ -62,6 +62,7 @@ class CleanupScheduler {
         final encryptionService = EncryptionService(secureStorage);
 
         final expiredRows = await localDs.getExpiredDownloads();
+        var keyDeletionFailures = 0;
 
         for (final row in expiredRows) {
           final id = row['id'] as String?;
@@ -88,10 +89,19 @@ class CleanupScheduler {
             }
           }
 
-          // Remove the AES key from secure storage.
+          // Remove the AES key from secure storage. If this fails, do NOT
+          // delete the DB row below — leave the record in place so the
+          // next cleanup cycle retries this item instead of silently
+          // orphaning the key (a record-less key with no way to find and
+          // remove it later). This mirrors the same safety net the
+          // "crash mid-loop" comment below already relies on, extended to
+          // cover a caught (non-crashing) failure too.
           try {
             await encryptionService.deleteKey(id);
-          } catch (_) {}
+          } catch (_) {
+            keyDeletionFailures++;
+            continue;
+          }
 
           // Remove the DB row last so that a crash mid-loop leaves the
           // record in place and the next run retries the cleanup.
@@ -100,7 +110,9 @@ class CleanupScheduler {
 
         if (kDebugMode) {
           debugPrint(
-            '[CleanupScheduler] Removed ${expiredRows.length} expired download(s)',
+            '[CleanupScheduler] Removed ${expiredRows.length - keyDeletionFailures} '
+            'of ${expiredRows.length} expired download(s)'
+            '${keyDeletionFailures > 0 ? ' ($keyDeletionFailures key-deletion failure(s), retried next cycle)' : ''}',
           );
         }
         return true;

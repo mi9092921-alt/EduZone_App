@@ -1,19 +1,36 @@
 name: Deploy
+# NOT YET IMPLEMENTED — see "Known gaps" in IMPLEMENTATION.md.
+#
+# Previously this ran automatically on every push to `main`, including
+# spinning up a macos-latest runner (the most expensive runner type) to do
+# nothing but echo a placeholder string. That both wasted CI minutes and
+# risked a green checkmark on the "Deploy" workflow being mistaken for an
+# actual deployment having happened. Changed to workflow_dispatch (manual
+# trigger only) until real fastlane lanes + signing secrets exist.
 on:
-  push:
-    branches: [ "main" ]
+  workflow_dispatch: {}
 
 jobs:
   deploy_android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Placeholder for Android deployment to Play Store (fastlane)
-        run: echo "Fastlane setup deferred to P10"
+      - name: Not implemented — Android deployment to Play Store (fastlane)
+        run: |
+          echo "::warning::deploy_android is a placeholder. See IMPLEMENTATION.md (REL-001, CI-001) for what's required before this can run for real: a production keystore + key.properties written from CI secrets, and real fastlane lanes."
+          {
+            echo "## ⚠️ Not implemented"
+            echo "Android deployment is a placeholder. See \`IMPLEMENTATION.md\` for what's required."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   deploy_ios:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Placeholder for iOS deployment to TestFlight (fastlane)
-        run: echo "Fastlane setup deferred to P10"
+      - name: Not implemented — iOS deployment to TestFlight (fastlane)
+        run: |
+          echo "::warning::deploy_ios is a placeholder. See IMPLEMENTATION.md for what's required before this can run for real: signing/provisioning setup and real fastlane lanes."
+          {
+            echo "## ⚠️ Not implemented"
+            echo "iOS deployment is a placeholder. See \`IMPLEMENTATION.md\` for what's required."
+          } >> "$GITHUB_STEP_SUMMARY"
