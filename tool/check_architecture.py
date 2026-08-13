@@ -24,10 +24,27 @@ Rules:
          presentation/ internals directly (not just feature B's domain/)
          -> tight cross-feature coupling; consider exposing a domain
             interface, or moving the shared piece into lib/shared/.
+  ERROR  a file under lib/core/ imports anything under lib/features/**
+         -> core is infrastructure and must stay feature-agnostic; a
+            feature may depend on core, never the reverse. This is the
+            "core -> feature" direction called out in the architecture
+            contract. lib/shared/cross_feature/**  is intentionally
+            exempt: those files are the one sanctioned facade layer for
+            controlled cross-feature access (see that folder's own
+            doc-comments), so this rule does not apply to lib/shared/.
+  ERROR  a file under lib/design_system/ imports anything under
+         lib/features/** -> the design system must stay app-agnostic so
+         it can be reused/tested independently of any one feature.
 
 Composition-root files are exempt (they are allowed to know about
 everything): lib/app/**, lib/main.dart, and any *_providers.dart /
 *injection*.dart dependency-injection wiring file.
+
+Note: the two new core/design_system ERROR rules only scan files that
+live under lib/core/ or lib/design_system/. lib/shared/cross_feature/**
+is untouched by them (it lives under lib/shared/, not lib/core/), which
+is intentional: those files are the one sanctioned facade layer for
+controlled cross-feature access -- see that folder's own doc-comments.
 
 Exit code: 0 = OK (or only warnings, unless --strict), 1 = errors found.
 """
@@ -69,6 +86,18 @@ def feature_and_layer(rel_parts: tuple[str, ...]) -> tuple[str | None, str | Non
     return feature, layer
 
 
+def infra_zone(rel_parts: tuple[str, ...]) -> str | None:
+    """Returns 'core' or 'design_system' if rel_parts (relative to lib/) is
+    inside that infrastructure zone, else None."""
+    if not rel_parts:
+        return None
+    if rel_parts[0] == "core":
+        return "core"
+    if rel_parts[0] == "design_system":
+        return "design_system"
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--strict", action="store_true",
@@ -80,6 +109,28 @@ def main() -> None:
     for fpath, rel, lines in iter_dart_files():
         rel_parts = fpath.relative_to(LIB_ROOT).parts
         feature, layer = feature_and_layer(rel_parts)
+        zone = infra_zone(rel_parts)
+
+        if zone is not None and not is_exempt(rel):
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                m = IMPORT_RE.match(stripped)
+                if not m or is_suppressed(line):
+                    continue
+                target = (fpath.parent / m.group(1)).resolve()
+                try:
+                    target_rel_parts = target.relative_to(LIB_ROOT.resolve()).parts
+                except ValueError:
+                    continue
+                if target_rel_parts and target_rel_parts[0] == "features":
+                    report.add(
+                        rel, i + 1,
+                        f"{zone}/ file imports lib/features/ "
+                        f"({'/'.join(target_rel_parts)}) -- {zone} must stay "
+                        "feature-agnostic; a feature may depend on "
+                        f"{zone}, never the reverse",
+                    )
+
         if feature is None or is_exempt(rel):
             continue
 

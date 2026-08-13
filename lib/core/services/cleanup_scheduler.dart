@@ -4,7 +4,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:workmanager/workmanager.dart';
 
-import '../../features/downloads/data/datasources/download_local_ds.dart';
+// Architecture exception (reviewed): CleanupScheduler.callbackDispatcher runs
+// in WorkManager's own isolate, which has no Flutter binding and no Riverpod
+// container (see class doc-comment below), so it cannot reach
+// DownloadLocalDataSource through the normal application/domain layer the
+// way every other core/ file must. Importing it directly from core/ is the
+// smallest safe option today; the correct long-term fix is to extract a
+// small feature-agnostic "expired downloads" data contract into core/ or
+// shared/ so this isolate entrypoint no longer reaches into
+// features/downloads/data/ at all. Tracked as a known architecture debt
+// item rather than silently allowed.
+import '../../features/downloads/data/datasources/download_local_ds.dart'; // check-ignore
 import '../services/encryption_service.dart';
 import '../services/storage_service.dart';
 

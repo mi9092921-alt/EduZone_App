@@ -124,132 +124,49 @@ The platform is built on **Supabase** with Row Level Security (RLS) policies and
 
 ## 🏗 Architecture
 
-The app follows **Clean Architecture** with Feature Slices, inspired by the same architectural decisions documented in `RFC_DECISION_LOG.md` for the EduZone platform.
+The app follows **Clean Architecture with feature slices**. The full
+dependency-direction contract, what's enforced by CI vs. spot-checked
+manually, and known architecture debt are documented in
+**[`ARCHITECTURE.md`](ARCHITECTURE.md)** — that file, not this section, is
+the source of truth; it's kept in sync with `tool/check_architecture.py`'s
+actual behavior on purpose. This section is a short orientation only.
 
 ```
 lib/
-├── core/                          ← Layer 1: DOMAIN & INFRA CORE
-│   ├── theme/
-│   │   ├── app_colors.dart        ← Design Tokens (Colors)
-│   │   ├── app_text_styles.dart   ← Typography System
-│   │   ├── app_spacing.dart       ← Spacing (8dp grid)
-│   │   ├── app_radius.dart        ← Border Radius
-│   │   ├── app_elevation.dart     ← Elevation & Shadows
-│   │   ├── app_duration.dart      ← Motion Tokens
-│   │   └── app_theme.dart         ← ThemeData (Light + Dark)
-│   ├── layout/
-│   │   ├── breakpoints.dart       ← Responsive Breakpoints
-│   │   └── adaptive_layout.dart   ← AdaptiveLayout Widget
-│   ├── navigation/
-│   │   ├── app_router.dart        ← go_router config
-│   │   └── app_page_transition.dart
-│   ├── services/
-│   │   ├── supabase_service.dart  ← Singleton Supabase Client
-│   │   ├── auth_service.dart      ← Auth operations
-│   │   └── storage_service.dart   ← Secure storage helpers
-│   └── utils/
-│       ├── number_formatter.dart  ← Arabic/Western numerals
-│       ├── date_formatter.dart    ← Locale-aware dates
-│       └── extensions/            ← Dart extensions
-│
-├── shared/                        ← Layer 2: SHARED WIDGETS
-│   ├── widgets/
-│   │   ├── app_button.dart
-│   │   ├── app_card.dart
-│   │   ├── app_text_field.dart
-│   │   ├── status_chip.dart
-│   │   ├── confirm_dialog.dart
-│   │   ├── empty_state.dart
-│   │   ├── error_state.dart
-│   │   ├── app_loading.dart       ← skeletonizer
-│   │   └── app_bottom_nav.dart
-│   └── models/
-│       ├── user.dart
-│       ├── course.dart
-│       ├── enrollment.dart
-│       ├── lesson.dart
-│       └── notification.dart
-│
-├── features/                      ← Layer 3: FEATURE SLICES
-│   │                               (each feature is isolated — no cross-imports)
+├── app/              composition root — bootstrap, router, session, app-level state
+├── core/              infrastructure — network, storage, security, logging, error, l10n plumbing
+├── design_system/     UI platform — tokens, components (feature-agnostic)
+├── features/          one directory per feature, each with its own
+│                       data/ · domain/ · application/ · presentation/
 │   ├── auth/
-│   │   ├── data/
-│   │   │   └── auth_repository.dart
-│   │   ├── presentation/
-│   │   │   ├── login_screen.dart
-│   │   │   ├── forgot_password_screen.dart
-│   │   │   └── widgets/
-│   │   └── application/providers/
-│   │       └── auth_provider.dart
-│   │
-│   ├── home/
-│   │   ├── presentation/
-│   │   │   ├── home_screen.dart
-│   │   │   └── widgets/
-│   │   │       ├── enrolled_courses_section.dart
-│   │   │       ├── continue_watching_card.dart
-│   │   │       └── stats_row.dart
-│   │   └── application/providers/
-│   │
 │   ├── courses/
-│   │   ├── data/
-│   │   │   └── courses_repository.dart
-│   │   ├── presentation/
-│   │   │   ├── courses_screen.dart       ← Course list
-│   │   │   ├── course_detail_screen.dart ← Course details
-│   │   │   ├── lesson_screen.dart        ← Watch lesson
-│   │   │   └── widgets/
-│   │   │       ├── course_card.dart
-│   │   │       ├── section_tile.dart
-│   │   │       ├── lesson_tile.dart
-│   │   │       └── progress_bar.dart
-│   │   └── application/providers/
-│   │       ├── courses_provider.dart
-│   │       └── video_progress_provider.dart
-│   │
+│   ├── downloads/
+│   ├── home/
 │   ├── notifications/
-│   │   ├── data/
-│   │   │   └── notifications_repository.dart
-│   │   ├── presentation/
-│   │   │   ├── notifications_screen.dart
-│   │   │   └── widgets/
-│   │   │       └── notification_tile.dart
-│   │   └── application/providers/
-│   │       └── notifications_provider.dart
-│   │
-│   ├── warnings/
-│   │   ├── data/
-│   │   │   └── warnings_repository.dart
-│   │   ├── presentation/
-│   │   │   ├── warnings_screen.dart
-│   │   │   └── widgets/
-│   │   │       └── warning_tile.dart
-│   │   └── application/providers/
-│   │
-│   └── profile/
-│       ├── data/
-│       │   └── profile_repository.dart
-│       ├── presentation/
-│       │   ├── profile_screen.dart
-│       │   └── widgets/
-│       │       ├── session_tile.dart
-│       │       └── device_tile.dart
-│       └── application/providers/
-│           └── profile_provider.dart
-│
-└── main.dart                      ← Entry point + ProviderScope
+│   ├── profile/
+│   ├── todo/
+│   └── video_player/
+├── shared/             cross-cutting widgets/models, plus the one sanctioned
+│                       cross-feature facade layer: shared/cross_feature/
+└── main.dart           entry point + ProviderScope
 ```
 
-### Feature Isolation Principle
+### Feature isolation principle
 
 ```
-✅ features/courses/ imports from core/ and shared/
-✅ features/courses/ imports from features/auth/ (providers only)
-❌ features/courses/ must NOT import from features/notifications/
-❌ features/notifications/ must NOT import from features/courses/
+✅ features/*/presentation → features/*/application → features/*/domain ← features/*/data
+✅ any feature → core/ and design_system/
+✅ feature A needs feature B's provider/widget → import the facade in
+   shared/cross_feature/*_shared.dart (never feature B's internals directly)
+❌ core/ or design_system/ importing from features/
+❌ feature A importing feature B's data/, application/, or presentation/ internals directly
 ```
 
----
+CI runs `tool/check_architecture.py --strict` and
+`tool/check_provider_cycles.py` (plus the accessibility, RTL, design-token,
+performance, memory-hygiene, localization, and auth-security guards) on
+every PR — see `ARCHITECTURE.md` §2 for exactly which rules are enforced
+today versus manually verified only.
 
 ## 🔄 Data Lifecycle
 

@@ -21,6 +21,8 @@ jobs:
         run: make check-a11y
       - name: Architecture Guard
         run: make check-architecture
+      - name: Provider Cycle Guard
+        run: make check-provider-cycles
       - name: RTL Guard
         run: make check-rtl
       - name: Design Token Guard
