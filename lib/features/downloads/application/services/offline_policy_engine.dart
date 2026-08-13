@@ -47,14 +47,14 @@ class OfflinePlaybackDeniedException implements Exception {
       case OfflinePlaybackDenialReason.notCompleted:
         return 'This download has not finished yet.';
       case OfflinePlaybackDenialReason.expired:
-        return "This offline download has expired. Reconnect and "
-            "download it again.";
+        return 'This offline download has expired. Reconnect and '
+            'download it again.';
       case OfflinePlaybackDenialReason.ownerMismatch:
-        return "This download belongs to a different account on this "
+        return 'This download belongs to a different account on this '
             "device and can't be played here.";
       case OfflinePlaybackDenialReason.deviceMismatch:
         return "This download is bound to a different device and can't "
-            "be played here.";
+            'be played here.';
       case OfflinePlaybackDenialReason.missingFile:
         return 'This download is missing or corrupted. Delete it and '
             'download it again.';

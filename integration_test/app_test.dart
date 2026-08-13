@@ -24,7 +24,9 @@ import 'package:integration_test/integration_test.dart';
 ///   which is the actual prerequisite every real integration test in this
 ///   directory will build on top of.
 ///
-/// TODO (tracked, not yet done — see §16 in the project instructions for
+
+
+// TODO (tracked, not yet done — see §16 in the project instructions for
 /// the full required list): once a maintainer can run this against a real
 /// or mocked backend, add real integration tests here for at minimum:
 ///   - application startup → first frame
