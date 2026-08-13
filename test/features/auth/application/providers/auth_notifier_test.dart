@@ -725,6 +725,158 @@ when(() => mockSupabase.rpc('check_user_access')).thenAnswer(
     });
   });
 
+  // ─── _initializeSession(): transient error with an existing session ──────
+  //
+  // EduZone_Authentication_Session_Security_Architecture.md, Phase 18:
+  // "if session != null and a network timeout occurs: do NOT clear the
+  // session, do NOT sign out, do NOT auto-navigate to login — retain the
+  // session and retry verification." Before this fix, ANY transient error
+  // hit during _initializeSession() (regardless of whether a local
+  // session existed) fell through to AuthUnauthenticated, which the
+  // Router maps straight to /login — silently discarding a valid session
+  // because of a network blip.
+
+  group('_initializeSession(): transient error with an existing session', () {
+    void stubValidSession() {
+      final mockSession = _MockSession();
+      final mockUser = _MockSupabaseUser();
+      when(() => mockUser.id).thenReturn('user-1');
+      when(() => mockSession.user).thenReturn(mockUser);
+      when(() => mockAuth.currentSession).thenReturn(mockSession);
+    }
+
+    ProviderContainer buildDegradedContainer() {
+      final mockUpdateService = _MockUpdateService();
+      when(() => mockUpdateService.checkForUpdate(any())).thenAnswer(
+        (_) async => const UpdateInfo.upToDate(latestVersion: '1.0.0'),
+      );
+
+      final degradedContainer = ProviderContainer(
+        overrides: [
+          authRemoteDataSourceProvider.overrideWithValue(mockDataSource),
+          supabaseClientProvider.overrideWithValue(mockSupabase),
+          deviceServiceProvider.overrideWithValue(mockDevice),
+          eventBusProvider.overrideWithValue(mockEventBus),
+          updateServiceProvider.overrideWithValue(mockUpdateService),
+        ],
+      );
+      addTearDown(degradedContainer.dispose);
+      return degradedContainer;
+    }
+
+    test(
+        'transitions to AuthDegraded (not AuthUnauthenticated) and never '
+        'signs out when a transient error occurs with a local session',
+        () async {
+      stubValidSession();
+      when(() => mockDataSource.validateDeviceExists(any(), any()))
+          .thenAnswer((_) async => true);
+      when(() => mockDataSource.checkUserAccess())
+          .thenThrow(const NoInternetException());
+
+      final degradedContainer = buildDegradedContainer();
+      degradedContainer.read(authProvider);
+      await _settleInitialization();
+
+      final state = degradedContainer.read(authProvider);
+      expect(
+        state,
+        isA<AuthDegraded>(),
+        reason: 'a transient error must never be treated as an explicit '
+            'denial when a local session exists',
+      );
+      expect(state, isNot(isA<AuthUnauthenticated>()));
+
+      verifyNever(() => mockAuth.signOut());
+      verifyNever(() => mockAuth.signOut(scope: any(named: 'scope')));
+    });
+
+    test(
+        'still resolves to AuthUnauthenticated(error:) on a transient '
+        'error when there is no local session to protect', () async {
+      when(() => mockAuth.currentSession).thenReturn(null);
+
+      final mockUpdateService = _MockUpdateService();
+      when(() => mockUpdateService.checkForUpdate(any()))
+          .thenThrow(const NoInternetException());
+
+      final noSessionContainer = ProviderContainer(
+        overrides: [
+          authRemoteDataSourceProvider.overrideWithValue(mockDataSource),
+          supabaseClientProvider.overrideWithValue(mockSupabase),
+          deviceServiceProvider.overrideWithValue(mockDevice),
+          eventBusProvider.overrideWithValue(mockEventBus),
+          updateServiceProvider.overrideWithValue(mockUpdateService),
+        ],
+      );
+      addTearDown(noSessionContainer.dispose);
+
+      noSessionContainer.read(authProvider);
+      await _settleInitialization();
+
+      final state = noSessionContainer.read(authProvider);
+      expect(
+        state,
+        isA<AuthUnauthenticated>(),
+        reason: 'with no local session there is nothing to protect — the '
+            'pre-existing "show a mapped network error on /login" '
+            'behaviour must be unchanged',
+      );
+    });
+
+    test(
+        'retryDegradedSession() re-runs verification and reaches '
+        'AuthAuthenticated once the server becomes reachable again — '
+        'proving the post-AuthDegraded write is not silently dropped',
+        () async {
+      stubValidSession();
+      when(() => mockDataSource.validateDeviceExists(any(), any()))
+          .thenAnswer((_) async => true);
+      when(() => mockDataSource.checkUserAccess())
+          .thenThrow(const NoInternetException());
+
+      final degradedContainer = buildDegradedContainer();
+      degradedContainer.read(authProvider);
+      await _settleInitialization();
+
+      expect(degradedContainer.read(authProvider), isA<AuthDegraded>());
+
+      // Server becomes reachable again.
+      when(() => mockDataSource.checkUserAccess())
+          .thenAnswer((_) async => _tActiveAccess);
+      when(() => mockDataSource.getCurrentUser())
+          .thenAnswer((_) async => _tUser);
+      when(() => mockDataSource.syncUserActivity(
+            userId: any(named: 'userId'),
+            tenantId: any(named: 'tenantId'),
+            deviceFingerprint: any(named: 'deviceFingerprint'),
+          )).thenAnswer((_) async {});
+
+      await degradedContainer.read(authProvider.notifier).retryDegradedSession();
+
+      final state = degradedContainer.read(authProvider);
+      expect(
+        state,
+        isA<AuthAuthenticated>(),
+        reason: 'this only passes if writes made after entering '
+            'AuthDegraded are not dropped by the AuthInitializing-only '
+            'guard that used to gate _initializeSession()\'s state writes',
+      );
+    });
+
+    test('retryDegradedSession() is a no-op outside AuthDegraded', () async {
+      container.read(authProvider);
+      await _settleInitialization();
+
+      final before = container.read(authProvider);
+      expect(before, isA<AuthUnauthenticated>());
+
+      await container.read(authProvider.notifier).retryDegradedSession();
+
+      expect(container.read(authProvider), before);
+    });
+  });
+
   // ─── concurrency: overlapping login() calls ───────────────────────────────
   //
   // There is no app-level single-flight coordination for login() (unlike

@@ -110,6 +110,15 @@ GoRouter router(Ref ref) {
         case AppAuthState.initializing:
           return location == AppRoutes.splash ? null : AppRoutes.splash;
 
+        // A local session exists but couldn't be verified yet because of
+        // a transient/network error — stay on splash and let the Auth
+        // notifier retry in the background. Deliberately NOT treated
+        // like `unauthenticated`: redirecting to /login here would be
+        // exactly the "network blip forces logout" behavior this state
+        // exists to prevent (see AuthDegraded's doc comment).
+        case AppAuthState.sessionVerificationPending:
+          return location == AppRoutes.splash ? null : AppRoutes.splash;
+
         // Force update: block ALL routes until the app is updated
         case AppAuthState.forceUpdate:
           return location == AppRoutes.forceUpdate

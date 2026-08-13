@@ -53,6 +53,11 @@ class Auth extends _$Auth {
   late final AuthRemoteDataSource _remoteDataSource;
   CheckUserAccessService? _accessService;
 
+  // ─── Degraded-session retry (AuthDegraded) ───────────────────────────────
+  Timer? _degradedRetryTimer;
+  int _degradedRetryCount = 0;
+  static const _maxDegradedAutoRetries = 5;
+
   @override
   AuthState build() {
     _remoteDataSource = ref.watch(authRemoteDataSourceProvider);
@@ -60,6 +65,7 @@ class Auth extends _$Auth {
     ref.onDispose(() {
       _authSubscription?.cancel();
       _accessService?.stop();
+      _degradedRetryTimer?.cancel();
     });
 
     // Kick off session check — UI shows splash via AuthInitializing.
@@ -87,11 +93,19 @@ class Auth extends _$Auth {
   /// already superseded it, and writing over it would silently undo a
   /// successful login (or any other explicit transition).
   ///
-  /// Guarding on `state is AuthInitializing` scopes _initializeSession to
-  /// only ever perform the one transition it exists to make, and never
-  /// interferes with anything that happens after.
-  void _safeSetStateIfStillInitializing(AuthState nextState) {
-    if (ref.mounted && state is AuthInitializing) {
+  /// Guarding on `state is AuthInitializing || state is AuthDegraded`
+  /// scopes _initializeSession (including its automatic degraded-session
+  /// retries — see `_scheduleDegradedRetry`) to only ever write a state
+  /// nobody has explicitly superseded yet, and never interferes with
+  /// anything that happens after an explicit user action.
+  ///
+  /// [AuthDegraded] is included alongside [AuthInitializing] because a
+  /// retry attempt re-enters `_initializeSession()` from an
+  /// already-[AuthDegraded] state (not [AuthInitializing]) — without this,
+  /// every write after the first transient failure would be silently
+  /// dropped, including the eventual success/failure that resolves it.
+  void _safeSetStateIfStillPending(AuthState nextState) {
+    if (ref.mounted && (state is AuthInitializing || state is AuthDegraded)) {
       state = nextState;
     }
   }
@@ -117,7 +131,7 @@ class Auth extends _$Auth {
 
       // Force update → block immediately, skip auth
       if (updateInfo.status == UpdateStatus.forceUpdate) {
-        _safeSetStateIfStillInitializing(AuthForceUpdate(updateInfo));
+        _safeSetStateIfStillPending(AuthForceUpdate(updateInfo));
         return;
       }
 
@@ -126,7 +140,7 @@ class Auth extends _$Auth {
       final session = client.auth.currentSession;
 
       if (session == null) {
-        _safeSetStateIfStillInitializing(const AuthUnauthenticated());
+        _safeSetStateIfStillPending(const AuthUnauthenticated());
         return;
       }
 
@@ -161,7 +175,7 @@ class Auth extends _$Auth {
           );
           await orchestrator.forceLocalCleanup();
           _invalidateAllUserProviders();
-          _safeSetStateIfStillInitializing(const AuthUnauthenticated());
+          _safeSetStateIfStillPending(const AuthUnauthenticated());
           return;
         }
       }
@@ -174,11 +188,11 @@ class Auth extends _$Auth {
           if (!_isStudentUser(appUser)) {
             debugPrint('[Auth] Non-student user blocked from student app.');
             await _forceLocalSignOutOnly(client);
-            _safeSetStateIfStillInitializing(const AuthUnauthenticated());
+            _safeSetStateIfStillPending(const AuthUnauthenticated());
             return;
           }
 
-          _safeSetStateIfStillInitializing(
+          _safeSetStateIfStillPending(
             AuthAuthenticated(
               user: appUser,
               access: access,
@@ -200,28 +214,100 @@ class Auth extends _$Auth {
           // Log location on app open — fire-and-forget, non-blocking
           await LocationService.logOnAppOpen();
         } else {
-          _safeSetStateIfStillInitializing(const AuthUnauthenticated());
+          _safeSetStateIfStillPending(const AuthUnauthenticated());
         }
       } else {
         // Explicit denial from the server — always AuthRestricted,
         // regardless of the transient-error policy below.
-        _safeSetStateIfStillInitializing(
+        _safeSetStateIfStillPending(
           AuthRestricted(status: access.status, access: access),
         );
       }
     } catch (e) {
       if (AuthErrorPolicy.isTransient(e)) {
+        // A transient error (no connectivity, timeout, DNS failure, 5xx)
+        // is not an explicit denial. If a local session already exists,
+        // we must never treat "server unreachable" as "log the user
+        // out" — see EduZone_Authentication_Session_Security_Architecture.md
+        // Phase 18. `currentSession` is read from local persisted state
+        // by the Supabase SDK and does not itself require network access.
+        final hasLocalSession =
+            ref.read(supabaseClientProvider).auth.currentSession != null;
+
+        if (hasLocalSession) {
+          debugPrint(
+            '[Auth] Session verification deferred due to transient error '
+            '(local session retained, will retry): ${e.runtimeType}: $e',
+          );
+          _scheduleDegradedRetry();
+          return;
+        }
+
         debugPrint(
           '[Auth] Session initialization deferred due to transient error: ${e.runtimeType}: $e',
         );
-        _safeSetStateIfStillInitializing(
+        _safeSetStateIfStillPending(
           AuthUnauthenticated(error: AuthErrorPolicy.mapExceptionToKey(e)),
         );
         return;
       }
 
       debugPrint('[Auth] Session initialization failed with ${e.runtimeType}: $e');
-      _safeSetStateIfStillInitializing(const AuthUnauthenticated());
+      _safeSetStateIfStillPending(const AuthUnauthenticated());
+    }
+  }
+
+  // ─── Degraded-session retry ────────────────────────────────────────────
+
+  /// Enters/updates [AuthDegraded] and schedules an automatic retry of
+  /// [_initializeSession] with capped exponential backoff (2s, 4s, 8s,
+  /// 16s, 32s — [_maxDegradedAutoRetries] attempts). The local Supabase
+  /// session is never touched by this path.
+  ///
+  /// After the retry cap is reached, auto-retrying stops (to avoid an
+  /// unbounded retry storm — see the project's networking-reliability
+  /// rules), but the state stays [AuthDegraded] rather than falling back
+  /// to [AuthUnauthenticated]: the session is still valid as far as we
+  /// know, we simply couldn't confirm it. [retryDegradedSession] lets the
+  /// UI offer a manual retry at that point.
+  void _scheduleDegradedRetry() {
+    if (!ref.mounted) return;
+
+    if (_degradedRetryCount >= _maxDegradedAutoRetries) {
+      _safeSetStateIfStillPending(
+        AuthDegraded(error: 'errorNetwork', retryAttempt: _degradedRetryCount),
+      );
+      return;
+    }
+
+    _degradedRetryCount++;
+    _safeSetStateIfStillPending(
+      AuthDegraded(error: 'errorNetwork', retryAttempt: _degradedRetryCount),
+    );
+
+    final delaySeconds = 1 << _degradedRetryCount; // 2, 4, 8, 16, 32
+    _degradedRetryTimer?.cancel();
+    _degradedRetryTimer = Timer(Duration(seconds: delaySeconds), () async {
+      if (!ref.mounted || state is! AuthDegraded) return;
+      await _initializeSession();
+      // A successful (or explicitly-denied) retry moves state out of
+      // AuthDegraded — reset the counter so a *future*, unrelated outage
+      // starts its own fresh backoff instead of inheriting this one's.
+      if (ref.mounted && state is! AuthDegraded) {
+        _degradedRetryCount = 0;
+      }
+    });
+  }
+
+  /// Lets the UI (e.g. a "Retry" affordance shown while [AuthDegraded])
+  /// force an immediate re-verification instead of waiting for the next
+  /// scheduled backoff tick. No-op outside [AuthDegraded].
+  Future<void> retryDegradedSession() async {
+    if (state is! AuthDegraded) return;
+    _degradedRetryTimer?.cancel();
+    await _initializeSession();
+    if (ref.mounted && state is! AuthDegraded) {
+      _degradedRetryCount = 0;
     }
   }
 
@@ -253,6 +339,10 @@ class Auth extends _$Auth {
   /// Entry point for LoginScreen.
   /// Transitions: AuthAuthenticating → AuthAuthenticated | AuthRestricted | AuthUnauthenticated(error)
   Future<void> login(String email, String password) async {
+    // An explicit login attempt supersedes any pending degraded-session
+    // auto-retry from a previous cold start.
+    _degradedRetryTimer?.cancel();
+    _degradedRetryCount = 0;
     _safeSetState(const AuthAuthenticating());
 
     try {
@@ -492,6 +582,10 @@ class Auth extends _$Auth {
     // Stop security monitoring immediately
     _accessService?.stop();
     _accessService = null;
+
+    // Stop any pending degraded-session auto-retry — logging out is an
+    // explicit action that must win over a stale retry attempt.
+    _degradedRetryTimer?.cancel();
 
     final orchestrator = LogoutOrchestrator(
       supabase: client,

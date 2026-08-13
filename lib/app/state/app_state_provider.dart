@@ -8,8 +8,9 @@ part 'app_state_provider.g.dart';
 
 /// Derives [AppAuthState] from the sealed [AuthState] hierarchy.
 ///
-/// This is the ONLY provider the router watches. All 7 AppAuthState
-/// values are now reachable — fixing the dead-branch router bug.
+/// This is the ONLY provider the router watches. Every [AppAuthState]
+/// value is reachable from some [AuthState] branch below — fixing the
+/// dead-branch router bug.
 @riverpod
 AppAuthState appState(Ref ref) {
   final authState = ref.watch(authProvider);
@@ -20,6 +21,9 @@ AppAuthState appState(Ref ref) {
     AuthUnauthenticated() => AppAuthState.unauthenticated,
     AuthLoggingOut()     => AppAuthState.loggingOut,
     AuthForceUpdate()    => AppAuthState.forceUpdate,
+    // Transient/network failure verifying an existing local session —
+    // never mapped to `unauthenticated`. See AuthDegraded's doc comment.
+    AuthDegraded()        => AppAuthState.sessionVerificationPending,
     AuthRestricted(status: AccountStatus.banned)      => AppAuthState.banned,
     AuthRestricted(status: AccountStatus.suspended)    => AppAuthState.suspended,
     AuthRestricted(status: AccountStatus.locked)       => AppAuthState.locked,

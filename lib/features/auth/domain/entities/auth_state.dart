@@ -41,6 +41,14 @@ enum AppAuthState {
   /// App version is below the minimum — access is blocked until update.
   /// This is an APP-LEVEL restriction, not an account restriction.
   forceUpdate,
+
+  /// A local session exists but it could not be verified against the
+  /// server yet because of a transient/network error (not an explicit
+  /// denial). The Router keeps showing /splash while the app retries
+  /// automatically — it must NOT redirect to /login on its own, since
+  /// that would force a logout-equivalent UX on a simple network blip.
+  /// See EduZone_Authentication_Session_Security_Architecture.md, Phase 18.
+  sessionVerificationPending,
 }
 
 // ─── Sealed Auth State Hierarchy ────────────────────────────────────────────
@@ -135,4 +143,37 @@ class AuthLoggingOut extends AuthState {
 
   @override
   List<Object?> get props => [];
+}
+
+/// A local Supabase session exists, but [_initializeSession] could not
+/// confirm it with the server because of a transient error (no
+/// connectivity, timeout, DNS failure, 5xx, etc.) — NOT an explicit
+/// denial from the server.
+///
+/// The session is deliberately left intact: no local cleanup, no
+/// server-side logout call, no navigation to /login. The `Auth` notifier
+/// retries verification automatically with capped exponential backoff
+/// (see `_scheduleDegradedRetry` / `retryDegradedSession` in
+/// `auth_provider.dart`).
+///
+/// This exists specifically to satisfy
+/// EduZone_Authentication_Session_Security_Architecture.md Phase 18:
+/// "transient network error must never force logout / redirect to
+/// login by itself." Before this state existed, any transient error hit
+/// during cold-start session verification fell through to
+/// [AuthUnauthenticated], which the Router maps straight to /login —
+/// silently discarding a perfectly valid session because of a network
+/// blip.
+class AuthDegraded extends AuthState {
+  /// Localization key for the underlying transient error, if any.
+  final String? error;
+
+  /// How many automatic retries have been attempted so far. Exposed
+  /// mainly for tests/telemetry; the UI is not required to display it.
+  final int retryAttempt;
+
+  const AuthDegraded({this.error, this.retryAttempt = 0});
+
+  @override
+  List<Object?> get props => [error, retryAttempt];
 }
