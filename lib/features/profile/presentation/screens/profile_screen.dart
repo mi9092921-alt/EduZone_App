@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../domain/entities/student_profile.dart';
 import '../../application/providers/profile_provider.dart';
+import '../../domain/entities/student_profile.dart';
 import '../widgets/device_info_widget.dart';
 import '../widgets/edit_profile_bottom_sheet.dart';
 import '../widgets/settings_section.dart';

@@ -1,7 +1,8 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+import '../../features/auth/application/providers/auth_provider.dart';
 import '../../features/auth/domain/entities/auth_state.dart';
 import '../../features/auth/domain/enums/account_status.dart';
-import '../../features/auth/application/providers/auth_provider.dart';
 
 part 'app_state_provider.g.dart';
 

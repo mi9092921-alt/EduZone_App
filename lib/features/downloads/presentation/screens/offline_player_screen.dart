@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
-import '../../domain/entities/download_enums.dart';
 import '../../application/providers/downloads_provider.dart';
+import '../../domain/entities/download_enums.dart';
 import '../widgets/offline_player_wrapper.dart';
 
 /// Screen for playing a downloaded (encrypted) lesson offline.

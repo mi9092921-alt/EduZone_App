@@ -15,15 +15,15 @@ import '../../../../core/logging/logging_providers.dart';
 import '../../../../core/network/request_cancellation_manager.dart';
 import '../../../../core/services/device_service.dart';
 import '../../../../core/services/location_service.dart';
-import '../policies/auth_error_policy.dart';
-import '../services/check_user_access_service.dart';
-import '../services/logout_orchestrator.dart';
 import '../../data/datasources/auth_remote_ds.dart';
 import '../../domain/entities/app_user.dart';
 import '../../domain/entities/auth_state.dart';
 import '../../domain/entities/update_info.dart';
 import '../../domain/entities/user_access.dart';
 import '../../domain/enums/user_role.dart';
+import '../policies/auth_error_policy.dart';
+import '../services/check_user_access_service.dart';
+import '../services/logout_orchestrator.dart';
 import 'auth_di_providers.dart';
 
 export 'auth_di_providers.dart';

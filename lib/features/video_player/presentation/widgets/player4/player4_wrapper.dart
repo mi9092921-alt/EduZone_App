@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
@@ -9,9 +10,9 @@ import '../../../../../core/network/supabase_client.dart';
 import '../../../../../core/utils/device_info_helper.dart';
 import '../../../../../design_system/design_system.dart';
 import '../../../../../shared/cross_feature/courses_shared.dart';
-import '../../../data/models/streaming_video_info.dart';
 import '../../../application/providers/player4_provider.dart';
 import '../../../application/providers/video_provider.dart';
+import '../../../data/models/streaming_video_info.dart';
 import 'player4_controls_overlay.dart';
 import 'player4_error_mapper.dart';
 import 'player4_error_view.dart';

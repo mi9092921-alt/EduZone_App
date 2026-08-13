@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../core/network/supabase_client.dart';
-import '../../domain/entities/app_notification.dart';
 import '../../application/providers/notifications_provider.dart';
+import '../../domain/entities/app_notification.dart';
 import '../widgets/notification_tile.dart';
 
 class NotificationsScreen extends ConsumerWidget {

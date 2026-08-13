@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:app/core/error/exceptions.dart';
+import 'package:app/features/video_player/application/providers/player4_provider.dart';
 import 'package:app/features/video_player/data/datasources/player4_remote_ds.dart';
 import 'package:app/features/video_player/data/models/streaming_video_info.dart';
-import 'package:app/features/video_player/application/providers/player4_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';

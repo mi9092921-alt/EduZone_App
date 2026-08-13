@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/components/course_card.dart';
-import '../../domain/entities/course.dart';
 import '../../application/providers/courses_provider.dart';
+import '../../domain/entities/course.dart';
 import '../widgets/bookmark_button.dart';
 
 class SavedCoursesScreen extends ConsumerWidget {

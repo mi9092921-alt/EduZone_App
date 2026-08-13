@@ -1,9 +1,9 @@
 import 'dart:async';
 
+import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:app/features/downloads/domain/entities/download_enums.dart';
 import 'package:app/features/downloads/domain/entities/download_progress.dart';
 import 'package:app/features/downloads/domain/repositories/download_repository.dart';
-import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:app/features/downloads/presentation/widgets/download_tile/download_progress_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

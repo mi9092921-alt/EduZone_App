@@ -12,8 +12,8 @@ import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../core/services/encryption_service.dart'
     show detectContainerExt;
 import '../../../../../core/services/offline_playback_service.dart';
-import '../../../domain/entities/downloaded_lesson.dart';
 import '../../../application/providers/downloads_provider.dart';
+import '../../../domain/entities/downloaded_lesson.dart';
 import 'offline_player_center_button.dart';
 import 'offline_player_controls_overlay.dart';
 import 'offline_player_error_view.dart';

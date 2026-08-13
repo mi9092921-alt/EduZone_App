@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/features/home/presentation/widgets/notifications_preview.dart';
-import 'package:app/features/notifications/domain/entities/app_notification.dart';
 import 'package:app/features/notifications/application/providers/notifications_provider.dart';
+import 'package:app/features/notifications/domain/entities/app_notification.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
