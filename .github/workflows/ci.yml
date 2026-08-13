@@ -54,7 +54,15 @@ jobs:
             exit 0
           fi
           flutter build apk --release --dart-define-from-file=.env.staging
-        continue-on-error: true
+        # NOTE: no `continue-on-error` here on purpose. The "secret not
+        # configured" case above already exits 0 on its own, so it was
+        # never what continue-on-error was protecting. Its only real
+        # effect was to let a genuine `flutter build apk` failure (once
+        # ENV_STAGING *is* configured) go green — exactly the masked-CI-
+        # failure pattern the project instructions forbid. If this build
+        # legitimately needs to be non-blocking during a transition
+        # period, that should be a documented, deliberate decision here,
+        # not a silent side effect.
 
   dependency_check:
     runs-on: ubuntu-latest
