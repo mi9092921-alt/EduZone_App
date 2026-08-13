@@ -87,6 +87,7 @@ void main() {
   late MockGoTrueClient mockAuth;
   late MockDeviceService mockDevice;
   late MockEventBus mockEventBus;
+  late _MockUpdateService mockUpdateService;
 
   /// Stubs the minimum set of calls that every login() invocation makes.
   void stubSuccessfulLogin() {
@@ -161,6 +162,7 @@ void main() {
     mockAuth = MockGoTrueClient();
     mockDevice = MockDeviceService();
     mockEventBus = MockEventBus();
+    mockUpdateService = _MockUpdateService();
 
     when(() => mockSupabase.auth).thenReturn(mockAuth);
     when(() => mockAuth.onAuthStateChange)
@@ -199,6 +201,9 @@ when(() => mockSupabase.rpc('check_user_access')).thenAnswer(
     when(() => mockDevice.deviceInfoJson).thenReturn({'model': 'Test'});
 
     when(() => mockEventBus.emit(any())).thenReturn(null);
+    when(() => mockUpdateService.checkForUpdate(any())).thenAnswer(
+      (_) async => const UpdateInfo.upToDate(latestVersion: '1.0.0'),
+    );
 
     container = ProviderContainer(
       overrides: [
@@ -206,6 +211,7 @@ when(() => mockSupabase.rpc('check_user_access')).thenAnswer(
         supabaseClientProvider.overrideWithValue(mockSupabase),
         deviceServiceProvider.overrideWithValue(mockDevice),
         eventBusProvider.overrideWithValue(mockEventBus),
+        updateServiceProvider.overrideWithValue(mockUpdateService),
       ],
     );
   });

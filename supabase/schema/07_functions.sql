@@ -85,56 +85,63 @@ END;
 $$;
 
 -- =============================================================================
--- PERF-SEC: JWT-cached session validation
--- Reads account_status and token_version DIRECTLY from the JWT payload
--- (already in shared memory, injected by public.custom_access_token hook).
--- Zero per-row SELECT on public.users — eliminates the RLS CPU bottleneck
--- that occurred when thousands of rows were evaluated concurrently.
---
--- REQUIREMENT: The custom_access_token hook (bottom of this file) must inject
--- 'account_status' and 'token_version' into JWT claims. This is already done.
---
--- FAIL-CLOSED: Any missing, NULL, or malformed claim returns false, ensuring
--- tampered or expired tokens are rejected without a database round-trip.
+-- AUTH-FIX-01: DB-authoritative session validation.
+-- JWT claims identify the request, but public.users is the authority for
+-- account state and token revocation. Missing or malformed token_version fails
+-- closed instead of falling back to the stored database value.
 -- =============================================================================
 
--- CRIT-02: Session validation helper — JWT-claim based, zero DB lookup per row
+CREATE OR REPLACE FUNCTION private.current_jwt_token_version()
+RETURNS integer
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_claims jsonb := auth.jwt();
+  v_token_version text;
+BEGIN
+  v_token_version := nullif(v_claims ->> 'token_version', '');
+
+  IF v_token_version IS NULL THEN
+    v_token_version := nullif(v_claims -> 'app_metadata' ->> 'token_version', '');
+  END IF;
+
+  IF v_token_version IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  RETURN v_token_version::integer;
+EXCEPTION
+  WHEN invalid_text_representation OR numeric_value_out_of_range THEN
+    RETURN NULL;
+END;
+$$;
+
+-- CRIT-02: Session validation helper — DB-backed revocation, fail closed.
 CREATE OR REPLACE FUNCTION public.validate_user_session()
 RETURNS boolean
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
-  SELECT coalesce(
-    (
-      -- Fast path: read claims injected by custom_access_token hook
-      -- PostgREST caches current_setting('request.jwt.claims') per request,
-      -- so this is a single in-memory read for the entire statement.
-      (current_setting('request.jwt.claims', true)::jsonb ->> 'account_status') = 'active'
-      AND
-      -- token_version in JWT must match stored version (revocation check via JWT)
-      (current_setting('request.jwt.claims', true)::jsonb ->> 'token_version')::int
-        IS NOT DISTINCT FROM
-      coalesce(
-        (current_setting('request.jwt.claims', true)::jsonb -> 'app_metadata' ->> 'token_version')::int,
-        (current_setting('request.jwt.claims', true)::jsonb ->> 'token_version')::int,
-        0
-      )
-    ),
-    false
-  )
-  OR EXISTS (
+DECLARE
+  v_uid uuid := auth.uid();
+  v_jwt_token_version integer := private.current_jwt_token_version();
+BEGIN
+  IF v_uid IS NULL OR v_jwt_token_version IS NULL THEN
+    RETURN false;
+  END IF;
+
+  RETURN EXISTS (
     SELECT 1
     FROM public.users u
-    WHERE u.id = auth.uid()
+    WHERE u.id = v_uid
       AND u.deleted_at IS NULL
       AND u.account_status = 'active'
-      AND u.token_version IS NOT DISTINCT FROM coalesce(
-        nullif(auth.jwt() -> 'app_metadata' ->> 'token_version', '')::int,
-        nullif(auth.jwt() ->> 'token_version', '')::int,
-        u.token_version
-      )
+      AND u.token_version = v_jwt_token_version
   );
+END;
 $$;
 
 -- Companion function to raise exceptions for write policies
@@ -147,50 +154,79 @@ AS $$
 BEGIN
   IF NOT public.validate_user_session() THEN
     RAISE EXCEPTION 'Invalid user session: account is inactive or session has been revoked'
-      USING ERRCODE = 'check_violation';
+      USING ERRCODE = '28000';
   END IF;
   RETURN true;
 END;
 $$;
 
-
--- HIGH-04: Hardened admin check — JWT-claim based, zero DB lookup per row
-CREATE OR REPLACE FUNCTION public.is_admin_with_session_validation()
-RETURNS boolean
-LANGUAGE sql
+CREATE OR REPLACE FUNCTION public.current_user_session()
+RETURNS jsonb
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
-  SELECT coalesce(
-    (
-      -- Must be an active session
-      (current_setting('request.jwt.claims', true)::jsonb ->> 'account_status') = 'active'
-      AND
-      -- Must hold admin or super_admin primary role (injected by JWT hook)
-      (current_setting('request.jwt.claims', true)::jsonb ->> 'primary_role')
-        IN ('admin', 'super_admin')
-      AND
-      -- is_admin flag double-check (belt + suspenders)
-      coalesce(
-        (current_setting('request.jwt.claims', true)::jsonb ->> 'is_admin')::boolean,
-        false
-      )
-    ),
-    false
-  )
-  OR EXISTS (
+DECLARE
+  v_uid uuid := auth.uid();
+  v_user public.users%ROWTYPE;
+  v_session_id uuid;
+BEGIN
+  IF NOT public.validate_user_session() THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT * INTO v_user
+  FROM public.users
+  WHERE id = v_uid;
+
+  SELECT session_id INTO v_session_id
+  FROM public.active_sessions
+  WHERE user_id = v_uid
+  LIMIT 1;
+
+  RETURN jsonb_build_object(
+    'user_id', v_user.id,
+    'tenant_id', v_user.tenant_id,
+    'role', v_user.primary_role,
+    'token_version', v_user.token_version,
+    'active_session_id', v_session_id
+  );
+END;
+$$;
+
+-- HIGH-04: Hardened admin check — validates session, then reads server-side role/RBAC.
+CREATE OR REPLACE FUNCTION public.is_admin_with_session_validation()
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+BEGIN
+  IF NOT public.validate_user_session() THEN
+    RETURN false;
+  END IF;
+
+  RETURN EXISTS (
     SELECT 1
     FROM public.users u
     WHERE u.id = auth.uid()
       AND u.deleted_at IS NULL
       AND u.account_status = 'active'
       AND u.primary_role IN ('admin', 'super_admin')
-      AND u.token_version IS NOT DISTINCT FROM coalesce(
-        nullif(auth.jwt() -> 'app_metadata' ->> 'token_version', '')::int,
-        nullif(auth.jwt() ->> 'token_version', '')::int,
-        u.token_version
-      )
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM public.user_roles ur
+    JOIN public.roles r ON r.id = ur.role_id
+    WHERE ur.user_id = v_uid
+      AND ur.is_active
+      AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
+      AND r.name IN ('admin', 'super_admin')
+      AND ur.tenant_id = public.get_current_tenant_id()
   );
+END;
 $$;
 
 
@@ -206,32 +242,30 @@ CREATE OR REPLACE FUNCTION public.is_current_user_super_admin()
 RETURNS boolean
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
+  IF NOT public.validate_user_session() THEN
+    RETURN false;
+  END IF;
+
   RETURN EXISTS (
     SELECT 1 FROM public.users u
     WHERE u.id = auth.uid()
       AND u.deleted_at IS NULL
       AND u.account_status = 'active'
-      AND u.token_version = coalesce((auth.jwt() -> 'app_metadata' ->> 'token_version')::int, (auth.jwt() ->> 'token_version')::int, 0)
       AND u.primary_role = 'super_admin'
   );
 END;
 $$;
 
--- HIGH-01 FIX: Read role from JWT (injected by custom_access_token hook).
--- Eliminates 3-join DB query on every RLS row evaluation for "lite" checks.
 CREATE OR REPLACE FUNCTION public.is_current_user_super_admin_lite()
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
-  SELECT coalesce((auth.jwt() ->> 'primary_role') = 'super_admin', false);
+  SELECT public.is_current_user_super_admin();
 $$;
 
 CREATE OR REPLACE FUNCTION public.is_current_user_admin_lite()
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
-  SELECT coalesce(
-    (auth.jwt() ->> 'is_admin')::boolean OR (auth.jwt() ->> 'primary_role') IN ('admin', 'super_admin'),
-    false
-  );
+  SELECT public.is_admin_with_session_validation();
 $$;
 
 -- JWT Tenant Extractors
@@ -241,22 +275,8 @@ RETURNS uuid LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, 
 DECLARE
   v_uid uuid := auth.uid();
 BEGIN
-  IF v_uid IS NULL THEN RETURN NULL; END IF;
-  
-  -- SEC-01: Validate token_version against users table
-  IF NOT EXISTS (
-    SELECT 1
-    FROM public.users u
-    WHERE u.id = v_uid
-      AND u.account_status = 'active'
-      AND u.deleted_at IS NULL
-      AND u.token_version IS NOT DISTINCT FROM coalesce(
-        nullif(auth.jwt() -> 'app_metadata' ->> 'token_version', '')::int,
-        nullif(auth.jwt() ->> 'token_version', '')::int,
-        u.token_version
-      )
-  ) THEN
-    RETURN NULL; -- Session invalidated or user inactive
+  IF v_uid IS NULL OR NOT public.validate_user_session() THEN
+    RETURN NULL;
   END IF;
   
   RETURN v_uid;
@@ -869,27 +889,24 @@ $$;
 -- Now uses cache + RBAC source-of-truth only.
 CREATE OR REPLACE FUNCTION public.is_current_user_teacher()
 RETURNS boolean
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
-  SELECT coalesce(
-    (auth.jwt() ->> 'primary_role') = 'teacher',
-    false
-  )
-  OR EXISTS (
+BEGIN
+  IF NOT public.validate_user_session() THEN
+    RETURN false;
+  END IF;
+
+  RETURN EXISTS (
     SELECT 1
     FROM public.users u
     WHERE u.id = auth.uid()
       AND u.deleted_at IS NULL
       AND u.account_status = 'active'
       AND u.primary_role = 'teacher'
-      AND u.token_version IS NOT DISTINCT FROM coalesce(
-        nullif(auth.jwt() -> 'app_metadata' ->> 'token_version', '')::int,
-        nullif(auth.jwt() ->> 'token_version', '')::int,
-        u.token_version
-      )
   );
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION private.user_enrolled_in_course(p_user_id uuid, p_course_id uuid)
@@ -1603,26 +1620,27 @@ AS $$
 DECLARE
   v_uid uuid := auth.uid();
   v_user public.users%ROWTYPE;
+  v_maintenance_excluded_roles text[] := ARRAY[]::text[];
+  v_maintenance_excluded_users uuid[] := ARRAY[]::uuid[];
 BEGIN
-  IF coalesce((public.get_setting('app_locked') #>> '{}')::boolean, false) THEN
-    RETURN jsonb_build_object(
-      'allowed', false,
-      'reason', 'app_locked',
-      'message', public.get_setting('app_lock_message')
-    );
-  END IF;
-
   IF v_uid IS NULL THEN
     RETURN jsonb_build_object('allowed', false, 'reason', 'unauthenticated');
   END IF;
 
   SELECT * INTO v_user
   FROM public.users
-  WHERE id = v_uid
-    AND deleted_at IS NULL;
+  WHERE id = v_uid;
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object('allowed', false, 'reason', 'user_not_found');
+  END IF;
+
+  IF v_user.deleted_at IS NOT NULL THEN
+    RETURN jsonb_build_object(
+      'allowed', false,
+      'reason', 'deleted',
+      'token_version', v_user.token_version
+    );
   END IF;
 
   IF v_user.account_status <> 'active' THEN
@@ -1630,7 +1648,61 @@ BEGIN
       'allowed', false,
       'reason', 'account_' || v_user.account_status,
       'message', v_user.lock_reason,
-      'suspensionUntil', v_user.suspension_until
+      'until', v_user.suspension_until,
+      'suspensionUntil', v_user.suspension_until,
+      'token_version', v_user.token_version
+    );
+  END IF;
+
+  IF NOT public.validate_user_session() THEN
+    RETURN jsonb_build_object(
+      'allowed', false,
+      'reason', 'token_version_mismatch',
+      'token_version', v_user.token_version
+    );
+  END IF;
+
+  IF coalesce((public.get_setting('maintenance_mode') #>> '{}')::boolean, false) THEN
+    SELECT coalesce(array_agg(value), ARRAY[]::text[])
+    INTO v_maintenance_excluded_roles
+    FROM jsonb_array_elements_text(
+      CASE
+        WHEN jsonb_typeof(public.get_setting('maintenance_excluded_roles')) = 'array'
+        THEN public.get_setting('maintenance_excluded_roles')
+        ELSE '[]'::jsonb
+      END
+    ) AS value;
+
+    SELECT coalesce(array_agg(value::uuid), ARRAY[]::uuid[])
+    INTO v_maintenance_excluded_users
+    FROM jsonb_array_elements_text(
+      CASE
+        WHEN jsonb_typeof(public.get_setting('maintenance_excluded_users')) = 'array'
+        THEN public.get_setting('maintenance_excluded_users')
+        ELSE '[]'::jsonb
+      END
+    ) AS value;
+
+    IF NOT (
+      v_user.primary_role = ANY(v_maintenance_excluded_roles)
+      OR v_user.id = ANY(v_maintenance_excluded_users)
+    ) THEN
+      RETURN jsonb_build_object(
+        'allowed', false,
+        'reason', 'maintenance_mode',
+        'message', public.get_setting('maintenance_message') #>> '{}',
+        'ends_at', public.get_setting('maintenance_ends_at') #>> '{}',
+        'token_version', v_user.token_version
+      );
+    END IF;
+  END IF;
+
+  IF coalesce((public.get_setting('app_locked') #>> '{}')::boolean, false) THEN
+    RETURN jsonb_build_object(
+      'allowed', false,
+      'reason', 'app_locked',
+      'message', public.get_setting('app_lock_message') #>> '{}',
+      'token_version', v_user.token_version
     );
   END IF;
 

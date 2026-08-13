@@ -166,6 +166,12 @@ GRANT EXECUTE ON FUNCTION public.logout_current_user() TO authenticated, service
 REVOKE EXECUTE ON FUNCTION public.validate_user_session() FROM anon;
 GRANT EXECUTE ON FUNCTION public.validate_user_session() TO authenticated, service_role;
 
+REVOKE EXECUTE ON FUNCTION public.assert_valid_session() FROM anon;
+GRANT EXECUTE ON FUNCTION public.assert_valid_session() TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.current_user_session() FROM anon;
+GRANT EXECUTE ON FUNCTION public.current_user_session() TO authenticated, service_role;
+
 -- 3. ADMIN ONLY - Revoked from anon AND authenticated; granted to service_role only
 REVOKE EXECUTE ON FUNCTION public.is_current_user_super_admin() FROM anon;
 REVOKE EXECUTE ON FUNCTION public.is_current_user_super_admin() FROM authenticated;
@@ -363,6 +369,12 @@ GRANT EXECUTE ON FUNCTION public.logout_current_user() TO authenticated, service
 REVOKE EXECUTE ON FUNCTION public.validate_user_session() FROM anon;
 GRANT EXECUTE ON FUNCTION public.validate_user_session() TO authenticated, service_role;
 
+REVOKE EXECUTE ON FUNCTION public.assert_valid_session() FROM anon;
+GRANT EXECUTE ON FUNCTION public.assert_valid_session() TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.current_user_session() FROM anon;
+GRANT EXECUTE ON FUNCTION public.current_user_session() TO authenticated, service_role;
+
 -- 3. ADMIN ONLY - Revoked from anon AND authenticated; granted to service_role only
 REVOKE EXECUTE ON FUNCTION public.is_current_user_super_admin() FROM anon;
 REVOKE EXECUTE ON FUNCTION public.is_current_user_super_admin() FROM authenticated;
@@ -445,3 +457,6 @@ GRANT EXECUTE ON FUNCTION private.refresh_all_materialized_views() TO service_ro
 
 REVOKE ALL ON FUNCTION private.get_kms_key() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION private.get_kms_key() TO service_role;
+
+REVOKE ALL ON FUNCTION private.current_jwt_token_version() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION private.current_jwt_token_version() TO service_role;
