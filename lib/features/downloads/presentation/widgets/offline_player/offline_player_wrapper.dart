@@ -13,6 +13,7 @@ import '../../../../../core/services/encryption_service.dart'
     show detectContainerExt;
 import '../../../../../core/services/offline_playback_service.dart';
 import '../../../application/providers/downloads_provider.dart';
+import '../../../application/services/offline_policy_engine.dart';
 import '../../../domain/entities/downloaded_lesson.dart';
 import 'offline_player_center_button.dart';
 import 'offline_player_controls_overlay.dart';
@@ -80,6 +81,7 @@ class OfflinePlayerWrapper extends ConsumerStatefulWidget {
 class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
     with WidgetsBindingObserver {
   late final OfflinePlaybackService _playbackService;
+  late final OfflinePolicyEngine _policyEngine;
   Player? _player;
   VideoController? _videoController;
   Uri? _proxyUri;
@@ -89,6 +91,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
   bool _hasError = false;
   bool _isPlaying = false;
   bool _showControls = true;
+  bool _errorIsSafeForRelease = false;
   int _speedIndex = 2; // Index 2 = 1.0x in _speeds below
   late final List<double> _speeds =
       [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]; // Indices: [0, 1, 2, 3, 4, 5]
@@ -111,6 +114,10 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
     _playbackService = OfflinePlaybackService(
       encryptionService: ref.read(encryptionServiceProvider),
     );
+    _policyEngine = OfflinePolicyEngine(
+      localDataSource: ref.read(downloadLocalDataSourceProvider),
+      encryptionService: ref.read(encryptionServiceProvider),
+    );
     _initializePlayer();
     _resetAutoHideTimer();
   }
@@ -129,6 +136,13 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
 
   Future<void> _initializePlayer() async {
     try {
+      // Offline playback authorization (P6.15) — must happen before any
+      // decryption or streaming starts, and must be re-checked against
+      // fresh local state every time, not just when the downloads list was
+      // last loaded. See OfflinePolicyEngine's doc comment for exactly
+      // what this does and does not guarantee.
+      await _policyEngine.authorize(widget.download.id);
+
       final isDualTrack = widget.download.audioPath != null &&
           widget.download.audioPath!.isNotEmpty;
 
@@ -324,7 +338,19 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
       setState(() {
         _isLoading = false;
         _hasError = true;
-        _errorMessage = error.toString();
+        // OfflinePlaybackDeniedException carries a message that was
+        // written specifically to be shown to end users (no paths, ids,
+        // or internal state) — show it even in release builds. Any other
+        // exception is developer-facing detail and stays gated behind
+        // kDebugMode in OfflinePlayerErrorView, per project instructions
+        // §14 (never expose raw exceptions to users).
+        if (error is OfflinePlaybackDeniedException) {
+          _errorMessage = error.userMessage;
+          _errorIsSafeForRelease = error.isSafeForRelease;
+        } else {
+          _errorMessage = error.toString();
+          _errorIsSafeForRelease = false;
+        }
       });
     }
   }
@@ -369,6 +395,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
       _hasError = false;
       _isLoading = true;
       _errorMessage = null;
+      _errorIsSafeForRelease = false;
       _showControls = true;
     });
 
@@ -432,6 +459,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
       return OfflinePlayerErrorView(
         aspectRatio: aspectRatio,
         errorMessage: _errorMessage,
+        alwaysShowMessage: _errorIsSafeForRelease,
         onRetry: _retry,
       );
     }

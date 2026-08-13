@@ -96,4 +96,113 @@ void main() {
     await service.close();
     tempDir.deleteSync(recursive: true);
   });
+
+  test('upgrade to version 7 adds user_id/device_id and preserves data', () async {
+    final tempDir = Directory.systemTemp.createTempSync('eduzone_test_db_v7');
+    final dbPath = p.join(tempDir.path, 'eduzone_downloads.db');
+
+    // 1. Manually create the database at version 6 (schema as it existed
+    // immediately before the P6 offline-security hardening pass).
+    final dbV6 = await openDatabase(
+      dbPath,
+      version: 6,
+      onCreate: (db, version) async {
+        await db.execute('''
+          CREATE TABLE downloaded_lessons (
+            id TEXT PRIMARY KEY,
+            lesson_id TEXT NOT NULL,
+            course_id TEXT NOT NULL,
+            course_title TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL,
+            local_path TEXT NOT NULL,
+            encrypted_path TEXT NOT NULL,
+            audio_path TEXT,
+            video_url TEXT NOT NULL,
+            audio_url TEXT,
+            quality TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            download_status TEXT NOT NULL,
+            progress REAL DEFAULT 0.0,
+            downloaded_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            checksum TEXT,
+            last_accessed_at INTEGER,
+            source_url TEXT,
+            link_validated_at INTEGER
+          )
+        ''');
+      },
+    );
+
+    // 2. Insert a pre-migration (legacy, unbound) download row.
+    await dbV6.insert('downloaded_lessons', {
+      'id': 'legacy_dl',
+      'lesson_id': 'lesson_1',
+      'course_id': 'course_1',
+      'course_title': 'Legacy Course',
+      'title': 'Legacy Lesson',
+      'local_path': '/path/to/local',
+      'encrypted_path': '/path/to/enc',
+      'video_url': 'http://test.url',
+      'quality': 'high',
+      'file_size': 1024,
+      'download_status': 'completed',
+      'downloaded_at': 123456789,
+      'expires_at': DateTime.now()
+          .add(const Duration(days: 1))
+          .millisecondsSinceEpoch,
+    });
+    await dbV6.close();
+
+    // 3. Open with the current StorageService — triggers _onUpgrade(6, 7).
+    final service = StorageService(documentsDirectoryPath: tempDir.path);
+    final db = await service.database;
+
+    // 4. Legacy row is preserved, with the new columns present and null.
+    final rows = await db.query('downloaded_lessons');
+    expect(rows.length, equals(1));
+    expect(rows.first['id'], equals('legacy_dl'));
+    expect(rows.first.containsKey('user_id'), isTrue);
+    expect(rows.first['user_id'], isNull);
+    expect(rows.first.containsKey('device_id'), isTrue);
+    expect(rows.first['device_id'], isNull);
+
+    // 5. A legacy (unbound) row is visible to every account when scoping
+    // by owner — it hasn't been "adopted" yet (that happens lazily in
+    // OfflinePolicyEngine, not here).
+    final scoped = await service.getDownloadedLessons(ownerUserId: 'user_a');
+    expect(scoped.map((r) => r['id']), contains('legacy_dl'));
+
+    // 6. A row explicitly bound to a different account is excluded from a
+    // scoped query...
+    await db.update(
+      'downloaded_lessons',
+      {'user_id': 'user_b'},
+      where: 'id = ?',
+      whereArgs: ['legacy_dl'],
+    );
+    final scopedAfterBind =
+        await service.getDownloadedLessons(ownerUserId: 'user_a');
+    expect(scopedAfterBind.map((r) => r['id']), isNot(contains('legacy_dl')));
+
+    // ...but still shows up for its actual owner...
+    final ownerView =
+        await service.getDownloadedLessons(ownerUserId: 'user_b');
+    expect(ownerView.map((r) => r['id']), contains('legacy_dl'));
+
+    // ...and is returned by getDownloadsOwnedByOthers() for account-switch
+    // purge purposes (OfflineAccountGuard).
+    final others = await service.getDownloadsOwnedByOthers('user_a');
+    expect(others.map((r) => r['id']), contains('legacy_dl'));
+    final othersFromOwnerPerspective =
+        await service.getDownloadsOwnedByOthers('user_b');
+    expect(
+      othersFromOwnerPerspective.map((r) => r['id']),
+      isNot(contains('legacy_dl')),
+    );
+
+    // 7. Cleanup
+    await service.close();
+    tempDir.deleteSync(recursive: true);
+  });
 }

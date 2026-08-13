@@ -15,11 +15,19 @@ class OfflinePlayerErrorView extends StatelessWidget {
   final String? errorMessage;
   final VoidCallback onRetry;
 
+  /// When true, [errorMessage] is shown regardless of build mode. Set this
+  /// only when the caller has already verified the message is safe for end
+  /// users (no paths/ids/internal state) — e.g. `OfflinePlaybackDeniedException
+  /// .userMessage`. Defaults to false, preserving the previous
+  /// debug-only behavior for ordinary (developer-facing) exception text.
+  final bool alwaysShowMessage;
+
   const OfflinePlayerErrorView({
     super.key,
     required this.aspectRatio,
     required this.errorMessage,
     required this.onRetry,
+    this.alwaysShowMessage = false,
   });
 
   @override
@@ -44,8 +52,12 @@ class OfflinePlayerErrorView extends StatelessWidget {
               ),
               // Raw exception text is developer-facing detail; showing it to
               // end users in release builds isn't useful and can leak
-              // implementation details. Only surface it in debug builds.
-              if (kDebugMode && errorMessage != null) ...[
+              // implementation details, so it stays gated behind
+              // kDebugMode. `alwaysShowMessage` is the one deliberate
+              // exception: callers set it only when errorMessage has
+              // already been vetted as end-user-safe (see
+              // OfflinePlaybackDeniedException.userMessage).
+              if ((kDebugMode || alwaysShowMessage) && errorMessage != null) ...[
                 const SizedBox(height: AppSpacing.sm),
                 Text(
                   errorMessage!,

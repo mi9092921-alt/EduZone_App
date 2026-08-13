@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/storage_service.dart';
+import '../../../../core/utils/device_info_helper.dart';
 import '../../domain/entities/downloaded_lesson.dart';
 
 /// Local data source for download operations.
@@ -12,8 +14,42 @@ import '../../domain/entities/downloaded_lesson.dart';
 class DownloadLocalDataSource {
   final StorageService _storageService;
   final Uuid _uuid;
+  final String? Function() _currentUserId;
+  final String Function() _deviceFingerprint;
 
-  DownloadLocalDataSource(this._storageService) : _uuid = const Uuid();
+  /// [currentUserId] and [deviceFingerprint] default to reading the real
+  /// Supabase session / device fingerprint, and exist as constructor
+  /// parameters purely so tests can inject fixed values instead of
+  /// depending on Supabase/device-info being initialized. See
+  /// `offline_policy_engine.dart` for how these values are enforced at
+  /// playback time (P6.19/P6.20 account & device binding).
+  DownloadLocalDataSource(
+    this._storageService, {
+    String? Function()? currentUserId,
+    String Function()? deviceFingerprint,
+  })  : _uuid = const Uuid(),
+        _currentUserId = currentUserId ?? _defaultCurrentUserId,
+        _deviceFingerprint = deviceFingerprint ?? _defaultDeviceFingerprint;
+
+  static String? _defaultCurrentUserId() {
+    try {
+      return SupabaseService.client.auth.currentUser?.id;
+    } catch (_) {
+      // Supabase not initialized yet (e.g. background isolate) — treat as
+      // "no account" rather than crashing an insert/query.
+      return null;
+    }
+  }
+
+  static String _defaultDeviceFingerprint() {
+    try {
+      return DeviceInfoHelper.fingerprint;
+    } catch (_) {
+      // DeviceInfoHelper.init() hasn't run yet — fail safe with a value
+      // that will never match a previously stored device_id.
+      return '';
+    }
+  }
 
   /// Gets the downloads directory for the app.
   Future<Directory> getDownloadsDirectory() async {
@@ -71,6 +107,10 @@ class DownloadLocalDataSource {
   }
 
   /// Inserts a download record into the local database.
+  ///
+  /// Binds the row to the currently signed-in account and this device
+  /// (P6.19/P6.20) so it can later be authorized correctly by
+  /// `OfflinePolicyEngine` and filtered correctly by [getDownloads].
   Future<void> insertDownload(DownloadedLesson download) async {
     await _storageService.insertDownload({
       'id': download.id,
@@ -91,12 +131,32 @@ class DownloadLocalDataSource {
       'expires_at': download.expiresAt.millisecondsSinceEpoch,
       'checksum': download.checksum,
       'last_accessed_at': download.lastAccessedAt?.millisecondsSinceEpoch,
+      'user_id': _currentUserId(),
+      'device_id': _deviceFingerprint(),
     });
   }
 
   /// Gets all downloads from the local database.
-  Future<List<Map<String, dynamic>>> getDownloads() async {
-    return await _storageService.getDownloadedLessons();
+  ///
+  /// Scoped to the current account by default (see
+  /// `StorageService.getDownloadedLessons`) so a different account signed
+  /// into this device never sees another account's download tiles. Pass
+  /// `scopeToCurrentUser: false` for internal/debug tooling that
+  /// deliberately needs every row regardless of owner.
+  Future<List<Map<String, dynamic>>> getDownloads({
+    bool scopeToCurrentUser = true,
+  }) async {
+    return await _storageService.getDownloadedLessons(
+      ownerUserId: scopeToCurrentUser ? _currentUserId() : null,
+    );
+  }
+
+  /// Returns every download bound to an account other than [currentUserId].
+  /// See `OfflineAccountGuard`.
+  Future<List<Map<String, dynamic>>> getDownloadsOwnedByOthers(
+    String currentUserId,
+  ) async {
+    return await _storageService.getDownloadsOwnedByOthers(currentUserId);
   }
 
   /// Gets a download by lesson ID.

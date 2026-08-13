@@ -5,4 +5,5 @@
 library;
 
 export '../../features/downloads/application/providers/downloads_provider.dart';
+export '../../features/downloads/application/services/offline_account_guard.dart';
 export '../../features/downloads/presentation/widgets/quality_selector.dart';

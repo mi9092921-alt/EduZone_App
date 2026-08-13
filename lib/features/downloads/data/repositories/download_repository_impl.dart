@@ -429,6 +429,16 @@ class DownloadRepositoryImpl implements DownloadRepository {
       } catch (e) {
         debugPrint('⚠️ Error deleting temp file: $e');
       }
+
+      // The chunked-container sidecar index (see ChunkIndex/loadOrBuildIndex
+      // in encryption_service.dart) is written next to the encrypted file
+      // as `<path>.idx`. It was previously never cleaned up here, leaving
+      // an orphaned sidecar file behind on every delete (P6.29/P6.30).
+      try {
+        await _localDataSource.deleteEncryptedFile('$encryptedPath.idx');
+      } catch (e) {
+        debugPrint('⚠️ Error deleting index sidecar: $e');
+      }
     }
 
     if (audioPath != null && audioPath.isNotEmpty) {
@@ -442,6 +452,12 @@ class DownloadRepositoryImpl implements DownloadRepository {
         await _localDataSource.deleteEncryptedFile('$audioPath.tmp');
       } catch (e) {
         debugPrint('⚠️ Error deleting audio temp file: $e');
+      }
+
+      try {
+        await _localDataSource.deleteEncryptedFile('$audioPath.idx');
+      } catch (e) {
+        debugPrint('⚠️ Error deleting audio index sidecar: $e');
       }
     }
   }

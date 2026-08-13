@@ -67,5 +67,31 @@ void main() {
 
       expect(find.byIcon(Icons.error_outline_rounded), findsOneWidget);
     });
+
+    testWidgets(
+      'shows errorMessage even outside debug builds when alwaysShowMessage is true',
+      (WidgetTester tester) async {
+        // Regression test for the offline-playback authorization wiring:
+        // OfflinePlaybackDeniedException.userMessage is written to be safe
+        // for end users, so OfflinePlayerWrapper passes
+        // alwaysShowMessage: true for it — this should render regardless
+        // of kDebugMode, unlike the raw-exception-text case above.
+        await tester.pumpWidget(
+          buildTestableWidget(
+            OfflinePlayerErrorView(
+              aspectRatio: 16 / 9,
+              errorMessage: 'This offline download has expired.',
+              alwaysShowMessage: true,
+              onRetry: () {},
+            ),
+          ),
+        );
+
+        expect(
+          find.text('This offline download has expired.'),
+          findsOneWidget,
+        );
+      },
+    );
   });
 }

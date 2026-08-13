@@ -1,0 +1,1657 @@
+From 5c3070c0269307098f0a25db4e708a1bb7d4aa98 Mon Sep 17 00:00:00 2001
+From: EduZone Hardening Agent <agent@eduzone.local>
+Date: Thu, 13 Aug 2026 20:32:14 +0000
+Subject: [PATCH] security: offline download account/device binding, playback
+ authorization, crash recovery (P6)
+
+---
+ lib/app/app_initializer.dart                  |  19 ++
+ lib/core/services/cleanup_scheduler.dart      |  16 +-
+ lib/core/services/storage_service.dart        |  82 ++++-
+ .../application/providers/auth_provider.dart  |  18 ++
+ .../services/offline_account_guard.dart       |  80 +++++
+ .../services/offline_crash_recovery.dart      |  89 ++++++
+ .../services/offline_policy_engine.dart       | 231 ++++++++++++++
+ .../data/datasources/download_local_ds.dart   |  66 +++-
+ .../download_repository_impl.dart             |  16 +
+ .../offline_player_error_view.dart            |  16 +-
+ .../offline_player_wrapper.dart               |  30 +-
+ .../cross_feature/downloads_shared.dart       |   1 +
+ test/core/services/storage_service_test.dart  | 109 +++++++
+ .../services/offline_account_guard_test.dart  | 109 +++++++
+ .../services/offline_crash_recovery_test.dart | 128 ++++++++
+ .../services/offline_policy_engine_test.dart  | 287 ++++++++++++++++++
+ .../offline_player_error_view_test.dart       |  26 ++
+ 17 files changed, 1306 insertions(+), 17 deletions(-)
+ create mode 100644 lib/features/downloads/application/services/offline_account_guard.dart
+ create mode 100644 lib/features/downloads/application/services/offline_crash_recovery.dart
+ create mode 100644 lib/features/downloads/application/services/offline_policy_engine.dart
+ create mode 100644 test/features/downloads/application/services/offline_account_guard_test.dart
+ create mode 100644 test/features/downloads/application/services/offline_crash_recovery_test.dart
+ create mode 100644 test/features/downloads/application/services/offline_policy_engine_test.dart
+
+diff --git a/lib/app/app_initializer.dart b/lib/app/app_initializer.dart
+index a4bafc7..0344437 100644
+--- a/lib/app/app_initializer.dart
++++ b/lib/app/app_initializer.dart
+@@ -9,7 +9,10 @@ import 'package:shared_preferences/shared_preferences.dart';
+ import '../core/network/supabase_client.dart';
+ import '../core/security/security_service.dart';
+ import '../core/services/cleanup_scheduler.dart';
++import '../core/services/storage_service.dart';
+ import '../core/utils/device_info_helper.dart';
++import '../features/downloads/application/services/offline_crash_recovery.dart';
++import '../features/downloads/data/datasources/download_local_ds.dart';
+ import '../features/downloads/data/services/download_manager.dart';
+ import '../features/notifications/data/services/fcm_service.dart';
+ 
+@@ -87,6 +90,22 @@ class AppInitializer {
+         }),
+       );
+ 
++      // 7. Offline downloads crash recovery (P6.31) — reclassify any
++      // download left in `pending`/`downloading` status by a previous
++      // process that died mid-download, so it shows as an actionable
++      // "failed" tile instead of a permanently stuck progress bar.
++      // Constructed directly (not via Riverpod) because no ProviderScope
++      // exists yet at this point in startup — same constraint
++      // CleanupScheduler's isolate callback already has.
++      unawaited(
++        OfflineCrashRecovery(
++          localDataSource: DownloadLocalDataSource(StorageService()),
++        ).reconcileInterruptedDownloads().catchError((Object e) {
++          debugPrint('⚠️ Offline crash-recovery reconciliation failed: $e');
++          return 0;
++        }),
++      );
++
+     } catch (e) {
+       debugPrint('CRITICAL INITIALIZATION ERROR: $e');
+       // Re-throw to be caught by runZonedGuarded
+diff --git a/lib/core/services/cleanup_scheduler.dart b/lib/core/services/cleanup_scheduler.dart
+index 054c8eb..793d970 100644
+--- a/lib/core/services/cleanup_scheduler.dart
++++ b/lib/core/services/cleanup_scheduler.dart
+@@ -81,14 +81,22 @@ class CleanupScheduler {
+           final encryptedPath = row['encrypted_path'] as String?;
+           final audioPath = row['audio_path'] as String?;
+ 
+-          // Delete every file variant (the final encrypted file and any
+-          // in-progress .tmp counterpart).
++          // Delete every file variant (the final encrypted file, any
++          // in-progress .tmp counterpart, and the chunked-container .idx
++          // sidecar written by loadOrBuildIndex — see encryption_service.dart.
++          // The .idx file was previously left behind here on every expiry
++          // cleanup (P6.29/P6.30 orphan detection gap).
+           for (final path in [
+             encryptedPath,
+-            if (encryptedPath != null && encryptedPath.isNotEmpty)
++            if (encryptedPath != null && encryptedPath.isNotEmpty) ...[
+               '$encryptedPath.tmp',
++              '$encryptedPath.idx',
++            ],
+             audioPath,
+-            if (audioPath != null && audioPath.isNotEmpty) '$audioPath.tmp',
++            if (audioPath != null && audioPath.isNotEmpty) ...[
++              '$audioPath.tmp',
++              '$audioPath.idx',
++            ],
+           ]) {
+             if (path == null || path.isEmpty) continue;
+             try {
+diff --git a/lib/core/services/storage_service.dart b/lib/core/services/storage_service.dart
+index 0a59f90..917639b 100644
+--- a/lib/core/services/storage_service.dart
++++ b/lib/core/services/storage_service.dart
+@@ -16,7 +16,7 @@ import 'package:sqflite/sqflite.dart';
+ /// - File sizes and checksums
+ class StorageService {
+   static const _databaseName = 'eduzone_downloads.db';
+-  static const _databaseVersion = 6;
++  static const _databaseVersion = 7;
+ 
+   static const _tableDownloadedLessons = 'downloaded_lessons';
+   static const _tableBookmarks = 'bookmarks';
+@@ -78,7 +78,9 @@ class StorageService {
+         checksum TEXT,
+         last_accessed_at INTEGER,
+         source_url TEXT,
+-        link_validated_at INTEGER
++        link_validated_at INTEGER,
++        user_id TEXT,
++        device_id TEXT
+       )
+     ''');
+ 
+@@ -95,6 +97,9 @@ class StorageService {
+     await db.execute('''
+       CREATE INDEX idx_downloads_expires ON $_tableDownloadedLessons(expires_at)
+     ''');
++    await db.execute('''
++      CREATE INDEX idx_downloads_user ON $_tableDownloadedLessons(user_id)
++    ''');
+ 
+     // Bookmarks table — device-local, scoped per user
+     await db.execute('''
+@@ -164,6 +169,35 @@ class StorageService {
+       ''');
+     }
+ 
++    if (oldVersion < 7) {
++      // Offline/download security hardening (see
++      // EduZone_Offline_Download_Security_Trusted_Playback_Architecture.md
++      // P6.19/P6.20): bind each download to the account and device that
++      // created it, so a different account logging in on this device can
++      // never see or play back another account's offline content, and a
++      // download copied to a different device can't silently play there
++      // either.
++      //
++      // Migration policy for rows that already exist at this point (created
++      // before this column existed): they are left with user_id/device_id
++      // = NULL rather than retroactively invalidated. `OfflinePolicyEngine`
++      // adopts each one to the current account/device the first time it is
++      // played after this upgrade — see offline_policy_engine.dart. This
++      // avoids breaking playback of content a real user already
++      // legitimately downloaded on this same install, while still closing
++      // the gap for every download made from this point on.
++      await db.execute('''
++        ALTER TABLE $_tableDownloadedLessons ADD COLUMN user_id TEXT
++      ''');
++      await db.execute('''
++        ALTER TABLE $_tableDownloadedLessons ADD COLUMN device_id TEXT
++      ''');
++      await db.execute('''
++        CREATE INDEX IF NOT EXISTS idx_downloads_user
++          ON $_tableDownloadedLessons(user_id)
++      ''');
++    }
++
+     // Preventive data-integrity sweep: any 'completed' row that is missing
+     // critical numeric fields would cause a silent TypeError in _mapToEntity
+     // (swallowed by the catch block), making it invisible in the downloads
+@@ -203,16 +237,50 @@ class StorageService {
+   /// so that the UI can render the appropriate state for each download.
+   /// The repository layer handles mapping errors gracefully by skipping
+   /// corrupt records instead of crashing the entire list.
+-  Future<List<Map<String, dynamic>>> getDownloadedLessons() async {
++  ///
++  /// When [ownerUserId] is provided, rows bound to a *different* account
++  /// (`user_id` set and not equal to [ownerUserId]) are excluded — this is
++  /// a privacy/UX measure (P6.20) so a second account on the same device
++  /// never even sees another account's download tiles, on top of (not
++  /// instead of) the playback-time authorization enforced separately by
++  /// `OfflinePolicyEngine`. Legacy rows with `user_id IS NULL` are always
++  /// included; see the v7 migration note above.
++  Future<List<Map<String, dynamic>>> getDownloadedLessons({
++    String? ownerUserId,
++  }) async {
+     final db = await database;
+-    final rows = await db.query(
+-      _tableDownloadedLessons,
+-      orderBy: 'downloaded_at DESC',
+-    );
++    final rows = ownerUserId == null
++        ? await db.query(
++            _tableDownloadedLessons,
++            orderBy: 'downloaded_at DESC',
++          )
++        : await db.query(
++            _tableDownloadedLessons,
++            where: 'user_id IS NULL OR user_id = ?',
++            whereArgs: [ownerUserId],
++            orderBy: 'downloaded_at DESC',
++          );
+     debugPrint('[StorageService] getDownloadedLessons: count=${rows.length}');
+     return rows;
+   }
+ 
++  /// Returns every download row bound (`user_id` set) to an account other
++  /// than [currentUserId]. Used by `OfflineAccountGuard` right after login
++  /// to purge any offline content left behind by a previous account on this
++  /// device (P6.20). Rows with `user_id IS NULL` (legacy/unbound) are never
++  /// returned here — those are adopted lazily by `OfflinePolicyEngine`
++  /// instead of being treated as "someone else's".
++  Future<List<Map<String, dynamic>>> getDownloadsOwnedByOthers(
++    String currentUserId,
++  ) async {
++    final db = await database;
++    return await db.query(
++      _tableDownloadedLessons,
++      where: 'user_id IS NOT NULL AND user_id != ?',
++      whereArgs: [currentUserId],
++    );
++  }
++
+   /// Gets a download by lesson ID.
+   Future<Map<String, dynamic>?> getDownloadByLessonId(String lessonId) async {
+     final db = await database;
+diff --git a/lib/features/auth/application/providers/auth_provider.dart b/lib/features/auth/application/providers/auth_provider.dart
+index dbf1515..0e87d9d 100644
+--- a/lib/features/auth/application/providers/auth_provider.dart
++++ b/lib/features/auth/application/providers/auth_provider.dart
+@@ -15,6 +15,7 @@ import '../../../../core/logging/logging_providers.dart';
+ import '../../../../core/network/request_cancellation_manager.dart';
+ import '../../../../core/services/device_service.dart';
+ import '../../../../core/services/location_service.dart';
++import '../../../../shared/cross_feature/downloads_shared.dart';
+ import '../../data/datasources/auth_remote_ds.dart';
+ import '../../domain/entities/app_user.dart';
+ import '../../domain/entities/auth_state.dart';
+@@ -278,6 +279,23 @@ class Auth extends _$Auth {
+ 
+         _safeSetState(AuthAuthenticated(user: appUser, access: access));
+ 
++        // Offline downloads account isolation (P6.20): purge any local
++        // download files/keys left behind by a *different* account that
++        // was previously signed into this device, so this login can never
++        // inherit or see that account's offline content. Best-effort,
++        // fire-and-forget — must never block or fail login. (Playback of
++        // another account's downloads is already independently denied by
++        // OfflinePolicyEngine even if this purge is delayed or fails.)
++        unawaited(
++          OfflineAccountGuard(
++            localDataSource: ref.read(downloadLocalDataSourceProvider),
++            encryptionService: ref.read(encryptionServiceProvider),
++          ).purgeDownloadsForOtherAccounts(appUser.id).catchError((e) {
++            debugPrint('[Auth] Offline downloads purge failed: $e');
++            return 0;
++          }),
++        );
++
+         // Track activity and session in the background (skip bindDevice — already done above)
+         await ref
+             .read(authActivitySyncServiceProvider)
+diff --git a/lib/features/downloads/application/services/offline_account_guard.dart b/lib/features/downloads/application/services/offline_account_guard.dart
+new file mode 100644
+index 0000000..b7ebc36
+--- /dev/null
++++ b/lib/features/downloads/application/services/offline_account_guard.dart
+@@ -0,0 +1,80 @@
++import 'dart:io';
++
++import '../../../../core/services/encryption_service.dart';
++import '../../data/datasources/download_local_ds.dart';
++
++/// Enforces P6.20 ("Account Switching") of
++/// `EduZone_Offline_Download_Security_Trusted_Playback_Architecture.md`:
++/// a different account logging in on a shared device must never inherit,
++/// see, or be able to play back a previous account's offline downloads.
++///
++/// [OfflinePolicyEngine] already denies *playback* of another account's
++/// downloads, and `StorageService.getDownloadedLessons` already hides them
++/// from the downloads list. This guard goes one step further and reclaims
++/// the disk space by deleting the files, key, and row outright — called
++/// from `features/auth` right after a successful login (via
++/// `shared/cross_feature/downloads_shared.dart`, see `auth_provider.dart`).
++///
++/// Best-effort and intentionally non-blocking: a failure here must never
++/// block login, and a missed purge on one login is retried on the next
++/// one (nothing here is a single point of failure for reclaiming storage
++/// or for the actual security boundary, which is [OfflinePolicyEngine]).
++class OfflineAccountGuard {
++  OfflineAccountGuard({
++    required DownloadLocalDataSource localDataSource,
++    required EncryptionService encryptionService,
++  })  : _localDataSource = localDataSource,
++        _encryptionService = encryptionService;
++
++  final DownloadLocalDataSource _localDataSource;
++  final EncryptionService _encryptionService;
++
++  /// Physically deletes every local download (encrypted file + `.idx`
++  /// sidecar + `.tmp` partial + secure-storage key + DB row) whose
++  /// `user_id` is set and does not match [currentUserId].
++  ///
++  /// Downloads with no owner (legacy, pre-account-binding rows) are left
++  /// untouched — those are adopted lazily by `OfflinePolicyEngine` on
++  /// first playback instead of being treated as belonging to someone else.
++  ///
++  /// Returns the number of downloads purged.
++  Future<int> purgeDownloadsForOtherAccounts(String currentUserId) async {
++    final others =
++        await _localDataSource.getDownloadsOwnedByOthers(currentUserId);
++    var purged = 0;
++
++    for (final row in others) {
++      final id = row['id'] as String?;
++      if (id == null || id.isEmpty) continue;
++
++      for (final basePath in [
++        row['encrypted_path'] as String?,
++        row['audio_path'] as String?,
++      ]) {
++        if (basePath == null || basePath.isEmpty) continue;
++        for (final variant in [basePath, '$basePath.tmp', '$basePath.idx']) {
++          try {
++            final file = File(variant);
++            if (await file.exists()) await file.delete();
++          } catch (_) {
++            // Non-fatal: even if a file is left behind, it's unreadable
++            // once the key is deleted below.
++          }
++        }
++      }
++
++      try {
++        await _encryptionService.deleteKey(id);
++      } catch (_) {}
++
++      try {
++        await _localDataSource.deleteDownload(id);
++        purged++;
++      } catch (_) {
++        // Leave the row for the next login/cleanup pass to retry.
++      }
++    }
++
++    return purged;
++  }
++}
+diff --git a/lib/features/downloads/application/services/offline_crash_recovery.dart b/lib/features/downloads/application/services/offline_crash_recovery.dart
+new file mode 100644
+index 0000000..d26d4d9
+--- /dev/null
++++ b/lib/features/downloads/application/services/offline_crash_recovery.dart
+@@ -0,0 +1,89 @@
++import 'dart:io';
++
++import '../../data/datasources/download_local_ds.dart';
++
++/// Startup crash-recovery reconciliation for the offline downloads
++/// subsystem (P6.31 of
++/// `EduZone_Offline_Download_Security_Trusted_Playback_Architecture.md`).
++///
++/// A download row can only be in `pending` or `downloading` status while
++/// something is actively driving it — [DownloadManager]'s in-memory task
++/// loop, kicked off by an explicit user action (`startDownload` /
++/// `resumeDownload`). Nothing in this codebase auto-resumes a download on
++/// app start (see `app_initializer.dart` — `DownloadManager` is never
++/// asked to resume anything during boot). So if a row is *already* in one
++/// of those two statuses the moment the app cold-starts, the process that
++/// was writing to it is gone — most commonly because the app (or device)
++/// was killed mid-download — and the row would otherwise sit there
++/// forever showing a dead, un-resumable "downloading…" tile.
++///
++/// This intentionally does **not** touch `paused` downloads — pausing is
++/// a deliberate user action and those rows are legitimately resumable
++/// through the normal resume flow; reconciling them here would silently
++/// discard user intent.
++///
++/// Called once, fire-and-forget, from [AppInitializer.init] — must never
++/// block or fail startup (mirrors `CleanupScheduler`'s
++/// try/catch-per-item, best-effort style, since it runs in the exact same
++/// "no Riverpod container yet" context).
++class OfflineCrashRecovery {
++  OfflineCrashRecovery({required DownloadLocalDataSource localDataSource})
++      : _localDataSource = localDataSource;
++
++  final DownloadLocalDataSource _localDataSource;
++
++  static const _interruptedStatuses = {'pending', 'downloading'};
++
++  /// Scans every local download (regardless of owning account — a
++  /// half-written row is equally orphaned no matter which account started
++  /// it, and the currently-signed-in account may not even be resolved yet
++  /// this early in startup) and reclassifies any row stuck in
++  /// [_interruptedStatuses] to `failed`, so the Downloads screen shows an
++  /// actionable "failed, tap to retry" tile instead of a permanently
++  /// stuck progress bar. Also best-effort deletes the row's `.tmp`/`.idx`
++  /// partial artifacts, consistent with the "a `.tmp` file is never
++  /// trusted as valid" rule applied everywhere else in this subsystem
++  /// (see `download_repository_impl.dart._cleanupDownloadFiles`).
++  ///
++  /// Returns the number of rows reconciled.
++  Future<int> reconcileInterruptedDownloads() async {
++    final rows = await _localDataSource.getDownloads(
++      scopeToCurrentUser: false,
++    );
++    var reconciled = 0;
++
++    for (final row in rows) {
++      final status = row['download_status'] as String?;
++      if (status == null || !_interruptedStatuses.contains(status)) continue;
++
++      final id = row['id'] as String?;
++      if (id == null || id.isEmpty) continue;
++
++      for (final basePath in [
++        row['encrypted_path'] as String?,
++        row['audio_path'] as String?,
++      ]) {
++        if (basePath == null || basePath.isEmpty) continue;
++        for (final variant in ['$basePath.tmp', '$basePath.idx']) {
++          try {
++            final file = File(variant);
++            if (await file.exists()) await file.delete();
++          } catch (_) {
++            // Non-fatal — an orphaned partial file left behind here will
++            // still be picked up by CleanupScheduler/OfflineAccountGuard
++            // path-deletion logic on a later pass.
++          }
++        }
++      }
++
++      try {
++        await _localDataSource.updateDownloadStatus(id, 'failed');
++        reconciled++;
++      } catch (_) {
++        // Leave the row as-is for the next app start to retry.
++      }
++    }
++
++    return reconciled;
++  }
++}
+diff --git a/lib/features/downloads/application/services/offline_policy_engine.dart b/lib/features/downloads/application/services/offline_policy_engine.dart
+new file mode 100644
+index 0000000..46fc1c9
+--- /dev/null
++++ b/lib/features/downloads/application/services/offline_policy_engine.dart
+@@ -0,0 +1,231 @@
++import 'dart:io';
++
++import '../../../../core/network/supabase_client.dart';
++import '../../../../core/services/encryption_service.dart';
++import '../../../../core/utils/device_info_helper.dart';
++import '../../data/datasources/download_local_ds.dart';
++
++/// Why offline playback of a specific download was denied.
++///
++/// Each value is a direct, individually testable branch inside
++/// [OfflinePolicyEngine.authorize] — this is the client-side approximation
++/// of the "Security Invariants" list (P6.41) in
++/// `EduZone_Offline_Download_Security_Trusted_Playback_Architecture.md`:
++/// no valid/owned/un-expired/un-tampered download => no playback.
++enum OfflinePlaybackDenialReason {
++  downloadNotFound,
++  notCompleted,
++  expired,
++  ownerMismatch,
++  deviceMismatch,
++  missingFile,
++  missingKey,
++}
++
++/// Thrown by [OfflinePolicyEngine.authorize] when offline playback is not
++/// allowed.
++///
++/// Carries a machine-readable [reason] plus [debugDetail] for logs/
++/// diagnostics, and a separate [userMessage] that is safe to show to end
++/// users (no file paths, ids, or internal state) — per project
++/// instructions §14, raw exception text must never reach the UI directly.
++class OfflinePlaybackDeniedException implements Exception {
++  final OfflinePlaybackDenialReason reason;
++  final String debugDetail;
++
++  const OfflinePlaybackDeniedException(this.reason, this.debugDetail);
++
++  /// Whether [userMessage] is safe to show even in release builds. All
++  /// current reasons are — none of them leak anything beyond "this
++  /// download can't play right now and here's the generic reason why".
++  bool get isSafeForRelease => true;
++
++  String get userMessage {
++    switch (reason) {
++      case OfflinePlaybackDenialReason.downloadNotFound:
++        return 'This download is no longer available.';
++      case OfflinePlaybackDenialReason.notCompleted:
++        return 'This download has not finished yet.';
++      case OfflinePlaybackDenialReason.expired:
++        return "This offline download has expired. Reconnect and "
++            "download it again.";
++      case OfflinePlaybackDenialReason.ownerMismatch:
++        return "This download belongs to a different account on this "
++            "device and can't be played here.";
++      case OfflinePlaybackDenialReason.deviceMismatch:
++        return "This download is bound to a different device and can't "
++            "be played here.";
++      case OfflinePlaybackDenialReason.missingFile:
++        return 'This download is missing or corrupted. Delete it and '
++            'download it again.';
++      case OfflinePlaybackDenialReason.missingKey:
++        return 'This download can no longer be decrypted on this device. '
++            'Delete it and download it again.';
++    }
++  }
++
++  @override
++  String toString() =>
++      'OfflinePlaybackDeniedException(${reason.name}): $debugDetail';
++}
++
++/// Central authorization gate for offline playback (P6.15).
++///
++/// No screen or widget decides on its own whether a decrypted stream may
++/// be handed to the player — every attempt to start offline playback must
++/// call [authorize] first (see `offline_player_wrapper.dart`) and treat a
++/// thrown [OfflinePlaybackDeniedException] as a hard stop.
++///
++/// **Honest security boundary** (documented per project instructions §12
++/// and P6.50 of the architecture doc): this engine enforces status /
++/// expiry / account-binding / device-binding / integrity-presence checks
++/// against locally stored metadata plus a device-local AES-256-GCM key. It
++/// does **not** implement a server-issued, cryptographically signed
++/// license (P6.4), anti-replay protection (P6.25), or hardware-backed DRM.
++/// A local attacker capable of tampering with both the app's SQLite
++/// database and its secure storage together (T2 in the threat model —
++/// root/jailbreak) could still defeat these checks. That is a real,
++/// intentionally-documented limitation of client-only enforcement, not a
++/// DRM-equivalence claim.
++class OfflinePolicyEngine {
++  OfflinePolicyEngine({
++    required DownloadLocalDataSource localDataSource,
++    required EncryptionService encryptionService,
++    String Function()? deviceFingerprint,
++    String? Function()? currentUserId,
++  })  : _localDataSource = localDataSource,
++        _encryptionService = encryptionService,
++        _deviceFingerprint = deviceFingerprint ?? _defaultDeviceFingerprint,
++        _currentUserId = currentUserId ?? _defaultCurrentUserId;
++
++  final DownloadLocalDataSource _localDataSource;
++  final EncryptionService _encryptionService;
++  final String Function() _deviceFingerprint;
++  final String? Function() _currentUserId;
++
++  static String _defaultDeviceFingerprint() {
++    try {
++      return DeviceInfoHelper.fingerprint;
++    } catch (_) {
++      // DeviceInfoHelper.init() hasn't run yet — fail safe: this will never
++      // match a stored device_id, so a bound download is correctly denied
++      // rather than silently allowed.
++      return '';
++    }
++  }
++
++  static String? _defaultCurrentUserId() {
++    try {
++      return SupabaseService.client.auth.currentUser?.id;
++    } catch (_) {
++      return null;
++    }
++  }
++
++  /// Re-reads [downloadId] from the local database and enforces every
++  /// invariant below. Returns normally when playback is allowed; throws
++  /// [OfflinePlaybackDeniedException] otherwise.
++  ///
++  /// Deliberately re-reads from storage instead of trusting a
++  /// possibly-stale in-memory `DownloadedLesson` passed around the UI —
++  /// status/expiry/ownership can change (revocation, cleanup, account
++  /// switch) between when the downloads list was last loaded and the
++  /// moment the user taps play.
++  Future<void> authorize(String downloadId) async {
++    final row = await _localDataSource.getDownloadById(downloadId);
++    if (row == null) {
++      throw OfflinePlaybackDeniedException(
++        OfflinePlaybackDenialReason.downloadNotFound,
++        'No local record for downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
++      );
++    }
++
++    final status = row['download_status'] as String?;
++    if (status != 'completed') {
++      throw OfflinePlaybackDeniedException(
++        OfflinePlaybackDenialReason.notCompleted,
++        'downloadId=$downloadId status=$status', // check-ignore: dev-only debugDetail, never rendered — see userMessage
++      );
++    }
++
++    final expiresAt = _asDateTime(row['expires_at']);
++    if (expiresAt != null && DateTime.now().isAfter(expiresAt)) {
++      throw OfflinePlaybackDeniedException(
++        OfflinePlaybackDenialReason.expired,
++        'downloadId=$downloadId expiresAt=$expiresAt', // check-ignore: dev-only debugDetail, never rendered — see userMessage
++      );
++    }
++
++    await _checkOwnershipAndBinding(downloadId, row);
++
++    final encryptedPath = row['encrypted_path'] as String?;
++    if (encryptedPath == null ||
++        encryptedPath.isEmpty ||
++        !await File(encryptedPath).exists()) {
++      throw OfflinePlaybackDeniedException(
++        OfflinePlaybackDenialReason.missingFile,
++        'downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
++      );
++    }
++
++    String? key;
++    try {
++      key = await _encryptionService.retrieveKey(downloadId);
++    } catch (_) {
++      key = null;
++    }
++    if (key == null || key.isEmpty) {
++      throw OfflinePlaybackDeniedException(
++        OfflinePlaybackDenialReason.missingKey,
++        'downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
++      );
++    }
++  }
++
++  Future<void> _checkOwnershipAndBinding(
++    String downloadId,
++    Map<String, dynamic> row,
++  ) async {
++    final ownerUserId = row['user_id'] as String?;
++    final ownerDeviceId = row['device_id'] as String?;
++    final currentUserId = _currentUserId();
++    final currentDeviceId = _deviceFingerprint();
++
++    if (ownerUserId == null && ownerDeviceId == null) {
++      // Legacy download created before account/device binding existed
++      // (pre schema-v7). Adopt it to the current account/device the first
++      // time it is played, instead of retroactively invalidating content
++      // the user already legitimately downloaded on this same install —
++      // see the migration note in storage_service.dart. Best-effort: a
++      // failure to persist the adoption must not block a play attempt
++      // that was otherwise allowed.
++      try {
++        await _localDataSource.updateDownload(downloadId, {
++          'user_id': currentUserId,
++          'device_id': currentDeviceId,
++        });
++      } catch (_) {}
++      return;
++    }
++
++    if (ownerUserId != null && ownerUserId != currentUserId) {
++      throw OfflinePlaybackDeniedException(
++        OfflinePlaybackDenialReason.ownerMismatch,
++        'downloadId=$downloadId owner=$ownerUserId current=$currentUserId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
++      );
++    }
++    if (ownerDeviceId != null && ownerDeviceId != currentDeviceId) {
++      throw OfflinePlaybackDeniedException(
++        OfflinePlaybackDenialReason.deviceMismatch,
++        'downloadId=$downloadId ownerDevice=$ownerDeviceId ' // check-ignore: dev-only debugDetail, never rendered — see userMessage
++        'currentDevice=$currentDeviceId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
++      );
++    }
++  }
++
++  DateTime? _asDateTime(Object? value) {
++    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
++    if (value is num) return DateTime.fromMillisecondsSinceEpoch(value.toInt());
++    return null;
++  }
++}
+diff --git a/lib/features/downloads/data/datasources/download_local_ds.dart b/lib/features/downloads/data/datasources/download_local_ds.dart
+index 866168a..4d474a6 100644
+--- a/lib/features/downloads/data/datasources/download_local_ds.dart
++++ b/lib/features/downloads/data/datasources/download_local_ds.dart
+@@ -3,7 +3,9 @@ import 'dart:io';
+ import 'package:path_provider/path_provider.dart';
+ import 'package:uuid/uuid.dart';
+ 
++import '../../../../core/network/supabase_client.dart';
+ import '../../../../core/services/storage_service.dart';
++import '../../../../core/utils/device_info_helper.dart';
+ import '../../domain/entities/downloaded_lesson.dart';
+ 
+ /// Local data source for download operations.
+@@ -12,8 +14,42 @@ import '../../domain/entities/downloaded_lesson.dart';
+ class DownloadLocalDataSource {
+   final StorageService _storageService;
+   final Uuid _uuid;
++  final String? Function() _currentUserId;
++  final String Function() _deviceFingerprint;
++
++  /// [currentUserId] and [deviceFingerprint] default to reading the real
++  /// Supabase session / device fingerprint, and exist as constructor
++  /// parameters purely so tests can inject fixed values instead of
++  /// depending on Supabase/device-info being initialized. See
++  /// `offline_policy_engine.dart` for how these values are enforced at
++  /// playback time (P6.19/P6.20 account & device binding).
++  DownloadLocalDataSource(
++    this._storageService, {
++    String? Function()? currentUserId,
++    String Function()? deviceFingerprint,
++  })  : _uuid = const Uuid(),
++        _currentUserId = currentUserId ?? _defaultCurrentUserId,
++        _deviceFingerprint = deviceFingerprint ?? _defaultDeviceFingerprint;
++
++  static String? _defaultCurrentUserId() {
++    try {
++      return SupabaseService.client.auth.currentUser?.id;
++    } catch (_) {
++      // Supabase not initialized yet (e.g. background isolate) — treat as
++      // "no account" rather than crashing an insert/query.
++      return null;
++    }
++  }
+ 
+-  DownloadLocalDataSource(this._storageService) : _uuid = const Uuid();
++  static String _defaultDeviceFingerprint() {
++    try {
++      return DeviceInfoHelper.fingerprint;
++    } catch (_) {
++      // DeviceInfoHelper.init() hasn't run yet — fail safe with a value
++      // that will never match a previously stored device_id.
++      return '';
++    }
++  }
+ 
+   /// Gets the downloads directory for the app.
+   Future<Directory> getDownloadsDirectory() async {
+@@ -71,6 +107,10 @@ class DownloadLocalDataSource {
+   }
+ 
+   /// Inserts a download record into the local database.
++  ///
++  /// Binds the row to the currently signed-in account and this device
++  /// (P6.19/P6.20) so it can later be authorized correctly by
++  /// `OfflinePolicyEngine` and filtered correctly by [getDownloads].
+   Future<void> insertDownload(DownloadedLesson download) async {
+     await _storageService.insertDownload({
+       'id': download.id,
+@@ -91,12 +131,32 @@ class DownloadLocalDataSource {
+       'expires_at': download.expiresAt.millisecondsSinceEpoch,
+       'checksum': download.checksum,
+       'last_accessed_at': download.lastAccessedAt?.millisecondsSinceEpoch,
++      'user_id': _currentUserId(),
++      'device_id': _deviceFingerprint(),
+     });
+   }
+ 
+   /// Gets all downloads from the local database.
+-  Future<List<Map<String, dynamic>>> getDownloads() async {
+-    return await _storageService.getDownloadedLessons();
++  ///
++  /// Scoped to the current account by default (see
++  /// `StorageService.getDownloadedLessons`) so a different account signed
++  /// into this device never sees another account's download tiles. Pass
++  /// `scopeToCurrentUser: false` for internal/debug tooling that
++  /// deliberately needs every row regardless of owner.
++  Future<List<Map<String, dynamic>>> getDownloads({
++    bool scopeToCurrentUser = true,
++  }) async {
++    return await _storageService.getDownloadedLessons(
++      ownerUserId: scopeToCurrentUser ? _currentUserId() : null,
++    );
++  }
++
++  /// Returns every download bound to an account other than [currentUserId].
++  /// See `OfflineAccountGuard`.
++  Future<List<Map<String, dynamic>>> getDownloadsOwnedByOthers(
++    String currentUserId,
++  ) async {
++    return await _storageService.getDownloadsOwnedByOthers(currentUserId);
+   }
+ 
+   /// Gets a download by lesson ID.
+diff --git a/lib/features/downloads/data/repositories/download_repository_impl.dart b/lib/features/downloads/data/repositories/download_repository_impl.dart
+index 156beb4..8e3cada 100644
+--- a/lib/features/downloads/data/repositories/download_repository_impl.dart
++++ b/lib/features/downloads/data/repositories/download_repository_impl.dart
+@@ -429,6 +429,16 @@ class DownloadRepositoryImpl implements DownloadRepository {
+       } catch (e) {
+         debugPrint('⚠️ Error deleting temp file: $e');
+       }
++
++      // The chunked-container sidecar index (see ChunkIndex/loadOrBuildIndex
++      // in encryption_service.dart) is written next to the encrypted file
++      // as `<path>.idx`. It was previously never cleaned up here, leaving
++      // an orphaned sidecar file behind on every delete (P6.29/P6.30).
++      try {
++        await _localDataSource.deleteEncryptedFile('$encryptedPath.idx');
++      } catch (e) {
++        debugPrint('⚠️ Error deleting index sidecar: $e');
++      }
+     }
+ 
+     if (audioPath != null && audioPath.isNotEmpty) {
+@@ -443,6 +453,12 @@ class DownloadRepositoryImpl implements DownloadRepository {
+       } catch (e) {
+         debugPrint('⚠️ Error deleting audio temp file: $e');
+       }
++
++      try {
++        await _localDataSource.deleteEncryptedFile('$audioPath.idx');
++      } catch (e) {
++        debugPrint('⚠️ Error deleting audio index sidecar: $e');
++      }
+     }
+   }
+ 
+diff --git a/lib/features/downloads/presentation/widgets/offline_player/offline_player_error_view.dart b/lib/features/downloads/presentation/widgets/offline_player/offline_player_error_view.dart
+index 51cf60b..6a03d3a 100644
+--- a/lib/features/downloads/presentation/widgets/offline_player/offline_player_error_view.dart
++++ b/lib/features/downloads/presentation/widgets/offline_player/offline_player_error_view.dart
+@@ -15,11 +15,19 @@ class OfflinePlayerErrorView extends StatelessWidget {
+   final String? errorMessage;
+   final VoidCallback onRetry;
+ 
++  /// When true, [errorMessage] is shown regardless of build mode. Set this
++  /// only when the caller has already verified the message is safe for end
++  /// users (no paths/ids/internal state) — e.g. `OfflinePlaybackDeniedException
++  /// .userMessage`. Defaults to false, preserving the previous
++  /// debug-only behavior for ordinary (developer-facing) exception text.
++  final bool alwaysShowMessage;
++
+   const OfflinePlayerErrorView({
+     super.key,
+     required this.aspectRatio,
+     required this.errorMessage,
+     required this.onRetry,
++    this.alwaysShowMessage = false,
+   });
+ 
+   @override
+@@ -44,8 +52,12 @@ class OfflinePlayerErrorView extends StatelessWidget {
+               ),
+               // Raw exception text is developer-facing detail; showing it to
+               // end users in release builds isn't useful and can leak
+-              // implementation details. Only surface it in debug builds.
+-              if (kDebugMode && errorMessage != null) ...[
++              // implementation details, so it stays gated behind
++              // kDebugMode. `alwaysShowMessage` is the one deliberate
++              // exception: callers set it only when errorMessage has
++              // already been vetted as end-user-safe (see
++              // OfflinePlaybackDeniedException.userMessage).
++              if ((kDebugMode || alwaysShowMessage) && errorMessage != null) ...[
+                 const SizedBox(height: AppSpacing.sm),
+                 Text(
+                   errorMessage!,
+diff --git a/lib/features/downloads/presentation/widgets/offline_player/offline_player_wrapper.dart b/lib/features/downloads/presentation/widgets/offline_player/offline_player_wrapper.dart
+index 72f484c..6ae9cb3 100644
+--- a/lib/features/downloads/presentation/widgets/offline_player/offline_player_wrapper.dart
++++ b/lib/features/downloads/presentation/widgets/offline_player/offline_player_wrapper.dart
+@@ -13,6 +13,7 @@ import '../../../../../core/services/encryption_service.dart'
+     show detectContainerExt;
+ import '../../../../../core/services/offline_playback_service.dart';
+ import '../../../application/providers/downloads_provider.dart';
++import '../../../application/services/offline_policy_engine.dart';
+ import '../../../domain/entities/downloaded_lesson.dart';
+ import 'offline_player_center_button.dart';
+ import 'offline_player_controls_overlay.dart';
+@@ -80,6 +81,7 @@ class OfflinePlayerWrapper extends ConsumerStatefulWidget {
+ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
+     with WidgetsBindingObserver {
+   late final OfflinePlaybackService _playbackService;
++  late final OfflinePolicyEngine _policyEngine;
+   Player? _player;
+   VideoController? _videoController;
+   Uri? _proxyUri;
+@@ -89,6 +91,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
+   bool _hasError = false;
+   bool _isPlaying = false;
+   bool _showControls = true;
++  bool _errorIsSafeForRelease = false;
+   int _speedIndex = 2; // Index 2 = 1.0x in _speeds below
+   late final List<double> _speeds =
+       [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]; // Indices: [0, 1, 2, 3, 4, 5]
+@@ -111,6 +114,10 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
+     _playbackService = OfflinePlaybackService(
+       encryptionService: ref.read(encryptionServiceProvider),
+     );
++    _policyEngine = OfflinePolicyEngine(
++      localDataSource: ref.read(downloadLocalDataSourceProvider),
++      encryptionService: ref.read(encryptionServiceProvider),
++    );
+     _initializePlayer();
+     _resetAutoHideTimer();
+   }
+@@ -129,6 +136,13 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
+ 
+   Future<void> _initializePlayer() async {
+     try {
++      // Offline playback authorization (P6.15) — must happen before any
++      // decryption or streaming starts, and must be re-checked against
++      // fresh local state every time, not just when the downloads list was
++      // last loaded. See OfflinePolicyEngine's doc comment for exactly
++      // what this does and does not guarantee.
++      await _policyEngine.authorize(widget.download.id);
++
+       final isDualTrack = widget.download.audioPath != null &&
+           widget.download.audioPath!.isNotEmpty;
+ 
+@@ -324,7 +338,19 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
+       setState(() {
+         _isLoading = false;
+         _hasError = true;
+-        _errorMessage = error.toString();
++        // OfflinePlaybackDeniedException carries a message that was
++        // written specifically to be shown to end users (no paths, ids,
++        // or internal state) — show it even in release builds. Any other
++        // exception is developer-facing detail and stays gated behind
++        // kDebugMode in OfflinePlayerErrorView, per project instructions
++        // §14 (never expose raw exceptions to users).
++        if (error is OfflinePlaybackDeniedException) {
++          _errorMessage = error.userMessage;
++          _errorIsSafeForRelease = error.isSafeForRelease;
++        } else {
++          _errorMessage = error.toString();
++          _errorIsSafeForRelease = false;
++        }
+       });
+     }
+   }
+@@ -369,6 +395,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
+       _hasError = false;
+       _isLoading = true;
+       _errorMessage = null;
++      _errorIsSafeForRelease = false;
+       _showControls = true;
+     });
+ 
+@@ -432,6 +459,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
+       return OfflinePlayerErrorView(
+         aspectRatio: aspectRatio,
+         errorMessage: _errorMessage,
++        alwaysShowMessage: _errorIsSafeForRelease,
+         onRetry: _retry,
+       );
+     }
+diff --git a/lib/shared/cross_feature/downloads_shared.dart b/lib/shared/cross_feature/downloads_shared.dart
+index ab0518e..f4b2f1a 100644
+--- a/lib/shared/cross_feature/downloads_shared.dart
++++ b/lib/shared/cross_feature/downloads_shared.dart
+@@ -5,4 +5,5 @@
+ library;
+ 
+ export '../../features/downloads/application/providers/downloads_provider.dart';
++export '../../features/downloads/application/services/offline_account_guard.dart';
+ export '../../features/downloads/presentation/widgets/quality_selector.dart';
+diff --git a/test/core/services/storage_service_test.dart b/test/core/services/storage_service_test.dart
+index 6f371f6..7a8dd87 100644
+--- a/test/core/services/storage_service_test.dart
++++ b/test/core/services/storage_service_test.dart
+@@ -96,4 +96,113 @@ void main() {
+     await service.close();
+     tempDir.deleteSync(recursive: true);
+   });
++
++  test('upgrade to version 7 adds user_id/device_id and preserves data', () async {
++    final tempDir = Directory.systemTemp.createTempSync('eduzone_test_db_v7');
++    final dbPath = p.join(tempDir.path, 'eduzone_downloads.db');
++
++    // 1. Manually create the database at version 6 (schema as it existed
++    // immediately before the P6 offline-security hardening pass).
++    final dbV6 = await openDatabase(
++      dbPath,
++      version: 6,
++      onCreate: (db, version) async {
++        await db.execute('''
++          CREATE TABLE downloaded_lessons (
++            id TEXT PRIMARY KEY,
++            lesson_id TEXT NOT NULL,
++            course_id TEXT NOT NULL,
++            course_title TEXT NOT NULL DEFAULT '',
++            title TEXT NOT NULL,
++            local_path TEXT NOT NULL,
++            encrypted_path TEXT NOT NULL,
++            audio_path TEXT,
++            video_url TEXT NOT NULL,
++            audio_url TEXT,
++            quality TEXT NOT NULL,
++            file_size INTEGER NOT NULL,
++            download_status TEXT NOT NULL,
++            progress REAL DEFAULT 0.0,
++            downloaded_at INTEGER NOT NULL,
++            expires_at INTEGER NOT NULL,
++            checksum TEXT,
++            last_accessed_at INTEGER,
++            source_url TEXT,
++            link_validated_at INTEGER
++          )
++        ''');
++      },
++    );
++
++    // 2. Insert a pre-migration (legacy, unbound) download row.
++    await dbV6.insert('downloaded_lessons', {
++      'id': 'legacy_dl',
++      'lesson_id': 'lesson_1',
++      'course_id': 'course_1',
++      'course_title': 'Legacy Course',
++      'title': 'Legacy Lesson',
++      'local_path': '/path/to/local',
++      'encrypted_path': '/path/to/enc',
++      'video_url': 'http://test.url',
++      'quality': 'high',
++      'file_size': 1024,
++      'download_status': 'completed',
++      'downloaded_at': 123456789,
++      'expires_at': DateTime.now()
++          .add(const Duration(days: 1))
++          .millisecondsSinceEpoch,
++    });
++    await dbV6.close();
++
++    // 3. Open with the current StorageService — triggers _onUpgrade(6, 7).
++    final service = StorageService(documentsDirectoryPath: tempDir.path);
++    final db = await service.database;
++
++    // 4. Legacy row is preserved, with the new columns present and null.
++    final rows = await db.query('downloaded_lessons');
++    expect(rows.length, equals(1));
++    expect(rows.first['id'], equals('legacy_dl'));
++    expect(rows.first.containsKey('user_id'), isTrue);
++    expect(rows.first['user_id'], isNull);
++    expect(rows.first.containsKey('device_id'), isTrue);
++    expect(rows.first['device_id'], isNull);
++
++    // 5. A legacy (unbound) row is visible to every account when scoping
++    // by owner — it hasn't been "adopted" yet (that happens lazily in
++    // OfflinePolicyEngine, not here).
++    final scoped = await service.getDownloadedLessons(ownerUserId: 'user_a');
++    expect(scoped.map((r) => r['id']), contains('legacy_dl'));
++
++    // 6. A row explicitly bound to a different account is excluded from a
++    // scoped query...
++    await db.update(
++      'downloaded_lessons',
++      {'user_id': 'user_b'},
++      where: 'id = ?',
++      whereArgs: ['legacy_dl'],
++    );
++    final scopedAfterBind =
++        await service.getDownloadedLessons(ownerUserId: 'user_a');
++    expect(scopedAfterBind.map((r) => r['id']), isNot(contains('legacy_dl')));
++
++    // ...but still shows up for its actual owner...
++    final ownerView =
++        await service.getDownloadedLessons(ownerUserId: 'user_b');
++    expect(ownerView.map((r) => r['id']), contains('legacy_dl'));
++
++    // ...and is returned by getDownloadsOwnedByOthers() for account-switch
++    // purge purposes (OfflineAccountGuard).
++    final others = await service.getDownloadsOwnedByOthers('user_a');
++    expect(others.map((r) => r['id']), contains('legacy_dl'));
++    final othersFromOwnerPerspective =
++        await service.getDownloadsOwnedByOthers('user_b');
++    expect(
++      othersFromOwnerPerspective.map((r) => r['id']),
++      isNot(contains('legacy_dl')),
++    );
++
++    // 7. Cleanup
++    await service.close();
++    tempDir.deleteSync(recursive: true);
++  });
+ }
+diff --git a/test/features/downloads/application/services/offline_account_guard_test.dart b/test/features/downloads/application/services/offline_account_guard_test.dart
+new file mode 100644
+index 0000000..45ededf
+--- /dev/null
++++ b/test/features/downloads/application/services/offline_account_guard_test.dart
+@@ -0,0 +1,109 @@
++import 'dart:io';
++
++import 'package:app/core/services/encryption_service.dart';
++import 'package:app/features/downloads/application/services/offline_account_guard.dart';
++import 'package:app/features/downloads/data/datasources/download_local_ds.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:mocktail/mocktail.dart';
++
++class MockDownloadLocalDataSource extends Mock
++    implements DownloadLocalDataSource {}
++
++class MockEncryptionService extends Mock implements EncryptionService {}
++
++void main() {
++  late MockDownloadLocalDataSource localDataSource;
++  late MockEncryptionService encryptionService;
++  late OfflineAccountGuard guard;
++  late Directory tempDir;
++
++  const currentUserId = 'user_current';
++
++  setUp(() {
++    localDataSource = MockDownloadLocalDataSource();
++    encryptionService = MockEncryptionService();
++    guard = OfflineAccountGuard(
++      localDataSource: localDataSource,
++      encryptionService: encryptionService,
++    );
++    tempDir = Directory.systemTemp.createTempSync('offline_account_guard_test');
++
++    when(() => encryptionService.deleteKey(any())).thenAnswer((_) async {});
++    when(() => localDataSource.deleteDownload(any()))
++        .thenAnswer((_) async {});
++  });
++
++  tearDown(() {
++    tempDir.deleteSync(recursive: true);
++  });
++
++  test('purges every download owned by a different account', () async {
++    final encPath = '${tempDir.path}/lesson_a.edz';
++    File(encPath).writeAsBytesSync([1]);
++    File('$encPath.idx').writeAsBytesSync([1]);
++    File('$encPath.tmp').writeAsBytesSync([1]);
++
++    when(() => localDataSource.getDownloadsOwnedByOthers(currentUserId))
++        .thenAnswer(
++      (_) async => [
++        {'id': 'dl_other_1', 'encrypted_path': encPath, 'audio_path': null},
++      ],
++    );
++
++    final purged = await guard.purgeDownloadsForOtherAccounts(currentUserId);
++
++    expect(purged, equals(1));
++    expect(File(encPath).existsSync(), isFalse);
++    expect(File('$encPath.idx').existsSync(), isFalse);
++    expect(File('$encPath.tmp').existsSync(), isFalse);
++    verify(() => encryptionService.deleteKey('dl_other_1')).called(1);
++    verify(() => localDataSource.deleteDownload('dl_other_1')).called(1);
++  });
++
++  test('does nothing when there are no other accounts on this device',
++      () async {
++    when(() => localDataSource.getDownloadsOwnedByOthers(currentUserId))
++        .thenAnswer((_) async => []);
++
++    final purged = await guard.purgeDownloadsForOtherAccounts(currentUserId);
++
++    expect(purged, equals(0));
++    verifyNever(() => encryptionService.deleteKey(any()));
++    verifyNever(() => localDataSource.deleteDownload(any()));
++  });
++
++  test('a missing file does not stop the key and row from being purged',
++      () async {
++    when(() => localDataSource.getDownloadsOwnedByOthers(currentUserId))
++        .thenAnswer(
++      (_) async => [
++        {
++          'id': 'dl_missing_file',
++          'encrypted_path': '${tempDir.path}/does_not_exist.edz',
++          'audio_path': null,
++        },
++      ],
++    );
++
++    final purged = await guard.purgeDownloadsForOtherAccounts(currentUserId);
++
++    expect(purged, equals(1));
++    verify(() => encryptionService.deleteKey('dl_missing_file')).called(1);
++    verify(() => localDataSource.deleteDownload('dl_missing_file')).called(1);
++  });
++
++  test('a row that fails to delete is not counted as purged', () async {
++    when(() => localDataSource.getDownloadsOwnedByOthers(currentUserId))
++        .thenAnswer(
++      (_) async => [
++        {'id': 'dl_fails', 'encrypted_path': null, 'audio_path': null},
++      ],
++    );
++    when(() => localDataSource.deleteDownload('dl_fails'))
++        .thenThrow(Exception('db locked'));
++
++    final purged = await guard.purgeDownloadsForOtherAccounts(currentUserId);
++
++    expect(purged, equals(0));
++  });
++}
+diff --git a/test/features/downloads/application/services/offline_crash_recovery_test.dart b/test/features/downloads/application/services/offline_crash_recovery_test.dart
+new file mode 100644
+index 0000000..15c55de
+--- /dev/null
++++ b/test/features/downloads/application/services/offline_crash_recovery_test.dart
+@@ -0,0 +1,128 @@
++import 'dart:io';
++
++import 'package:app/features/downloads/application/services/offline_crash_recovery.dart';
++import 'package:app/features/downloads/data/datasources/download_local_ds.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:mocktail/mocktail.dart';
++
++class MockDownloadLocalDataSource extends Mock
++    implements DownloadLocalDataSource {}
++
++void main() {
++  late MockDownloadLocalDataSource localDataSource;
++  late OfflineCrashRecovery recovery;
++  late Directory tempDir;
++
++  setUp(() {
++    localDataSource = MockDownloadLocalDataSource();
++    recovery = OfflineCrashRecovery(localDataSource: localDataSource);
++    tempDir = Directory.systemTemp.createTempSync('offline_crash_recovery_test');
++
++    when(() => localDataSource.updateDownloadStatus(any(), any()))
++        .thenAnswer((_) async {});
++  });
++
++  tearDown(() {
++    tempDir.deleteSync(recursive: true);
++  });
++
++  test('reclassifies a stuck "downloading" row to failed', () async {
++    when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
++        .thenAnswer(
++      (_) async => [
++        {
++          'id': 'dl_stuck',
++          'download_status': 'downloading',
++          'encrypted_path': null,
++          'audio_path': null,
++        },
++      ],
++    );
++
++    final count = await recovery.reconcileInterruptedDownloads();
++
++    expect(count, equals(1));
++    verify(() => localDataSource.updateDownloadStatus('dl_stuck', 'failed'))
++        .called(1);
++  });
++
++  test('reclassifies a stuck "pending" row to failed', () async {
++    when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
++        .thenAnswer(
++      (_) async => [
++        {
++          'id': 'dl_pending',
++          'download_status': 'pending',
++          'encrypted_path': null,
++          'audio_path': null,
++        },
++      ],
++    );
++
++    final count = await recovery.reconcileInterruptedDownloads();
++
++    expect(count, equals(1));
++    verify(() => localDataSource.updateDownloadStatus('dl_pending', 'failed'))
++        .called(1);
++  });
++
++  test('never touches completed, failed, or paused rows', () async {
++    when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
++        .thenAnswer(
++      (_) async => [
++        {'id': 'dl_completed', 'download_status': 'completed'},
++        {'id': 'dl_failed', 'download_status': 'failed'},
++        {'id': 'dl_paused', 'download_status': 'paused'},
++      ],
++    );
++
++    final count = await recovery.reconcileInterruptedDownloads();
++
++    expect(count, equals(0));
++    verifyNever(() => localDataSource.updateDownloadStatus(any(), any()));
++  });
++
++  test('deletes .tmp and .idx partial artifacts for reconciled rows',
++      () async {
++    final basePath = '${tempDir.path}/lesson.enc';
++    File('$basePath.tmp').writeAsBytesSync([1]);
++    File('$basePath.idx').writeAsBytesSync([1]);
++
++    when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
++        .thenAnswer(
++      (_) async => [
++        {
++          'id': 'dl_stuck',
++          'download_status': 'downloading',
++          'encrypted_path': basePath,
++          'audio_path': null,
++        },
++      ],
++    );
++
++    await recovery.reconcileInterruptedDownloads();
++
++    expect(File('$basePath.tmp').existsSync(), isFalse);
++    expect(File('$basePath.idx').existsSync(), isFalse);
++  });
++
++  test('a row that fails to update is not counted as reconciled', () async {
++    when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
++        .thenAnswer(
++      (_) async => [
++        {
++          'id': 'dl_stuck',
++          'download_status': 'downloading',
++          'encrypted_path': null,
++          'audio_path': null,
++        },
++      ],
++    );
++    when(() => localDataSource.updateDownloadStatus('dl_stuck', 'failed'))
++        .thenThrow(Exception('db locked'));
++
++    final count = await recovery.reconcileInterruptedDownloads();
++
++    expect(count, equals(0));
++  });
++}
+diff --git a/test/features/downloads/application/services/offline_policy_engine_test.dart b/test/features/downloads/application/services/offline_policy_engine_test.dart
+new file mode 100644
+index 0000000..676eafc
+--- /dev/null
++++ b/test/features/downloads/application/services/offline_policy_engine_test.dart
+@@ -0,0 +1,287 @@
++import 'dart:io';
++
++import 'package:app/core/services/encryption_service.dart';
++import 'package:app/features/downloads/application/services/offline_policy_engine.dart';
++import 'package:app/features/downloads/data/datasources/download_local_ds.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:mocktail/mocktail.dart';
++
++class MockDownloadLocalDataSource extends Mock
++    implements DownloadLocalDataSource {}
++
++class MockEncryptionService extends Mock implements EncryptionService {}
++
++void main() {
++  late MockDownloadLocalDataSource localDataSource;
++  late MockEncryptionService encryptionService;
++  late Directory tempDir;
++  late String encryptedPath;
++
++  const downloadId = 'dl_1';
++  const currentUserId = 'user_current';
++  const currentDeviceId = 'device_current';
++
++  setUpAll(() {
++    registerFallbackValue(<String, dynamic>{});
++  });
++
++  setUp(() async {
++    localDataSource = MockDownloadLocalDataSource();
++    encryptionService = MockEncryptionService();
++    tempDir = Directory.systemTemp.createTempSync('offline_policy_engine_test');
++    encryptedPath = '${tempDir.path}/video.edz';
++    File(encryptedPath).writeAsBytesSync([1, 2, 3]);
++
++    when(() => localDataSource.updateDownload(any(), any()))
++        .thenAnswer((_) async {});
++  });
++
++  tearDown(() {
++    tempDir.deleteSync(recursive: true);
++  });
++
++  OfflinePolicyEngine buildEngine({
++    String? userId = currentUserId,
++    String device = currentDeviceId,
++  }) {
++    return OfflinePolicyEngine(
++      localDataSource: localDataSource,
++      encryptionService: encryptionService,
++      currentUserId: () => userId,
++      deviceFingerprint: () => device,
++    );
++  }
++
++  Map<String, dynamic> validRow({
++    String status = 'completed',
++    int? expiresAt,
++    String? userId = currentUserId,
++    String? deviceId = currentDeviceId,
++    String? path,
++  }) {
++    return {
++      'id': downloadId,
++      'download_status': status,
++      'expires_at': expiresAt ??
++          DateTime.now().add(const Duration(days: 1)).millisecondsSinceEpoch,
++      'user_id': userId,
++      'device_id': deviceId,
++      'encrypted_path': path ?? encryptedPath,
++    };
++  }
++
++  group('OfflinePolicyEngine.authorize — allow path', () {
++    test('allows playback when every invariant is satisfied', () async {
++      when(() => localDataSource.getDownloadById(downloadId))
++          .thenAnswer((_) async => validRow());
++      when(() => encryptionService.retrieveKey(downloadId))
++          .thenAnswer((_) async => 'a-key');
++
++      await buildEngine().authorize(downloadId);
++
++      verify(() => localDataSource.getDownloadById(downloadId)).called(1);
++      // Not a legacy row, so no adoption write should happen.
++      verifyNever(() => localDataSource.updateDownload(any(), any()));
++    });
++  });
++
++  group('OfflinePolicyEngine.authorize — deny paths (P6.41 invariants)', () {
++    test('denies when the download is not found', () async {
++      when(() => localDataSource.getDownloadById(downloadId))
++          .thenAnswer((_) async => null);
++
++      await expectLater(
++        buildEngine().authorize(downloadId),
++        throwsA(
++          isA<OfflinePlaybackDeniedException>().having(
++            (e) => e.reason,
++            'reason',
++            OfflinePlaybackDenialReason.downloadNotFound,
++          ),
++        ),
++      );
++    });
++
++    test('denies when the download is not completed', () async {
++      when(() => localDataSource.getDownloadById(downloadId)).thenAnswer(
++        (_) async => validRow(status: 'downloading'),
++      );
++
++      await expectLater(
++        buildEngine().authorize(downloadId),
++        throwsA(
++          isA<OfflinePlaybackDeniedException>().having(
++            (e) => e.reason,
++            'reason',
++            OfflinePlaybackDenialReason.notCompleted,
++          ),
++        ),
++      );
++    });
++
++    test('denies when the license/offline window has expired', () async {
++      when(() => localDataSource.getDownloadById(downloadId)).thenAnswer(
++        (_) async => validRow(
++          expiresAt: DateTime.now()
++              .subtract(const Duration(days: 1))
++              .millisecondsSinceEpoch,
++        ),
++      );
++
++      await expectLater(
++        buildEngine().authorize(downloadId),
++        throwsA(
++          isA<OfflinePlaybackDeniedException>().having(
++            (e) => e.reason,
++            'reason',
++            OfflinePlaybackDenialReason.expired,
++          ),
++        ),
++      );
++    });
++
++    test('denies when the download belongs to a different account', () async {
++      when(() => localDataSource.getDownloadById(downloadId)).thenAnswer(
++        (_) async => validRow(userId: 'someone_else'),
++      );
++
++      await expectLater(
++        buildEngine().authorize(downloadId),
++        throwsA(
++          isA<OfflinePlaybackDeniedException>().having(
++            (e) => e.reason,
++            'reason',
++            OfflinePlaybackDenialReason.ownerMismatch,
++          ),
++        ),
++      );
++    });
++
++    test('denies when there is no signed-in account but the download is owned',
++        () async {
++      when(() => localDataSource.getDownloadById(downloadId))
++          .thenAnswer((_) async => validRow());
++
++      await expectLater(
++        buildEngine(userId: null).authorize(downloadId),
++        throwsA(
++          isA<OfflinePlaybackDeniedException>().having(
++            (e) => e.reason,
++            'reason',
++            OfflinePlaybackDenialReason.ownerMismatch,
++          ),
++        ),
++      );
++    });
++
++    test('denies when the download is bound to a different device', () async {
++      when(() => localDataSource.getDownloadById(downloadId)).thenAnswer(
++        (_) async => validRow(deviceId: 'someone_elses_device'),
++      );
++
++      await expectLater(
++        buildEngine().authorize(downloadId),
++        throwsA(
++          isA<OfflinePlaybackDeniedException>().having(
++            (e) => e.reason,
++            'reason',
++            OfflinePlaybackDenialReason.deviceMismatch,
++          ),
++        ),
++      );
++    });
++
++    test('denies when the encrypted file is missing from disk', () async {
++      when(() => localDataSource.getDownloadById(downloadId)).thenAnswer(
++        (_) async => validRow(path: '${tempDir.path}/does_not_exist.edz'),
++      );
++
++      await expectLater(
++        buildEngine().authorize(downloadId),
++        throwsA(
++          isA<OfflinePlaybackDeniedException>().having(
++            (e) => e.reason,
++            'reason',
++            OfflinePlaybackDenialReason.missingFile,
++          ),
++        ),
++      );
++    });
++
++    test('denies when the decryption key is missing from secure storage',
++        () async {
++      when(() => localDataSource.getDownloadById(downloadId))
++          .thenAnswer((_) async => validRow());
++      when(() => encryptionService.retrieveKey(downloadId))
++          .thenAnswer((_) async => null);
++
++      await expectLater(
++        buildEngine().authorize(downloadId),
++        throwsA(
++          isA<OfflinePlaybackDeniedException>().having(
++            (e) => e.reason,
++            'reason',
++            OfflinePlaybackDenialReason.missingKey,
++          ),
++        ),
++      );
++    });
++  });
++
++  group('OfflinePolicyEngine.authorize — legacy (pre-v7) rows', () {
++    test(
++      'adopts an unbound legacy row to the current account/device instead of denying it',
++      () async {
++        when(() => localDataSource.getDownloadById(downloadId)).thenAnswer(
++          (_) async => validRow(userId: null, deviceId: null),
++        );
++        when(() => encryptionService.retrieveKey(downloadId))
++            .thenAnswer((_) async => 'a-key');
++
++        await buildEngine().authorize(downloadId);
++
++        // Note: a Map literal is not `==`-comparable to another Map literal
++        // in Dart, so this deliberately matches on content via `predicate`
++        // rather than `updateDownload(downloadId, {...})`, which would
++        // silently never match.
++        verify(
++          () => localDataSource.updateDownload(
++            downloadId,
++            any(
++              that: predicate<Map<String, dynamic>>(
++                (m) =>
++                    m['user_id'] == currentUserId &&
++                    m['device_id'] == currentDeviceId,
++              ),
++            ),
++          ),
++        ).called(1);
++      },
++    );
++
++    test('a failed adoption write still allows this playback attempt',
++        () async {
++      when(() => localDataSource.getDownloadById(downloadId)).thenAnswer(
++        (_) async => validRow(userId: null, deviceId: null),
++      );
++      when(() => localDataSource.updateDownload(any(), any()))
++          .thenThrow(Exception('disk full'));
++      when(() => encryptionService.retrieveKey(downloadId))
++          .thenAnswer((_) async => 'a-key');
++
++      // Should not throw despite the adoption write failing.
++      await buildEngine().authorize(downloadId);
++    });
++  });
++
++  test('userMessage never includes raw internal details', () {
++    for (final reason in OfflinePlaybackDenialReason.values) {
++      final message =
++          OfflinePlaybackDeniedException(reason, 'downloadId=secret-internal-id')
++              .userMessage;
++      expect(message.contains('secret-internal-id'), isFalse);
++      expect(message.contains('Exception'), isFalse);
++      expect(message.isNotEmpty, isTrue);
++    }
++  });
++}
+diff --git a/test/features/downloads/presentation/widgets/offline_player/offline_player_error_view_test.dart b/test/features/downloads/presentation/widgets/offline_player/offline_player_error_view_test.dart
+index 9d8bdab..b8ed4c0 100644
+--- a/test/features/downloads/presentation/widgets/offline_player/offline_player_error_view_test.dart
++++ b/test/features/downloads/presentation/widgets/offline_player/offline_player_error_view_test.dart
+@@ -67,5 +67,31 @@ void main() {
+ 
+       expect(find.byIcon(Icons.error_outline_rounded), findsOneWidget);
+     });
++
++    testWidgets(
++      'shows errorMessage even outside debug builds when alwaysShowMessage is true',
++      (WidgetTester tester) async {
++        // Regression test for the offline-playback authorization wiring:
++        // OfflinePlaybackDeniedException.userMessage is written to be safe
++        // for end users, so OfflinePlayerWrapper passes
++        // alwaysShowMessage: true for it — this should render regardless
++        // of kDebugMode, unlike the raw-exception-text case above.
++        await tester.pumpWidget(
++          buildTestableWidget(
++            OfflinePlayerErrorView(
++              aspectRatio: 16 / 9,
++              errorMessage: 'This offline download has expired.',
++              alwaysShowMessage: true,
++              onRetry: () {},
++            ),
++          ),
++        );
++
++        expect(
++          find.text('This offline download has expired.'),
++          findsOneWidget,
++        );
++      },
++    );
+   });
+ }
+-- 
+2.43.0
+

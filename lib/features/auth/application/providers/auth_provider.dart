@@ -15,6 +15,7 @@ import '../../../../core/logging/logging_providers.dart';
 import '../../../../core/network/request_cancellation_manager.dart';
 import '../../../../core/services/device_service.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../shared/cross_feature/downloads_shared.dart';
 import '../../data/datasources/auth_remote_ds.dart';
 import '../../domain/entities/app_user.dart';
 import '../../domain/entities/auth_state.dart';
@@ -277,6 +278,23 @@ class Auth extends _$Auth {
         }
 
         _safeSetState(AuthAuthenticated(user: appUser, access: access));
+
+        // Offline downloads account isolation (P6.20): purge any local
+        // download files/keys left behind by a *different* account that
+        // was previously signed into this device, so this login can never
+        // inherit or see that account's offline content. Best-effort,
+        // fire-and-forget — must never block or fail login. (Playback of
+        // another account's downloads is already independently denied by
+        // OfflinePolicyEngine even if this purge is delayed or fails.)
+        unawaited(
+          OfflineAccountGuard(
+            localDataSource: ref.read(downloadLocalDataSourceProvider),
+            encryptionService: ref.read(encryptionServiceProvider),
+          ).purgeDownloadsForOtherAccounts(appUser.id).catchError((e) {
+            debugPrint('[Auth] Offline downloads purge failed: $e');
+            return 0;
+          }),
+        );
 
         // Track activity and session in the background (skip bindDevice — already done above)
         await ref

@@ -9,7 +9,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/network/supabase_client.dart';
 import '../core/security/security_service.dart';
 import '../core/services/cleanup_scheduler.dart';
+import '../core/services/storage_service.dart';
 import '../core/utils/device_info_helper.dart';
+import '../features/downloads/application/services/offline_crash_recovery.dart';
+import '../features/downloads/data/datasources/download_local_ds.dart';
 import '../features/downloads/data/services/download_manager.dart';
 import '../features/notifications/data/services/fcm_service.dart';
 
@@ -84,6 +87,22 @@ class AppInitializer {
       unawaited(
         FileDownloader().start().catchError((Object e) {
           debugPrint('⚠️ FileDownloader start failed: $e');
+        }),
+      );
+
+      // 7. Offline downloads crash recovery (P6.31) — reclassify any
+      // download left in `pending`/`downloading` status by a previous
+      // process that died mid-download, so it shows as an actionable
+      // "failed" tile instead of a permanently stuck progress bar.
+      // Constructed directly (not via Riverpod) because no ProviderScope
+      // exists yet at this point in startup — same constraint
+      // CleanupScheduler's isolate callback already has.
+      unawaited(
+        OfflineCrashRecovery(
+          localDataSource: DownloadLocalDataSource(StorageService()),
+        ).reconcileInterruptedDownloads().catchError((Object e) {
+          debugPrint('⚠️ Offline crash-recovery reconciliation failed: $e');
+          return 0;
         }),
       );
 

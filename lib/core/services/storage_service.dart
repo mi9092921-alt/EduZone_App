@@ -16,7 +16,7 @@ import 'package:sqflite/sqflite.dart';
 /// - File sizes and checksums
 class StorageService {
   static const _databaseName = 'eduzone_downloads.db';
-  static const _databaseVersion = 6;
+  static const _databaseVersion = 7;
 
   static const _tableDownloadedLessons = 'downloaded_lessons';
   static const _tableBookmarks = 'bookmarks';
@@ -78,7 +78,9 @@ class StorageService {
         checksum TEXT,
         last_accessed_at INTEGER,
         source_url TEXT,
-        link_validated_at INTEGER
+        link_validated_at INTEGER,
+        user_id TEXT,
+        device_id TEXT
       )
     ''');
 
@@ -94,6 +96,9 @@ class StorageService {
     ''');
     await db.execute('''
       CREATE INDEX idx_downloads_expires ON $_tableDownloadedLessons(expires_at)
+    ''');
+    await db.execute('''
+      CREATE INDEX idx_downloads_user ON $_tableDownloadedLessons(user_id)
     ''');
 
     // Bookmarks table — device-local, scoped per user
@@ -164,6 +169,35 @@ class StorageService {
       ''');
     }
 
+    if (oldVersion < 7) {
+      // Offline/download security hardening (see
+      // EduZone_Offline_Download_Security_Trusted_Playback_Architecture.md
+      // P6.19/P6.20): bind each download to the account and device that
+      // created it, so a different account logging in on this device can
+      // never see or play back another account's offline content, and a
+      // download copied to a different device can't silently play there
+      // either.
+      //
+      // Migration policy for rows that already exist at this point (created
+      // before this column existed): they are left with user_id/device_id
+      // = NULL rather than retroactively invalidated. `OfflinePolicyEngine`
+      // adopts each one to the current account/device the first time it is
+      // played after this upgrade — see offline_policy_engine.dart. This
+      // avoids breaking playback of content a real user already
+      // legitimately downloaded on this same install, while still closing
+      // the gap for every download made from this point on.
+      await db.execute('''
+        ALTER TABLE $_tableDownloadedLessons ADD COLUMN user_id TEXT
+      ''');
+      await db.execute('''
+        ALTER TABLE $_tableDownloadedLessons ADD COLUMN device_id TEXT
+      ''');
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_downloads_user
+          ON $_tableDownloadedLessons(user_id)
+      ''');
+    }
+
     // Preventive data-integrity sweep: any 'completed' row that is missing
     // critical numeric fields would cause a silent TypeError in _mapToEntity
     // (swallowed by the catch block), making it invisible in the downloads
@@ -203,14 +237,48 @@ class StorageService {
   /// so that the UI can render the appropriate state for each download.
   /// The repository layer handles mapping errors gracefully by skipping
   /// corrupt records instead of crashing the entire list.
-  Future<List<Map<String, dynamic>>> getDownloadedLessons() async {
+  ///
+  /// When [ownerUserId] is provided, rows bound to a *different* account
+  /// (`user_id` set and not equal to [ownerUserId]) are excluded — this is
+  /// a privacy/UX measure (P6.20) so a second account on the same device
+  /// never even sees another account's download tiles, on top of (not
+  /// instead of) the playback-time authorization enforced separately by
+  /// `OfflinePolicyEngine`. Legacy rows with `user_id IS NULL` are always
+  /// included; see the v7 migration note above.
+  Future<List<Map<String, dynamic>>> getDownloadedLessons({
+    String? ownerUserId,
+  }) async {
     final db = await database;
-    final rows = await db.query(
-      _tableDownloadedLessons,
-      orderBy: 'downloaded_at DESC',
-    );
+    final rows = ownerUserId == null
+        ? await db.query(
+            _tableDownloadedLessons,
+            orderBy: 'downloaded_at DESC',
+          )
+        : await db.query(
+            _tableDownloadedLessons,
+            where: 'user_id IS NULL OR user_id = ?',
+            whereArgs: [ownerUserId],
+            orderBy: 'downloaded_at DESC',
+          );
     debugPrint('[StorageService] getDownloadedLessons: count=${rows.length}');
     return rows;
+  }
+
+  /// Returns every download row bound (`user_id` set) to an account other
+  /// than [currentUserId]. Used by `OfflineAccountGuard` right after login
+  /// to purge any offline content left behind by a previous account on this
+  /// device (P6.20). Rows with `user_id IS NULL` (legacy/unbound) are never
+  /// returned here — those are adopted lazily by `OfflinePolicyEngine`
+  /// instead of being treated as "someone else's".
+  Future<List<Map<String, dynamic>>> getDownloadsOwnedByOthers(
+    String currentUserId,
+  ) async {
+    final db = await database;
+    return await db.query(
+      _tableDownloadedLessons,
+      where: 'user_id IS NOT NULL AND user_id != ?',
+      whereArgs: [currentUserId],
+    );
   }
 
   /// Gets a download by lesson ID.

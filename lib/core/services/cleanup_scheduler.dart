@@ -81,14 +81,22 @@ class CleanupScheduler {
           final encryptedPath = row['encrypted_path'] as String?;
           final audioPath = row['audio_path'] as String?;
 
-          // Delete every file variant (the final encrypted file and any
-          // in-progress .tmp counterpart).
+          // Delete every file variant (the final encrypted file, any
+          // in-progress .tmp counterpart, and the chunked-container .idx
+          // sidecar written by loadOrBuildIndex — see encryption_service.dart.
+          // The .idx file was previously left behind here on every expiry
+          // cleanup (P6.29/P6.30 orphan detection gap).
           for (final path in [
             encryptedPath,
-            if (encryptedPath != null && encryptedPath.isNotEmpty)
+            if (encryptedPath != null && encryptedPath.isNotEmpty) ...[
               '$encryptedPath.tmp',
+              '$encryptedPath.idx',
+            ],
             audioPath,
-            if (audioPath != null && audioPath.isNotEmpty) '$audioPath.tmp',
+            if (audioPath != null && audioPath.isNotEmpty) ...[
+              '$audioPath.tmp',
+              '$audioPath.idx',
+            ],
           ]) {
             if (path == null || path.isEmpty) continue;
             try {
