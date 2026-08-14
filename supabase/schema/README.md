@@ -1,15 +1,15 @@
 # Modular Schema Layout (`supabase/schema`)
 
-This directory holds a **modular, read-only decomposition** of the canonical database schema. It is derived from the production sources of truth and is intended for navigation, review, and Supabase CLI alignment—not as a second schema definition.
+This directory is the **canonical database schema** for the development-stage database. All active SQL that defines or secures the database must live here.
 
-## Sources of Truth
+## Canonical source
 
 | Role | Path |
 |------|------|
-| Canonical schema (DDL + logic) | [`../../Eduzone_schema_v13.sql`](../../Eduzone_schema_v13.sql) |
-| QA seed data | [`../../Eduzone_seed_qa.sql`](../../Eduzone_seed_qa.sql) |
+| Canonical schema (DDL + logic) | `supabase/schema/*.sql` |
+| Validation | `supabase/schema/VALIDATION.sql` |
 
-**Rule:** Any structural change belongs in the canonical files first. Regenerate this folder from those files; do not treat modular files as authoritative for edits.
+**Rule:** Edit the existing canonical files in this directory directly. Do not create migration files, external SQL copies, generated patches, or a second active schema source.
 
 ## File Layout and Ownership
 
@@ -71,4 +71,4 @@ The following improvements were implemented to reach **Production Readiness**:
 
 - Project overview: [`../../CLAUDE.md`](../../CLAUDE.md)
 - Database refactor notes: [`../../project_documents/database_refactor_report_v13.md`](../../project_documents/database_refactor_report_v13.md)
-- Historical migrations (may lag canonical until squashed): [`../migrations/`](../migrations/)
+- Historical SQL that is no longer active belongs only under `supabase/_archived_patches/`.

@@ -222,14 +222,14 @@ class Auth extends _$Auth {
         if (hasLocalSession) {
           debugPrint(
             '[Auth] Session verification deferred due to transient error '
-            '(local session retained, will retry): ${e.runtimeType}: $e',
+            '(local session retained, will retry): ${e.runtimeType}',
           );
           _scheduleDegradedRetry();
           return;
         }
 
         debugPrint(
-          '[Auth] Session initialization deferred due to transient error: ${e.runtimeType}: $e',
+          '[Auth] Session initialization deferred due to transient error: ${e.runtimeType}',
         );
         _safeSetStateIfStillPending(
           AuthUnauthenticated(error: AuthErrorPolicy.mapExceptionToKey(e)),
@@ -243,7 +243,7 @@ class Auth extends _$Auth {
       // so unlike a wrong password, this genuinely indicates something
       // worth investigating).
       GlobalErrorHandler.logError(e, st);
-      debugPrint('[Auth] Session initialization failed with ${e.runtimeType}: $e');
+      debugPrint('[Auth] Session initialization failed with ${e.runtimeType}');
       _safeSetStateIfStillPending(const AuthUnauthenticated());
     }
   }
@@ -410,7 +410,7 @@ class Auth extends _$Auth {
           // the restricted screen either way, but a real Supabase session
           // may remain locally active until it naturally expires.
           GlobalErrorHandler.logError(e, st);
-          debugPrint('[Auth] Restricted login sign-out failed: $e');
+          debugPrint('[Auth] Restricted login sign-out failed: ${e.runtimeType}');
         }
         _safeSetState(AuthRestricted(status: access.status, access: access));
       }
@@ -421,9 +421,9 @@ class Auth extends _$Auth {
       // logging clarity here; the outcome is always a mapped error on the
       // login screen.
       if (AuthErrorPolicy.isTransient(e)) {
-        debugPrint('[Auth] Login failed due to transient error: ${e.runtimeType}: $e');
+        debugPrint('[Auth] Login failed due to transient error: ${e.runtimeType}');
       } else {
-        debugPrint('[Auth] Login failed with ${e.runtimeType}: $e');
+        debugPrint('[Auth] Login failed with ${e.runtimeType}');
       }
 
       // Sign out from Supabase if we got an exception after successfully logging in.
@@ -451,7 +451,7 @@ class Auth extends _$Auth {
           .emit(
             ErrorOccurredEvent(
               timestamp: DateTime.now(),
-              errorMessage: 'Login failed: $e',
+              errorMessage: 'Login failed: ${AuthErrorPolicy.mapExceptionToKey(e)}',
             ),
           );
 
@@ -502,12 +502,12 @@ class Auth extends _$Auth {
       // to that's better than what's already showing, so we log and let
       // the user retry explicitly.
       if (AuthErrorPolicy.isTransient(e)) {
-        debugPrint('[Auth] Verify access deferred due to transient error: ${e.runtimeType}: $e');
+        debugPrint('[Auth] Verify access deferred due to transient error: ${e.runtimeType}');
       } else {
         // Background/system-triggered call, not direct user input — an
         // unexpected exception type here is worth investigating.
         GlobalErrorHandler.logError(e, st);
-        debugPrint('[Auth] Verify access failed with ${e.runtimeType}: $e');
+        debugPrint('[Auth] Verify access failed with ${e.runtimeType}');
       }
     }
   }
@@ -525,7 +525,7 @@ class Auth extends _$Auth {
       // Called from the profile screen after an update, not user input —
       // an unexpected failure here is worth investigating.
       GlobalErrorHandler.logError(e, st);
-      debugPrint('[Auth] Refresh user error: $e');
+      debugPrint('[Auth] Refresh user error: ${e.runtimeType}');
     }
   }
 
@@ -626,7 +626,7 @@ class Auth extends _$Auth {
             ),
           );
     } catch (e) {
-      debugPrint('[Logout] Server cleanup error (non-critical): $e');
+      debugPrint('[Logout] Server cleanup error (non-critical): ${e.runtimeType}');
     }
 
     // ── Phase 3: Clear local session securely ───────────────────────────────

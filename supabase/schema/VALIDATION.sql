@@ -49,23 +49,20 @@ DO $$
 DECLARE
   v_tables_without_rls text[];
 BEGIN
-  SELECT ARRAY_AGG(DISTINCT t.tablename)
+  SELECT ARRAY_AGG(DISTINCT c.relname)
   INTO v_tables_without_rls
-  FROM pg_tables t
-  WHERE t.schemaname = 'public'
-    AND t.tablename NOT LIKE 'pg_%'
-    AND NOT EXISTS (
-      SELECT 1 FROM pg_policies 
-      WHERE tablename = t.tablename 
-        AND schemaname = 'public'
-    );
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public'
+    AND c.relkind = 'r'
+    AND NOT c.relrowsecurity;
   
   INSERT INTO validation_results VALUES (
     'RLS Enabled on All Mutable Tables',
     CASE WHEN v_tables_without_rls IS NULL OR array_length(v_tables_without_rls, 1) = 0 
       THEN 'PASS' ELSE 'WARN' END,
-    COALESCE('Tables without policies: ' || array_to_string(v_tables_without_rls, ', '), 
-             'All mutable tables have RLS policies')
+    COALESCE('Tables with RLS disabled: ' || array_to_string(v_tables_without_rls, ', '),
+             'RLS is enabled on all public tables')
   );
 END $$;
 
@@ -374,9 +371,9 @@ BEGIN
   RAISE NOTICE '';
   RAISE NOTICE '========== VALIDATION SUMMARY ==========';
   RAISE NOTICE 'Total Checks: %', v_total;
-  RAISE NOTICE 'Passed:       % ✓', v_pass;
-  RAISE NOTICE 'Failed:       % ✗', v_fail;
-  RAISE NOTICE 'Warnings:     % ⚠', v_warn;
+  RAISE NOTICE 'Passed:       % Γ£ô', v_pass;
+  RAISE NOTICE 'Failed:       % Γ£ù', v_fail;
+  RAISE NOTICE 'Warnings:     % ΓÜá', v_warn;
   RAISE NOTICE '========================================';
   
   IF v_fail > 0 THEN

@@ -34,8 +34,8 @@ supabase/
 │   ├── 00_system_seed_helper.sql  ⭐ CRITICAL: System tenant + roles + perms
 │   └── (other seed files)
 │
-├── migrations/                 🔄 Incremental patches 
-│   └── ...
+├── migrations/                 🚫 Not used for the development-stage canonical database
+│   └── README.md               Documentation only; no active SQL
 │
 ├── _archived_patches/          📦 Old migration versions
 │
@@ -79,9 +79,9 @@ supabase/
 4. Start: `cd apps/admin && pnpm dev`
 
 #### Make schema changes
-1. Check: Is it a table/column? → Create migration
-2. Check: Is it a function/policy? → Use `supabase db execute`
-3. Check: Is it seed data? → Add to `Eduzone_seed_qa.sql`
+1. Edit the existing canonical file under `supabase/schema/`.
+2. Do not create a migration or another active SQL source.
+3. Move obsolete external SQL to `supabase/_archived_patches/` instead of deleting it.
 
 #### Validate schema health
 1. Run: `supabase db execute < supabase/schema/VALIDATION.sql`
@@ -93,10 +93,8 @@ supabase/
 2. Edit: `Eduzone_seed_qa.sql` (QA data)
 3. Reapply: `supabase db reset` (local only)
 
-#### Create a database migration
-1. Run: `supabase migration new <descriptive_name>`
-2. Edit: `supabase/migrations/{timestamp}_{name}.sql`
-3. Deploy: `supabase db push`
+### Database change rule
+The database is in development. Apply structural/security changes directly to the existing files under `supabase/schema/`. `supabase/migrations/` must not contain active SQL.
 
 ---
 
@@ -211,14 +209,14 @@ Monitor via Supabase Dashboard
 ## 📋 File Checklist for Common Tasks
 
 ### ✅ Before Merging Code
-- [ ] Schema changes have migrations (if needed)
+- [ ] Schema changes are applied to the existing canonical file under `supabase/schema/`
 - [ ] No hard-coded connection strings
 - [ ] VALIDATION.sql passes
 - [ ] No direct seed data changes (use migrations instead)
 
 ### ✅ Before Deploying to Staging
 - [ ] SETUP_GUIDE.md reviewed
-- [ ] Schema migrations tested locally
+- [ ] Canonical `supabase/schema/` files tested locally
 - [ ] VALIDATION.sql passes
 - [ ] Seed data verified
 

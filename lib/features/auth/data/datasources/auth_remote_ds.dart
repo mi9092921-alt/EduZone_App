@@ -53,14 +53,13 @@ class AuthRemoteDataSource {
       return UserAccess(
         status: status,
         role: role,
-        message: data['message'] as String?,
         until: data['until'] != null ? DateTime.tryParse(data['until']) : null,
         endsAt: data['ends_at'] != null
             ? DateTime.tryParse(data['ends_at'])
             : null,
       );
-    } on PostgrestException catch (e) {
-      throw ServerException(e.message);
+    } on PostgrestException {
+      throw const ServerException('Authentication backend request failed');
     }
   }
 
@@ -141,7 +140,7 @@ class AuthRemoteDataSource {
             .eq('device_id', deviceFingerprint);
       }
     } catch (e) {
-      debugPrint('[Auth] Sync activity error: $e');
+      debugPrint('[Auth] Sync activity error: ${e.runtimeType}');
     }
   }
 
@@ -179,7 +178,7 @@ class AuthRemoteDataSource {
         'updated_at': DateTime.now().toIso8601String(),
       });
     } catch (e) {
-      debugPrint('[Auth] Record session error: $e');
+      debugPrint('[Auth] Record session error: ${e.runtimeType}');
     }
   }
 
@@ -238,11 +237,11 @@ class AuthRemoteDataSource {
           .maybeSingle();
 
       return result != null;
-    } on PostgrestException catch (e) {
+    } on PostgrestException {
       // A database/RLS/network failure is not proof that the device is
       // missing. Preserve the failure so startup cannot silently turn a
       // verification outage into an automatic device re-bind/logout path.
-      throw ServerException(e.message);
+      throw const ServerException('Authentication backend request failed');
     }
   }
 
@@ -272,8 +271,8 @@ class AuthRemoteDataSource {
 
       if (userData == null) return null;
       return _mapUserData(userData);
-    } on PostgrestException catch (e) {
-      throw ServerException(e.message);
+    } on PostgrestException {
+      throw const ServerException('Authentication backend request failed');
     }
   }
 
@@ -337,7 +336,7 @@ class AuthRemoteDataSource {
   AppException _mapAuthException(AuthException e) {
     // ignore: avoid_print
     debugPrint(
-      'DEBUG: Supabase Auth Error: ${e.message} (Code: ${e.statusCode})',
+      'DEBUG: Supabase Auth Error: ${e.runtimeType} (Code: ${e.statusCode})',
     );
 
     // AuthRetryableFetchException is thrown by the gotrue client both for:
@@ -348,7 +347,7 @@ class AuthRemoteDataSource {
     if (e is AuthRetryableFetchException) {
       return e.statusCode == null
           ? const NoInternetException()
-          : ServerException(e.message);
+          : const ServerException('Authentication service unavailable');
     }
 
     final msg = e.message.toLowerCase();
@@ -361,7 +360,7 @@ class AuthRemoteDataSource {
     if (msg.contains('api key') ||
         msg.contains('invalid jwt') ||
         msg.contains('signature')) {
-      return ServerException('Configuration error: ${e.message}'); // check-ignore
+      return const ServerException('Authentication service configuration error');
     }
 
     if (msg.contains('invalid') || msg.contains('credentials')) {
@@ -370,7 +369,7 @@ class AuthRemoteDataSource {
     if (msg.contains('rate') || msg.contains('limit')) {
       return const RateLimitedException();
     }
-    return ServerException(e.message);
+    return const ServerException('Authentication service unavailable');
   }
 
   AppException _mapRpcException(PostgrestException e) {
@@ -384,6 +383,6 @@ class AuthRemoteDataSource {
     if (msg.contains('RATE_LIMIT')) {
       return const RateLimitedException();
     }
-    return ServerException(e.message);
+    return const ServerException('Authentication backend request failed');
   }
 }

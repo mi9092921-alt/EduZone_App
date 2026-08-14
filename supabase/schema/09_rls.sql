@@ -1470,7 +1470,6 @@ CREATE POLICY user_roles_select_merged ON public.user_roles
     public.validate_user_session()
     AND (
       user_id = public.get_auth_user_id()
-      OR public.tenant_matches_jwt(tenant_id)
       OR public.is_admin_with_session_validation()
     )
   );
