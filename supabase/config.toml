@@ -67,15 +67,14 @@ schema_paths = [
   "./schema/09_rls.sql",
   "./schema/10_permissions.sql",
   "./schema/11_seed_reference.sql",
-  "./schema/12_auth_release_hardening.sql",
 ]
 
 [db.seed]
 # If enabled, seeds the database after migrations during a db reset.
-enabled = true
+enabled = false
 # Specifies an ordered list of seed files to load during db reset.
 # Supports glob patterns relative to supabase directory: "./seeds/*.sql"
-sql_paths = ["../Eduzone_seed_qa.sql"]
+sql_paths = []
 
 [db.network_restrictions]
 # Enable management of network restrictions.

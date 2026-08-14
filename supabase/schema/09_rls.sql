@@ -2139,3 +2139,43 @@ CREATE POLICY download_logs_insert_own ON public.download_logs
   FOR INSERT TO authenticated
   WITH CHECK (user_id = public.get_auth_user_id());
 
+-- =============================================================================
+-- AUTH SESSION BASELINE (CANONICAL)
+-- Existing resource-specific RLS policies remain authoritative for ownership,
+-- tenancy, and role rules. This restrictive policy adds one invariant:
+-- authenticated requests must hold a currently valid session.
+-- =============================================================================
+DO $$
+DECLARE
+  r record;
+  v_policy_name text;
+BEGIN
+  FOR r IN
+    SELECT n.nspname AS schema_name, c.relname AS table_name
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public'
+       AND c.relkind IN ('r', 'p')
+       AND c.relrowsecurity = true
+  LOOP
+    v_policy_name := 'auth_session_required_' ||
+      substr(md5(r.schema_name || '.' || r.table_name), 1, 16);
+
+    EXECUTE format(
+      'DROP POLICY IF EXISTS %I ON %I.%I',
+      v_policy_name,
+      r.schema_name,
+      r.table_name
+    );
+
+    EXECUTE format(
+      'CREATE POLICY %I ON %I.%I AS RESTRICTIVE FOR ALL TO authenticated USING (public.validate_user_session()) WITH CHECK (public.validate_user_session())',
+      v_policy_name,
+      r.schema_name,
+      r.table_name
+    );
+  END LOOP;
+END
+$$;
+
+
