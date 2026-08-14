@@ -4,9 +4,11 @@ Status: statically inspected against repository state as of commit
 `960f53043ff9f19a574757a3c3ae23b8eb3c8696` — no Flutter/Dart toolchain or
 device/emulator available in the environment this was written in, so
 nothing here reflects a runtime-verified test, only direct source
-inspection (grep/read, not execution). See `ARCHITECTURE.md` for the
-layering/dependency-direction contract; this file is security posture
-specifically, not architecture.
+inspection (grep/read, not execution), **except** `flutter analyze` /
+`flutter test`, which the project's maintainer has since run directly —
+see "What's verified — by the developer, not by this document's author"
+below. See `ARCHITECTURE.md` for the layering/dependency-direction
+contract; this file is security posture specifically, not architecture.
 
 This file documents the security controls that actually exist in this
 repository today, and — just as importantly — what they do *not* provide.
@@ -189,6 +191,27 @@ sufficiently motivated attacker with root/jailbreak access extracting keys
 from a compromised device at the moment of use. See the offline-security
 architecture doc for the full threat model this is explicitly scoped
 against (and not against).
+
+## What's verified — by the developer, not by this document's author
+
+This document was originally written entirely by static source inspection
+(no Flutter/Dart toolchain was available to the session that wrote it).
+Two items below have since been closed by the project's own maintainer,
+running the real toolchain directly — recorded here as developer-reported
+results, not independently re-verified by re-running them:
+
+- `flutter analyze`: **0 issues** (developer-reported).
+- `flutter test`: **845 tests passed**, 0 failures (developer-reported).
+
+This closes the largest verification gap that existed across this whole
+audit — up to this point, every fix in this file had only ever been
+checked against the project's own Python static guards (`tool/check_*.py`,
+all passing), never against the actual Dart analyzer or test suite. Static
+guards catch pattern-level issues (architecture layering, provider
+lifecycle, a11y semantics, RTL, memory-hygiene, auth-security patterns);
+they cannot catch a genuine compile error, a broken test assertion, or
+the kind of runtime behavior only `flutter test`/`flutter analyze`
+actually exercise. Both gaps are now closed.
 
 ## What's explicitly NOT verified here
 

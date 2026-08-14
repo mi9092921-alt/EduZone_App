@@ -994,6 +994,97 @@ when(() => mockSupabase.rpc('check_user_access')).thenAnswer(
       );
     });
   });
+
+  // ─── _initializeSession(): transient getCurrentUser() failure ────────────
+  //
+  // Regression test for auth_remote_ds.dart's getCurrentUser(): it used to
+  // swallow EVERY exception (including transient network/server failures)
+  // into a bare `null`, which _initializeSession() then treated exactly
+  // like "no such user" — forcing AuthUnauthenticated(error: null) with no
+  // retry/error signal, and completely bypassing AuthErrorPolicy.isTransient()
+  // for this code path. A valid session hitting a momentary network blip
+  // during cold start was silently dropped to a bare, unexplained login
+  // screen instead of being classified transient.
+  //
+  // getCurrentUser() now propagates (mapped to ServerException for
+  // PostgrestException, matching checkUserAccess()'s existing convention
+  // in the same file) so AuthErrorPolicy actually gets a chance to run.
+  // This test pins the resulting OBSERVABLE contract at the notifier level
+  // — AuthUnauthenticated.error must be non-null for a transiently-classified
+  // failure — rather than mocking Supabase's raw query-builder chain, which
+  // has no working precedent anywhere in this test suite.
+  group('_initializeSession(): transient getCurrentUser() failure', () {
+    test(
+        'attaches an error key instead of silently landing on a bare '
+        'AuthUnauthenticated when getCurrentUser() fails with a transient '
+        'error after device/access checks already succeeded', () async {
+      final mockSession = _MockSession();
+      final mockUser = _MockSupabaseUser();
+      when(() => mockUser.id).thenReturn('user-1');
+      when(() => mockSession.user).thenReturn(mockUser);
+      when(() => mockAuth.currentSession).thenReturn(mockSession);
+
+      when(() => mockDataSource.validateDeviceExists(any(), any()))
+          .thenAnswer((_) async => true);
+      when(() => mockDataSource.checkUserAccess())
+          .thenAnswer((_) async => _tActiveAccess);
+      // Simulates the network/server failure that getCurrentUser() used to
+      // swallow into `null` — see auth_remote_ds.dart getCurrentUser().
+      when(() => mockDataSource.getCurrentUser())
+          .thenThrow(const ServerException('Request timeout'));
+
+      final mockUpdateService = _MockUpdateService();
+      when(() => mockUpdateService.checkForUpdate(any())).thenAnswer(
+        (_) async => const UpdateInfo.upToDate(latestVersion: '1.0.0'),
+      );
+
+      final container2 = ProviderContainer(
+        overrides: [
+          authRemoteDataSourceProvider.overrideWithValue(mockDataSource),
+          supabaseClientProvider.overrideWithValue(mockSupabase),
+          deviceServiceProvider.overrideWithValue(mockDevice),
+          eventBusProvider.overrideWithValue(mockEventBus),
+          updateServiceProvider.overrideWithValue(mockUpdateService),
+        ],
+      );
+      addTearDown(container2.dispose);
+
+      container2.read(authProvider);
+      await _settleInitialization();
+
+      // NOTE: as of the AuthDegraded state (see auth_state.dart /
+      // _scheduleDegradedRetry() in auth_provider.dart), a transient
+      // failure with a still-present local session no longer lands on
+      // AuthUnauthenticated at all -- it correctly lands on AuthDegraded
+      // with a capped, auto-retrying backoff, per
+      // EduZone_Authentication_Session_Security_Architecture.md Phase 18
+      // ("transient network error must never directly cause logout").
+      // This is a strictly better outcome than what this test originally
+      // asserted (AuthUnauthenticated with a non-null error) -- the
+      // original bug (getCurrentUser() swallowing the exception into a
+      // silent `null`, bypassing AuthErrorPolicy entirely) is still what
+      // this test guards against; only the now-current expected state
+      // changed.
+      final state = container2.read(authProvider);
+      expect(state, isA<AuthDegraded>());
+      final degraded = state as AuthDegraded;
+      expect(
+        degraded.error,
+        isNotNull,
+        reason: 'a transient getCurrentUser() failure must be classified '
+            'by AuthErrorPolicy.isTransient() and reach _scheduleDegradedRetry() '
+            'with a non-null error key -- a null error here would mean the '
+            'exception was swallowed before reaching the classifier (the '
+            'pre-fix bug in auth_remote_ds.dart getCurrentUser())',
+      );
+      expect(
+        degraded.retryAttempt,
+        greaterThan(0),
+        reason: 'the first entry into AuthDegraded must schedule (and '
+            'count) a retry attempt, not just describe an error',
+      );
+    });
+  });
 }
 
 // ─── Private test doubles ─────────────────────────────────────────────────────
