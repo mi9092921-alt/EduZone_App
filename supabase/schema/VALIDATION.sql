@@ -267,6 +267,92 @@ BEGIN
   );
 END $$;
 
+-- Check 10: Tenant authorization is DB-authoritative.
+DO $$
+DECLARE
+  v_tenant_fn text;
+  v_assert_fn text;
+  v_match_fn text;
+  v_unsafe boolean;
+BEGIN
+  SELECT pg_get_functiondef(p.oid)
+    INTO v_tenant_fn
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname = 'get_current_tenant_id'
+     AND pg_get_function_identity_arguments(p.oid) = ''
+   LIMIT 1;
+
+  SELECT pg_get_functiondef(p.oid)
+    INTO v_assert_fn
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname = 'assert_tenant'
+     AND pg_get_function_identity_arguments(p.oid) = ''
+   LIMIT 1;
+
+  SELECT pg_get_functiondef(p.oid)
+    INTO v_match_fn
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname = 'tenant_matches_jwt'
+     AND pg_get_function_identity_arguments(p.oid) = 'p_tenant_id uuid'
+   LIMIT 1;
+
+  v_unsafe := coalesce(v_tenant_fn, '') ILIKE '%auth.jwt()%tenant_id%'
+           OR coalesce(v_assert_fn, '') ILIKE '%auth.jwt()%tenant_id%'
+           OR coalesce(v_match_fn, '') ILIKE '%auth.jwt()%tenant_id%'
+           OR coalesce(v_match_fn, '') ILIKE '%app_metadata%tenant_id%';
+
+  INSERT INTO validation_results VALUES (
+    'Tenant Authorization Is DB-Authoritative',
+    CASE
+      WHEN v_tenant_fn IS NOT NULL
+       AND v_assert_fn IS NOT NULL
+       AND v_match_fn IS NOT NULL
+       AND NOT v_unsafe
+      THEN 'PASS' ELSE 'FAIL'
+    END,
+    CASE WHEN v_unsafe
+      THEN 'CRITICAL: tenant authorization still depends on JWT tenant claims'
+      ELSE 'Tenant context helpers resolve authorization from database state'
+    END
+  );
+END $$;
+
+-- Check 11: Every public RLS-protected table has the canonical session baseline.
+DO $$
+DECLARE
+  v_missing text[];
+BEGIN
+  SELECT array_agg(c.relname ORDER BY c.relname)
+    INTO v_missing
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public'
+     AND c.relkind IN ('r', 'p')
+     AND c.relrowsecurity
+     AND NOT EXISTS (
+       SELECT 1
+         FROM pg_policies p
+        WHERE p.schemaname = 'public'
+          AND p.tablename = c.relname
+          AND p.policyname LIKE 'auth_session_required_%'
+     );
+
+  INSERT INTO validation_results VALUES (
+    'Canonical Auth Session Baseline Coverage',
+    CASE WHEN v_missing IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'Missing baseline policies: ' || array_to_string(v_missing, ', '),
+      'Every public RLS-protected table has a restrictive session-validity policy'
+    )
+  );
+END $$;
+
 -- Display Results
 SELECT * FROM validation_results ORDER BY check_name;
 

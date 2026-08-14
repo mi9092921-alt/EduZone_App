@@ -292,18 +292,38 @@ AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION public.get_current_tenant_id()
-RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp
+RETURNS uuid
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
-  SELECT COALESCE(
-    -- 1. JWT custom claim (fastest Ã¢â‚¬â€ no DB query)
-    NULLIF((auth.jwt() ->> 'tenant_id'), '')::uuid,
-    -- 2. JWT app_metadata (Supabase standard location)
-    NULLIF((auth.jwt() -> 'app_metadata' ->> 'tenant_id'), '')::uuid,
-    -- 3. Session variable (direct DB connections / tests)
-    NULLIF(current_setting('app.current_tenant', true), '')::uuid,
-    -- 4. Fail-safe: query users table if JWT hook is not running
-    public._get_tenant_fallback()
-  );
+DECLARE
+  v_uid uuid := auth.uid();
+  v_tenant_id uuid;
+BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.validate_user_session() THEN
+    RETURN NULL;
+  END IF;
+
+  IF v_uid IS NOT NULL THEN
+    SELECT u.tenant_id
+      INTO v_tenant_id
+      FROM public.users u
+     WHERE u.id = v_uid
+       AND u.deleted_at IS NULL
+       AND u.account_status = 'active'
+     LIMIT 1;
+
+    RETURN v_tenant_id;
+  END IF;
+
+  -- Trusted server-side workers may explicitly provide a tenant context.
+  IF auth.role() = 'service_role' THEN
+    RETURN NULLIF(current_setting('app.current_tenant', true), '')::uuid;
+  END IF;
+
+  RETURN NULL;
+END;
 $$;
 
 -- CRIT-02: Strict tenant and session validation with fallback
@@ -316,36 +336,34 @@ DECLARE
   v_tenant uuid;
   v_uid    uuid := auth.uid();
 BEGIN
-  -- 1. Try JWT first (fastest path)
-  v_tenant := NULLIF((auth.jwt() ->> 'tenant_id'), '')::uuid;
-
-  -- 2. Fail-safe: query users table if JWT hook is not running
-  IF v_tenant IS NULL AND v_uid IS NOT NULL THEN
-    SELECT tenant_id INTO v_tenant
-    FROM public.users
-    WHERE id = v_uid AND deleted_at IS NULL
-    LIMIT 1;
-  END IF;
+  v_tenant := public.get_current_tenant_id();
 
   IF v_tenant IS NULL THEN
     RAISE EXCEPTION 'TENANT_CONTEXT_REQUIRED'
       USING
-        HINT   = 'Enable the custom_access_token hook in Supabase Dashboard Ã¢â€ â€™ Auth Ã¢â€ â€™ Hooks.',
-        DETAIL = 'auth.jwt() ->> ''tenant_id'' returned NULL. The JWT hook is not running or has no EXECUTE grant for supabase_auth_admin.';
+        HINT   = 'The authenticated user must resolve to an active database tenant.',
+        DETAIL = 'The tenant context is derived from public.users, never from an untrusted JWT tenant claim.';
   END IF;
 
-  -- SEC-02: Verify user belongs to this tenant (when uid is available)
   IF v_uid IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM public.users
-    WHERE id = v_uid AND tenant_id = v_tenant
+    SELECT 1
+      FROM public.users u
+     WHERE u.id = v_uid
+       AND u.tenant_id = v_tenant
+       AND u.deleted_at IS NULL
+       AND u.account_status = 'active'
   ) THEN
     RAISE EXCEPTION 'CROSS_TENANT_ACCESS_DENIED';
   END IF;
 
-  -- SEC-01: Validate tenant existence and status for writes
-  IF NOT EXISTS (SELECT 1 FROM public.tenants WHERE id = v_tenant AND status = 'active') THEN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.tenants
+    WHERE id = v_tenant
+      AND status = 'active'
+      AND deleted_at IS NULL
+  ) THEN
     RAISE EXCEPTION 'INVALID_TENANT_CONTEXT'
-      USING HINT = 'The tenant ID in your JWT is invalid or inactive.';
+      USING HINT = 'The database tenant context is invalid or inactive.';
   END IF;
 
   RETURN v_tenant;
@@ -5335,11 +5353,7 @@ BEGIN
   END IF;
 
   RETURN (
-    (coalesce(
-      auth.jwt()->'app_metadata'->>'tenant_id',
-      '00000000-0000-0000-0000-000000000000'
-    ))::uuid = p_tenant_id
-    OR EXISTS (
+    EXISTS (
       SELECT 1
       FROM public.users u
       WHERE u.id = auth.uid()
@@ -5353,6 +5367,7 @@ BEGIN
       WHERE ur.user_id = auth.uid()
         AND ur.tenant_id = p_tenant_id
         AND ur.is_active = true
+        AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
         AND ur.role_id IN (
           SELECT id FROM public.roles
           WHERE name IN ('admin', 'super_admin', 'tenant_admin')
