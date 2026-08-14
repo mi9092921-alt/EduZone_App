@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../shared/utils/global_error_handler.dart';
 import '../../domain/entities/user_access.dart';
 import '../../domain/enums/account_status.dart';
 
@@ -180,7 +181,12 @@ class CheckUserAccessService {
 
         _onAccessDenied(reason: reason);
       }
-    } catch (e) {
+    } catch (e, st) {
+      // This is the background polling/Realtime security-monitoring loop
+      // (token_version checks), not a user-triggered call — an unexpected
+      // failure here directly affects whether revocation/version-mismatch
+      // detection is actually running.
+      GlobalErrorHandler.logError(e, st);
       debugPrint('[Security] Check error: $e');
     }
   }

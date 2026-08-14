@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/network/request_cancellation_manager.dart';
+import '../../../../shared/utils/global_error_handler.dart';
 import '../models/logout_result.dart';
 
 /// Keys that must be preserved across logout.
@@ -56,7 +57,12 @@ class LogoutOrchestrator {
       await _supabase
           .rpc('logout_current_user')
           .timeout(_remoteTimeout);
-    } catch (e) {
+    } catch (e, st) {
+      // Best-effort by design (local cleanup below still runs either
+      // way), but if the server never hears about this logout, the old
+      // session/token_version isn't revoked server-side either — worth
+      // knowing the frequency of, not just swallowing.
+      GlobalErrorHandler.logError(e, st);
       debugPrint('[LogoutOrchestrator] server_revocation failed: $e');
       failedSteps.add('server_revocation');
     }
@@ -123,7 +129,12 @@ class LogoutOrchestrator {
           .signOut(scope: localScope)
           .timeout(const Duration(seconds: 2));
       debugPrint('[LogoutOrchestrator] Supabase local signOut ✓');
-    } catch (e) {
+    } catch (e, st) {
+      // This is the step that actually clears the local Supabase session
+      // (SDK's own SharedPreferences key) — if it fails, the device can
+      // come back up still "logged in" after a restart despite the user
+      // having explicitly logged out. High value to know about.
+      GlobalErrorHandler.logError(e, st);
       debugPrint('[LogoutOrchestrator] Supabase local signOut failed: $e');
       // Even if this fails, continue wiping everything else.
     }
@@ -142,7 +153,11 @@ class LogoutOrchestrator {
       for (final key in _sensitiveSecureKeys) {
         await _secureStorage.delete(key: key);
       }
-    } catch (e) {
+    } catch (e, st) {
+      // Tokens/session material living in flutter_secure_storage failing
+      // to wipe on logout is a real security-relevant event, not just an
+      // engineering curiosity — worth surfacing, not only printing.
+      GlobalErrorHandler.logError(e, st);
       debugPrint('[LogoutOrchestrator] Secure storage wipe failed: $e');
     }
 
@@ -154,7 +169,8 @@ class LogoutOrchestrator {
           await prefs.remove(key);
         }
       }
-    } catch (e) {
+    } catch (e, st) {
+      GlobalErrorHandler.logError(e, st);
       debugPrint('[LogoutOrchestrator] SharedPreferences wipe failed: $e');
     }
   }

@@ -16,6 +16,7 @@ import '../../../../core/network/request_cancellation_manager.dart';
 import '../../../../core/services/device_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../shared/cross_feature/downloads_shared.dart';
+import '../../../../shared/utils/global_error_handler.dart';
 import '../../data/datasources/auth_remote_ds.dart';
 import '../../domain/entities/app_user.dart';
 import '../../domain/entities/auth_state.dart';
@@ -164,8 +165,12 @@ class Auth extends _$Auth {
           );
           // Re-bind succeeded — device is now registered; continue normally.
           debugPrint('[Auth] Device re-bound successfully. Resuming session.');
-        } catch (e) {
+        } catch (e, st) {
           // Re-bind failed (e.g. max devices reached) — must force logout.
+          // Sentry-worthy: this forces a real user out of a session they
+          // held a moment ago, and "max devices reached" aside, an
+          // unexpected failure here is worth knowing the frequency of.
+          GlobalErrorHandler.logError(e, st);
           debugPrint('[Auth] Device re-bind failed: $e. Wiping session.');
           final orchestrator = LogoutOrchestrator(
             supabase: client,
@@ -223,7 +228,7 @@ class Auth extends _$Auth {
           AuthRestricted(status: access.status, access: access),
         );
       }
-    } catch (e) {
+    } catch (e, st) {
       if (AuthErrorPolicy.isTransient(e)) {
         // A transient error (no connectivity, timeout, DNS failure, 5xx)
         // is not an explicit denial. If a local session already exists,
@@ -252,6 +257,12 @@ class Auth extends _$Auth {
         return;
       }
 
+      // Not transient: an unexpected exception type reached the end of
+      // _initializeSession (this runs at app startup / cold-start
+      // session-restore, not from direct user input like login() does —
+      // so unlike a wrong password, this genuinely indicates something
+      // worth investigating).
+      GlobalErrorHandler.logError(e, st);
       debugPrint('[Auth] Session initialization failed with ${e.runtimeType}: $e');
       _safeSetStateIfStillPending(const AuthUnauthenticated());
     }
@@ -413,7 +424,12 @@ class Auth extends _$Auth {
         final client = ref.read(supabaseClientProvider);
         try {
           await client.auth.signOut();
-        } catch (e) {
+        } catch (e, st) {
+          // A restricted (banned/suspended/locked) account's client-side
+          // sign-out failing is worth knowing about: the UI still shows
+          // the restricted screen either way, but a real Supabase session
+          // may remain locally active until it naturally expires.
+          GlobalErrorHandler.logError(e, st);
           debugPrint('[Auth] Restricted login sign-out failed: $e');
         }
         _safeSetState(AuthRestricted(status: access.status, access: access));
@@ -487,7 +503,7 @@ class Auth extends _$Auth {
       } else {
         _safeSetState(AuthRestricted(status: access.status, access: access));
       }
-    } catch (e) {
+    } catch (e, st) {
       // Unified policy: transient errors never move the user out of their
       // current state. Non-transient errors also stay put here (unlike
       // _initializeSession) because verifyAccess() is called FROM an
@@ -497,6 +513,9 @@ class Auth extends _$Auth {
       if (AuthErrorPolicy.isTransient(e)) {
         debugPrint('[Auth] Verify access deferred due to transient error: ${e.runtimeType}: $e');
       } else {
+        // Background/system-triggered call, not direct user input — an
+        // unexpected exception type here is worth investigating.
+        GlobalErrorHandler.logError(e, st);
         debugPrint('[Auth] Verify access failed with ${e.runtimeType}: $e');
       }
     }
@@ -511,7 +530,10 @@ class Auth extends _$Auth {
         final currentState = state as AuthAuthenticated;
         _safeSetState(AuthAuthenticated(user: appUser, access: currentState.access));
       }
-    } catch (e) {
+    } catch (e, st) {
+      // Called from the profile screen after an update, not user input —
+      // an unexpected failure here is worth investigating.
+      GlobalErrorHandler.logError(e, st);
       debugPrint('[Auth] Refresh user error: $e');
     }
   }

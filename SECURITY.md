@@ -57,6 +57,39 @@ of zero (a deliberate correctness-over-performance trade — see the
 they now delegate to the full DB-backed functions, closing the same gap
 for admin-privilege checks specifically.
 
+## Error observability in `lib/features/auth` is intentionally NOT uniform
+
+37 `debugPrint(...)` calls exist across `lib/features/auth` (as of this
+commit). They are **not** uniformly wired to Sentry, and that's a
+deliberate classification, not an oversight:
+
+- **Routed to `GlobalErrorHandler.logError()` (→ Sentry) — 10 sites**:
+  every unexpected failure in `auth_provider.dart` (device re-bind,
+  non-transient session-init/verify-access/refresh-user failures),
+  `check_user_access_service.dart`'s background security-check loop, and
+  all 4 steps of `logout_orchestrator.dart` (server revocation, local
+  Supabase sign-out, secure-storage wipe, SharedPreferences wipe). These
+  share two properties: they're triggered by app/system logic, not
+  directly by user input, and a failure means something genuinely
+  didn't work as intended (most sharply for the logout steps — a failed
+  wipe there means tokens or a session may still be live on the device
+  after the user believes they've logged out).
+- **Left as `debugPrint`-only, deliberately not sent to Sentry**:
+  everything else, including `login()`'s own failure branch. Reading
+  that branch matters here: it fires on *every* non-transient login
+  failure, which includes an ordinary wrong password — routing that to
+  Sentry would flood crash reporting with normal user behavior on every
+  wrong-password attempt, burying real signal in noise. The same
+  reasoning applies to transient-error branches (network blips, not
+  bugs) and anything already explicitly commented `(non-critical)` in
+  the source (offline-download purge on login, background activity
+  sync, the in-app update check).
+
+If you're auditing this list yourself, the question that matters per
+call site is "does this represent a bug/security event, or a normal
+outcome of something a real user does routinely" — not "is this inside
+a catch block."
+
 ## Transient network errors never force a logout
 
 `AuthState` has a dedicated `AuthDegraded` variant
