@@ -67,6 +67,7 @@ schema_paths = [
   "./schema/09_rls.sql",
   "./schema/10_permissions.sql",
   "./schema/11_seed_reference.sql",
+  "./schema/12_auth_release_hardening.sql",
 ]
 
 [db.seed]

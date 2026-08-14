@@ -51,7 +51,7 @@ app.*.map.json
 android/key.properties
 google-services.json
 GoogleService-Info.plist
-
+supabase/db_url.txt
 # Auto-generated entries
 # Dependencies
 node_modules/

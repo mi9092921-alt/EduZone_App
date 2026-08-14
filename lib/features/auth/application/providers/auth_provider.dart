@@ -446,13 +446,24 @@ class Auth extends _$Auth {
         debugPrint('[Auth] Login failed with ${e.runtimeType}: $e');
       }
 
-      // Sign out from Supabase if we got an exception after successfully logging in
+      // Sign out from Supabase if we got an exception after successfully logging in.
+      // Best-effort by design: `login()` is already about to surface a
+      // mapped error to the login screen regardless of this outcome, and
+      // there is no additional local state to roll back — a failure here
+      // just means the (already-failed) session may linger briefly until
+      // it naturally expires or the next _initializeSession()/logout()
+      // cleans it up. Not logged to Sentry to avoid noise on an
+      // already-failed login path (unlike the documented sign-out
+      // failures in LogoutOrchestrator, which represent an explicit
+      // user-initiated logout not completing).
       try {
         final client = ref.read(supabaseClientProvider);
         if (client.auth.currentSession != null) {
           await client.auth.signOut();
         }
-      } catch (_) {}
+      } catch (_) {
+        // check-ignore -- documented above: best-effort, non-critical cleanup.
+      }
 
       // Emit Error Event
       ref

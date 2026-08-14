@@ -233,8 +233,11 @@ class AuthRemoteDataSource {
           .maybeSingle();
 
       return result != null;
-    } on PostgrestException {
-      return false;
+    } on PostgrestException catch (e) {
+      // A database/RLS/network failure is not proof that the device is
+      // missing. Preserve the failure so startup cannot silently turn a
+      // verification outage into an automatic device re-bind/logout path.
+      throw ServerException(e.message);
     }
   }
 
