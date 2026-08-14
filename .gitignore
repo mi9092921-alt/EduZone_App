@@ -113,12 +113,9 @@ docs/
 .agents/
 .amazonq/
 .devin/
-AGENTS.md
 CLAUDE.md
-ROLE.md
 Auth Security and Functional Audit Report.md
 tools/
-TASK.md
 issues.md
 implementation_plan.md
 engineering_report.md
@@ -130,12 +127,8 @@ engineering_report.md
 
 # Golden test failure diffs (auto-generated on golden test mismatch, never commit)
 **/failures/
-TASK.md
 issues.md
-EDUZONE_FIX_PLAN.md
 EduZone_App_Audit_Report_ar.md
-CONTRIBUTING.md
-CHANGELOG.md
 ACCESSIBILITY_FIXES.md
 test_output.json
 
