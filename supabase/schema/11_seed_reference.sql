@@ -1,15 +1,190 @@
 -- ============================================================================
--- QA Seed Data — EduZone v13
--- ⚠️  LOCAL / STAGING ONLY — DO NOT apply to Production
--- ============================================================================
--- Execution order:
---   1. schema/01_extensions.sql → 10_permissions.sql  (canonical schema)
---   2. schema/11_seed_reference.sql                   ← THIS FILE (QA seed)
---   NOTE: System data (tenant/roles/settings) is in seed/00_system_seed_helper.sql
---         Run that BEFORE this file if not using deploy.ps1 / deploy.sh
+-- Canonical Seed Reference Data — EduZone v13
+-- Consolidated System Bootstrap & QA Seed Data
 -- ============================================================================
 
 BEGIN;
+
+-- ============================================================================
+-- PHASE 0A: System Tenant & Roles (REQUIRED SYSTEM BOOTSTRAP)
+-- ============================================================================
+
+INSERT INTO public.tenants (
+  id, slug, name, plan, status, region_id, data_residency, 
+  max_users, max_courses, created_at, updated_at
+)
+VALUES (
+  '00000000-0000-0000-0000-000000000001',
+  'system', 'System Tenant', 'enterprise', 'active',
+  'me-south-1', 'me-south-1', 99999, 99999, now(), now()
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.roles (
+  tenant_id, name, label, is_system, priority, created_at, updated_at
+)
+VALUES
+  ('00000000-0000-0000-0000-000000000001', 'super_admin', 'Super Admin', true, 100, now(), now()),
+  ('00000000-0000-0000-0000-000000000001', 'admin', 'Admin', true, 80, now(), now()),
+  ('00000000-0000-0000-0000-000000000001', 'teacher', 'Teacher', true, 50, now(), now()),
+  ('00000000-0000-0000-0000-000000000001', 'student', 'Student', true, 10, now(), now())
+ON CONFLICT (tenant_id, name) DO NOTHING;
+
+-- ============================================================================
+-- PHASE 0B: System Permissions & Role-Permission Mapping
+-- ============================================================================
+
+INSERT INTO public.permissions (name, resource, action, scope, created_at)
+VALUES
+  ('users.read', 'users', 'read', 'tenant', now()),
+  ('users.write', 'users', 'write', 'tenant', now()),
+  ('users.lock', 'users', 'lock', 'tenant', now()),
+  ('courses.read', 'courses', 'read', 'tenant', now()),
+  ('courses.write', 'courses', 'write', 'tenant', now()),
+  ('courses.delete', 'courses', 'delete', 'tenant', now()),
+  ('courses.manage', 'courses', 'manage', 'tenant', now()),
+  ('reports.read', 'reports', 'read', 'tenant', now()),
+  ('settings.read', 'settings', 'read', 'global', now()),
+  ('settings.write', 'settings', 'write', 'global', now()),
+  ('warnings.write', 'warnings', 'write', 'tenant', now()),
+  ('devices.manage', 'devices', 'manage', 'tenant', now()),
+  ('sessions.manage', 'sessions', 'manage', 'tenant', now()),
+  ('audit.read', 'audit', 'read', 'global', now()),
+  ('feature_flags.manage', 'features', 'manage', 'global', now()),
+  ('tenants.manage', 'tenants', 'manage', 'global', now()),
+  ('notifications.send', 'notifications', 'send', 'tenant', now()),
+  ('notifications.delete', 'notifications', 'delete', 'tenant', now())
+ON CONFLICT (name) DO NOTHING;
+
+-- Super Admin gets ALL permissions
+INSERT INTO public.role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM public.roles r
+CROSS JOIN public.permissions p
+WHERE r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  AND r.name = 'super_admin'
+ON CONFLICT DO NOTHING;
+
+-- Admin gets all except tenant management
+INSERT INTO public.role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM public.roles r
+CROSS JOIN public.permissions p
+WHERE r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  AND r.name = 'admin'
+  AND p.name <> 'tenants.manage'
+ON CONFLICT DO NOTHING;
+
+-- Teacher gets course + warning + reports + notifications
+INSERT INTO public.role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM public.roles r
+CROSS JOIN public.permissions p
+WHERE r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  AND r.name = 'teacher'
+  AND p.name IN (
+    'courses.read', 'courses.write', 'courses.manage', 
+    'users.read', 'warnings.write', 'reports.read',
+    'notifications.send', 'notifications.delete'
+  )
+ON CONFLICT DO NOTHING;
+
+-- Student gets read permissions
+INSERT INTO public.role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM public.roles r
+CROSS JOIN public.permissions p
+WHERE r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  AND r.name = 'student'
+  AND p.name IN ('courses.read', 'reports.read')
+ON CONFLICT DO NOTHING;
+
+-- ============================================================================
+-- PHASE 0C: System Definitions, Constants, Regions & Global Settings
+-- ============================================================================
+
+INSERT INTO public.setting_definitions (key, expected_type, is_nullable) VALUES
+  ('maintenance_mode', 'boolean', false),
+  ('site_name', 'string', false)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO public.constants (id, category, description, valid_values) VALUES
+  ('REGION_ME_SOUTH_1', 'region', 'Middle East (Bahrain)', ARRAY['me-south-1']),
+  ('REGION_EU_WEST_1', 'region', 'Europe (Ireland)', ARRAY['eu-west-1']),
+  ('REGION_US_EAST_1', 'region', 'US East (Virginia)', ARRAY['us-east-1']),
+  ('JOB_STATUS_PENDING', 'job_status', 'Job pending execution', ARRAY['pending']),
+  ('JOB_STATUS_IN_PROGRESS', 'job_status', 'Job in progress', ARRAY['in_progress']),
+  ('JOB_STATUS_DONE', 'job_status', 'Job completed', ARRAY['done']),
+  ('JOB_STATUS_DEAD', 'job_status', 'Job failed permanently', ARRAY['dead']),
+  ('FEATURE_REQUIRE_EMAIL_VERIFICATION', 'feature_flag', 'Require email verification', ARRAY['require_email_verification']),
+  ('FEATURE_REQUIRE_2FA', 'feature_flag', 'Require 2FA for admin accounts', ARRAY['require_2fa']),
+  ('FEATURE_MAX_LOGIN_ATTEMPTS', 'feature_flag', 'Max login attempts before lockout', ARRAY['max_login_attempts']),
+  ('COURSE_STATUS_DRAFT', 'course_status', 'Course is draft', ARRAY['draft']),
+  ('COURSE_STATUS_PUBLISHED', 'course_status', 'Course is published', ARRAY['published']),
+  ('COURSE_STATUS_ARCHIVED', 'course_status', 'Course is archived', ARRAY['archived']),
+  ('ENROLLMENT_STATUS_ACTIVE', 'enrollment_status', 'Active enrollment', ARRAY['active']),
+  ('ENROLLMENT_STATUS_REVOKED', 'enrollment_status', 'Enrollment revoked', ARRAY['revoked']),
+  ('ENROLLMENT_STATUS_EXPIRED', 'enrollment_status', 'Enrollment expired', ARRAY['expired']),
+  ('ENROLLMENT_STATUS_COMPLETED', 'enrollment_status', 'Enrollment completed', ARRAY['completed']),
+  ('ACCOUNT_STATUS_ACTIVE', 'account_status', 'Account active', ARRAY['active']),
+  ('ACCOUNT_STATUS_INACTIVE', 'account_status', 'Account inactive', ARRAY['inactive']),
+  ('ACCOUNT_STATUS_SUSPENDED', 'account_status', 'Account suspended', ARRAY['suspended']),
+  ('ACCOUNT_STATUS_LOCKED', 'account_status', 'Account locked', ARRAY['locked']),
+  ('ACCOUNT_STATUS_BANNED', 'account_status', 'Account banned', ARRAY['banned'])
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.regions (id, label, is_active, is_primary) VALUES
+  ('me-south-1', 'Middle East (Bahrain)', true, true),
+  ('eu-west-1', 'Europe (Ireland)', true, false),
+  ('us-east-1', 'US East (Virginia)', true, false)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.settings_kv (key, value, category, description, is_public) VALUES
+  ('app_locked', 'false'::jsonb, 'security', 'Global app lock', true),
+  ('app_lock_message', '"Application is temporarily locked."'::jsonb, 'security', 'Global lock message', true),
+  ('maintenance_mode', 'false'::jsonb, 'maintenance', 'Maintenance mode', true),
+  ('maintenance_message', '"Application is under maintenance."'::jsonb, 'maintenance', 'Maintenance message', true),
+  ('settings_cache_ttl_seconds', '300'::jsonb, 'limits', 'Settings cache TTL', false),
+  ('max_devices_per_user', '1'::jsonb, 'limits', 'Maximum active devices per user', false),
+  ('max_concurrent_streams', '2'::jsonb, 'limits', 'Maximum concurrent streams per student', false),
+  ('content_signed_url_ttl_sec', '3600'::jsonb, 'limits', 'Content signed URL TTL', false),
+  ('preview_lessons_enabled', 'true'::jsonb, 'general', 'Allow preview lessons', true),
+  ('maintenance_excluded_roles', '["super_admin","admin"]'::jsonb, 'maintenance', 'Roles excluded from maintenance mode', false),
+  ('maintenance_excluded_users', '[]'::jsonb, 'maintenance', 'Users excluded from maintenance mode', false),
+  ('maintenance_ends_at', 'null'::jsonb, 'maintenance', 'Scheduled maintenance end time', true),
+  ('max_warnings_before_action', '3'::jsonb, 'limits', 'Warnings before automatic action', false),
+  ('session_timeout_minutes', '1440'::jsonb, 'limits', 'Session timeout in minutes', false),
+  ('force_single_session', 'true'::jsonb, 'limits', 'Prevent multiple concurrent logins', false),
+  ('log_flush_batch_size', '100'::jsonb, 'limits', 'Activity log flush batch size', false),
+  ('risk_score_block_threshold', '70'::jsonb, 'security', 'Risk score threshold for blocking', false),
+  ('geo_restriction_enabled', 'false'::jsonb, 'security', 'Enable geographic restrictions', false),
+  ('allowed_countries', '["EG"]'::jsonb, 'security', 'Allowed country codes', false),
+  ('latest_version', '"1.0.0"'::jsonb, 'general', 'Latest app version', true),
+  ('min_app_version', '"1.0.0"'::jsonb, 'general', 'Minimum required app version', true),
+  ('force_update', 'false'::jsonb, 'general', 'Force app update', true),
+  ('update_message', '""'::jsonb, 'general', 'App update message', true),
+  ('support_link', '""'::jsonb, 'general', 'Support URL', true),
+  ('store_link_android', '""'::jsonb, 'general', 'Google Play Store URL', true),
+  ('store_link_ios', '""'::jsonb, 'general', 'Apple App Store URL', true),
+  ('follow_link', '""'::jsonb, 'general', 'Social follow URL', true),
+  ('retention_deleted_user_days', '90'::jsonb, 'compliance', 'Days to keep soft-deleted user records', false),
+  ('retention_activity_log_days', '365'::jsonb, 'compliance', 'Days to keep activity logs', false),
+  ('retention_location_log_days', '30'::jsonb, 'compliance', 'Days to keep location logs (GDPR)', false)
+ON CONFLICT (key) DO NOTHING;
+
+INSERT INTO public.rate_limit_rules (action, window_seconds, max_hits, block_seconds, is_active) VALUES
+  ('login',          300,   5,   900,  true),
+  ('api_call',       60,    120, 60,   true),
+  ('video_view',     3600,  50,  0,    true),
+  ('device_bind',    86400, 3,   3600, true),
+  ('password_reset', 3600,  3,   7200, true),
+  ('warning_issue',  3600,  20,  0,    true),
+  ('content_access', 3600,  200, 0,    true)
+ON CONFLICT (action) DO NOTHING;
+
+INSERT INTO public.audit_chain_state (id, last_seq, last_hash)
+VALUES (1, 0, repeat('0', 64))
+ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
 -- PHASE 1: Auth Users (auth schema — Supabase Auth)

@@ -594,3 +594,9 @@ BEGIN
     EXECUTE format('DROP INDEX IF EXISTS public.idx_%s_user_time', v_partition);
   END LOOP;
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- video_cache & download_logs Indexes
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_video_hash ON public.video_cache (url_hash);
+CREATE INDEX IF NOT EXISTS idx_download_logs_user ON public.download_logs (user_id);

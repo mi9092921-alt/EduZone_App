@@ -1252,3 +1252,32 @@ Semantics:
 - is_enabled=true, rollout_pct=100: Flag is ON for all users
 - is_enabled=true, rollout_pct=1-99: Gradual rollout to N% of users (hash-based)
 Assignment: Use (abs(hashtext(user_id::text)) % 100) < rollout_pct.';
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- video_cache
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.video_cache (
+  id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  url        text        NOT NULL,
+  url_hash   text        UNIQUE NOT NULL,
+  data       jsonb       NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  expires_at timestamptz NOT NULL
+);
+
+COMMENT ON TABLE public.video_cache IS 'Cache for video streaming URLs and metadata.';
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- download_logs
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.download_logs (
+  id                uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           uuid        REFERENCES auth.users(id),
+  lesson_id         uuid,
+  course_id         uuid,
+  quality           text,
+  downloaded_at     timestamptz DEFAULT now(),
+  access_expires_at timestamptz
+);
+
+COMMENT ON TABLE public.download_logs IS 'Log of offline content downloads by students.';

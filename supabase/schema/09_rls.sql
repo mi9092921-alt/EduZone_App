@@ -1487,10 +1487,6 @@ CREATE POLICY users_select_merged ON public.users
       public.is_admin_with_session_validation()
       OR (id = public.get_auth_user_id())
       OR (
-        public.validate_user_session()
-        AND (id = (select auth.uid()) OR public.tenant_matches_jwt(tenant_id))
-      )
-      OR (
         users.tenant_id = public.get_current_tenant_id()
         AND EXISTS (
           SELECT 1 FROM public.courses c
@@ -2121,3 +2117,25 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- video_cache & download_logs RLS Policies
+-- ─────────────────────────────────────────────────────────────────────────────
+ALTER TABLE public.video_cache ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.download_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS video_cache_select ON public.video_cache;
+CREATE POLICY video_cache_select ON public.video_cache
+  FOR SELECT TO authenticated
+  USING (expires_at > now());
+
+DROP POLICY IF EXISTS download_logs_select_own ON public.download_logs;
+CREATE POLICY download_logs_select_own ON public.download_logs
+  FOR SELECT TO authenticated
+  USING (user_id = public.get_auth_user_id() OR public.is_admin_with_session_validation());
+
+DROP POLICY IF EXISTS download_logs_insert_own ON public.download_logs;
+CREATE POLICY download_logs_insert_own ON public.download_logs
+  FOR INSERT TO authenticated
+  WITH CHECK (user_id = public.get_auth_user_id());
+

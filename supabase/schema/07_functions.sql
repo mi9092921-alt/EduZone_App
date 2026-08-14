@@ -4628,10 +4628,10 @@ BEGIN
 
   event := jsonb_set(event, '{claims,tenant_id}', to_jsonb(v_tenant_id), true);
   event := jsonb_set(event, '{claims,primary_role}', to_jsonb(v_primary_role), true);
-  event := jsonb_set(event, '{claims,role}', to_jsonb(v_primary_role), true);
+  -- Do NOT mutate {claims,role} so PostgREST retains 'authenticated' role
   event := jsonb_set(event, '{claims,region_id}', to_jsonb(v_region_id), true);
   event := jsonb_set(event, '{claims,is_admin}', to_jsonb(v_is_admin), true);
-  event := jsonb_set(event, '{claims,token_version}', to_jsonb(v_token_ver), true);
+  event := jsonb_set(event, '{claims,token_version}', to_jsonb(coalesce(v_token_ver, 1)), true);
   -- PERF-SEC: Inject account_status so validate_user_session() can avoid a
   -- per-row SELECT on public.users. The hook runs once at token issuance;
   -- the claim is then cached in memory by PostgREST for the request lifetime.

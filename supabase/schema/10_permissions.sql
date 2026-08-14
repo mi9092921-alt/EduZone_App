@@ -460,3 +460,13 @@ GRANT EXECUTE ON FUNCTION private.get_kms_key() TO service_role;
 
 REVOKE ALL ON FUNCTION private.current_jwt_token_version() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION private.current_jwt_token_version() TO service_role;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- video_cache & download_logs Permissions
+-- ─────────────────────────────────────────────────────────────────────────────
+GRANT SELECT ON public.video_cache TO authenticated;
+GRANT ALL ON public.video_cache TO service_role;
+
+GRANT SELECT, INSERT ON public.download_logs TO authenticated;
+GRANT ALL ON public.download_logs TO service_role;
+
