@@ -82,3 +82,26 @@ verification required**.
 No migration file was created. No new file was created under `supabase/schema/`.
 SQL remains centralized in the existing canonical schema and existing archive
 layout.
+
+## Additional authorization hardening in this pass
+
+The canonical RLS source was re-audited for privileged mutations, not only self-service
+writes. The following cross-tenant control-plane gaps were found and closed:
+
+- `public.users` admin update/delete policies now bind target rows to the current
+  database tenant, with `super_admin` as the explicit cross-tenant exception.
+- `public.user_roles` selection and mutations are tenant-bound; inserts also require
+  the referenced user and role to belong to the same current tenant unless the caller
+  is `super_admin`.
+- `public.roles` and `public.role_permissions` mutations are tenant-bound through the
+  role row, with `super_admin` as the explicit cross-tenant exception.
+- `public.tenant_settings` and `public.security_settings` mutations are tenant-bound.
+- Global control-plane tables (`permissions`, `settings_kv`, `feature_flags`,
+  `rate_limit_rules`, and tenant administration) are now writable by
+  `super_admin` only. `cache_invalidation_queue` is denied to `authenticated`.
+- `VALIDATION.sql` now contains explicit regression checks for tenant-scoped
+  privileged writes and global authorization/control-plane write restrictions.
+
+These are source-level authorization fixes. They still require execution of
+`VALIDATION.sql` against the target Supabase/PostgreSQL environment to convert the
+schema assertions into live-runtime evidence.

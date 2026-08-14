@@ -1534,7 +1534,11 @@ CREATE POLICY user_roles_select_merged ON public.user_roles
     public.validate_user_session()
     AND (
       user_id = public.get_auth_user_id()
-      OR public.is_admin_with_session_validation()
+      OR public.is_current_user_super_admin()
+      OR (
+        tenant_id = public.get_current_tenant_id()
+        AND public.is_admin_with_session_validation()
+      )
     )
   );
 
@@ -1812,23 +1816,31 @@ DROP POLICY IF EXISTS users_update_merged ON public.users;
 CREATE POLICY users_update_merged ON public.users
   FOR UPDATE TO authenticated
   USING (
-    public.is_admin_with_session_validation()
-    OR (
-      public.validate_user_session()
-      AND (id = (select auth.uid()) OR public.is_admin_with_session_validation())
-    )
-    OR (id = (select auth.uid()) AND deleted_at IS NULL)
-  )
-  WITH CHECK (
-    public.is_admin_with_session_validation()
-    OR (
-      id = (select auth.uid())
-      AND tenant_id = public.get_current_tenant_id()
-      AND primary_role = (SELECT primary_role FROM public.users WHERE id = (select auth.uid()))
-    )
+    public.is_current_user_super_admin()
     OR (
       public.is_admin_with_session_validation()
-      AND (tenant_id = public.get_current_tenant_id())
+      AND tenant_id = public.get_current_tenant_id()
+    )
+    OR (
+      public.validate_user_session()
+      AND id = (select auth.uid())
+      AND deleted_at IS NULL
+    )
+  )
+  WITH CHECK (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.assert_tenant()
+    )
+    OR (
+      id = (select auth.uid())
+      AND tenant_id = public.assert_tenant()
+      AND primary_role = (
+        SELECT primary_role
+        FROM public.users
+        WHERE id = (select auth.uid())
+      )
     )
   );
 
@@ -2051,36 +2063,104 @@ DROP POLICY IF EXISTS role_permissions_admin_insert ON public.role_permissions;
 DROP POLICY IF EXISTS role_permissions_admin_update ON public.role_permissions;
 DROP POLICY IF EXISTS role_permissions_admin_delete ON public.role_permissions;
 CREATE POLICY role_permissions_admin_insert ON public.role_permissions FOR INSERT TO authenticated
-  WITH CHECK (public.is_admin_with_session_validation());
+  WITH CHECK (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND EXISTS (
+        SELECT 1
+        FROM public.roles r
+        WHERE r.id = role_id
+          AND r.tenant_id = public.get_current_tenant_id()
+      )
+    )
+  );
 CREATE POLICY role_permissions_admin_update ON public.role_permissions FOR UPDATE TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
+  USING (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND EXISTS (
+        SELECT 1
+        FROM public.roles r
+        WHERE r.id = role_id
+          AND r.tenant_id = public.get_current_tenant_id()
+      )
+    )
+  )
+  WITH CHECK (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND EXISTS (
+        SELECT 1
+        FROM public.roles r
+        WHERE r.id = role_id
+          AND r.tenant_id = public.get_current_tenant_id()
+      )
+    )
+  );
 CREATE POLICY role_permissions_admin_delete ON public.role_permissions FOR DELETE TO authenticated
-  USING (public.is_admin_with_session_validation());
+  USING (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND EXISTS (
+        SELECT 1
+        FROM public.roles r
+        WHERE r.id = role_id
+          AND r.tenant_id = public.get_current_tenant_id()
+      )
+    )
+  );
 
 DROP POLICY IF EXISTS roles_admin_all ON public.roles;
 DROP POLICY IF EXISTS roles_admin_insert ON public.roles;
 DROP POLICY IF EXISTS roles_admin_update ON public.roles;
 DROP POLICY IF EXISTS roles_admin_delete ON public.roles;
 CREATE POLICY roles_admin_insert ON public.roles FOR INSERT TO authenticated
-  WITH CHECK (public.is_admin_with_session_validation());
+  WITH CHECK (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.assert_tenant()
+    )
+  );
 CREATE POLICY roles_admin_update ON public.roles FOR UPDATE TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
+  USING (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.get_current_tenant_id()
+    )
+  )
+  WITH CHECK (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.assert_tenant()
+    )
+  );
 CREATE POLICY roles_admin_delete ON public.roles FOR DELETE TO authenticated
-  USING (public.is_admin_with_session_validation());
+  USING (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.get_current_tenant_id()
+    )
+  );
 
 DROP POLICY IF EXISTS settings_admin_all ON public.settings_kv;
 DROP POLICY IF EXISTS settings_admin_insert ON public.settings_kv;
 DROP POLICY IF EXISTS settings_admin_update ON public.settings_kv;
 DROP POLICY IF EXISTS settings_admin_delete ON public.settings_kv;
 CREATE POLICY settings_admin_insert ON public.settings_kv FOR INSERT TO authenticated
-  WITH CHECK (public.user_has_permission((select auth.uid()), 'settings.write'::text, public.get_current_tenant_id()));
+  WITH CHECK (public.is_current_user_super_admin());
 CREATE POLICY settings_admin_update ON public.settings_kv FOR UPDATE TO authenticated
-  USING (public.user_has_permission((select auth.uid()), 'settings.write'::text, public.get_current_tenant_id()))
-  WITH CHECK (public.user_has_permission((select auth.uid()), 'settings.write'::text, public.get_current_tenant_id()));
+  USING (public.is_current_user_super_admin())
+  WITH CHECK (public.is_current_user_super_admin());
 CREATE POLICY settings_admin_delete ON public.settings_kv FOR DELETE TO authenticated
-  USING (public.user_has_permission((select auth.uid()), 'settings.write'::text, public.get_current_tenant_id()));
+  USING (public.is_current_user_super_admin());
 
 DROP POLICY IF EXISTS tenant_feature_flags_manage ON public.tenant_feature_flags;
 DROP POLICY IF EXISTS tenant_feature_flags_insert ON public.tenant_feature_flags;
@@ -2111,47 +2191,198 @@ DROP POLICY IF EXISTS tenant_settings_admin_insert ON public.tenant_settings;
 DROP POLICY IF EXISTS tenant_settings_admin_update ON public.tenant_settings;
 DROP POLICY IF EXISTS tenant_settings_admin_delete ON public.tenant_settings;
 CREATE POLICY tenant_settings_admin_insert ON public.tenant_settings FOR INSERT TO authenticated
-  WITH CHECK (public.is_admin_with_session_validation());
+  WITH CHECK (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.assert_tenant()
+    )
+  );
 CREATE POLICY tenant_settings_admin_update ON public.tenant_settings FOR UPDATE TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
+  USING (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.get_current_tenant_id()
+    )
+  )
+  WITH CHECK (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.assert_tenant()
+    )
+  );
 CREATE POLICY tenant_settings_admin_delete ON public.tenant_settings FOR DELETE TO authenticated
-  USING (public.is_admin_with_session_validation());
+  USING (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.get_current_tenant_id()
+    )
+  );
 
 DROP POLICY IF EXISTS tenants_write_merged ON public.tenants;
 DROP POLICY IF EXISTS tenants_write_insert ON public.tenants;
 DROP POLICY IF EXISTS tenants_write_update ON public.tenants;
 DROP POLICY IF EXISTS tenants_write_delete ON public.tenants;
 CREATE POLICY tenants_write_insert ON public.tenants FOR INSERT TO authenticated
-  WITH CHECK (public.is_admin_with_session_validation());
+  WITH CHECK (public.is_current_user_super_admin());
 CREATE POLICY tenants_write_update ON public.tenants FOR UPDATE TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
+  USING (public.is_current_user_super_admin())
+  WITH CHECK (public.is_current_user_super_admin());
 CREATE POLICY tenants_write_delete ON public.tenants FOR DELETE TO authenticated
-  USING (public.is_admin_with_session_validation());
+  USING (public.is_current_user_super_admin());
 
 DROP POLICY IF EXISTS user_roles_admin_all ON public.user_roles;
 DROP POLICY IF EXISTS user_roles_admin_insert ON public.user_roles;
 DROP POLICY IF EXISTS user_roles_admin_update ON public.user_roles;
 DROP POLICY IF EXISTS user_roles_admin_delete ON public.user_roles;
 CREATE POLICY user_roles_admin_insert ON public.user_roles FOR INSERT TO authenticated
-  WITH CHECK (public.is_admin_with_session_validation());
+  WITH CHECK (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.assert_tenant()
+      AND EXISTS (
+        SELECT 1
+        FROM public.users u
+        WHERE u.id = user_id
+          AND u.tenant_id = public.get_current_tenant_id()
+          AND u.deleted_at IS NULL
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM public.roles r
+        WHERE r.id = role_id
+          AND r.tenant_id = public.get_current_tenant_id()
+      )
+    )
+  );
 CREATE POLICY user_roles_admin_update ON public.user_roles FOR UPDATE TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
+  USING (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.get_current_tenant_id()
+    )
+  )
+  WITH CHECK (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.assert_tenant()
+      AND EXISTS (
+        SELECT 1
+        FROM public.users u
+        WHERE u.id = user_id
+          AND u.tenant_id = public.get_current_tenant_id()
+          AND u.deleted_at IS NULL
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM public.roles r
+        WHERE r.id = role_id
+          AND r.tenant_id = public.get_current_tenant_id()
+      )
+    )
+  );
 CREATE POLICY user_roles_admin_delete ON public.user_roles FOR DELETE TO authenticated
-  USING (public.is_admin_with_session_validation());
+  USING (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.get_current_tenant_id()
+    )
+  );
 
 DROP POLICY IF EXISTS users_admin_all ON public.users;
 DROP POLICY IF EXISTS users_admin_insert ON public.users;
 DROP POLICY IF EXISTS users_admin_update ON public.users;
 DROP POLICY IF EXISTS users_admin_delete ON public.users;
 CREATE POLICY users_admin_insert ON public.users FOR INSERT TO authenticated
-  WITH CHECK (public.is_admin_with_session_validation() AND tenant_id = public.get_current_tenant_id());
+  WITH CHECK (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.assert_tenant()
+    )
+  );
 CREATE POLICY users_admin_delete ON public.users FOR DELETE TO authenticated
-  USING (public.is_admin_with_session_validation());
+  USING (
+    public.is_current_user_super_admin()
+    OR (
+      public.is_admin_with_session_validation()
+      AND tenant_id = public.get_current_tenant_id()
+    )
+  );
 
 DROP POLICY IF EXISTS users_delete_policy ON public.users;
+
+-- AUTHZ-TENANT-01: privileged mutation must respect the row's tenant unless
+-- the caller is an actual super_admin. Admin status alone is never a
+-- cross-tenant authorization boundary.
+DROP POLICY IF EXISTS permissions_super_admin_all ON public.permissions;
+DROP POLICY IF EXISTS permissions_super_admin_insert ON public.permissions;
+DROP POLICY IF EXISTS permissions_super_admin_update ON public.permissions;
+DROP POLICY IF EXISTS permissions_super_admin_delete ON public.permissions;
+CREATE POLICY permissions_super_admin_insert ON public.permissions FOR INSERT TO authenticated
+  WITH CHECK (public.is_current_user_super_admin());
+CREATE POLICY permissions_super_admin_update ON public.permissions FOR UPDATE TO authenticated
+  USING (public.is_current_user_super_admin())
+  WITH CHECK (public.is_current_user_super_admin());
+CREATE POLICY permissions_super_admin_delete ON public.permissions FOR DELETE TO authenticated
+  USING (public.is_current_user_super_admin());
+
+DROP POLICY IF EXISTS feature_flags_admin_all ON public.feature_flags;
+DROP POLICY IF EXISTS feature_flags_admin_insert ON public.feature_flags;
+DROP POLICY IF EXISTS feature_flags_admin_update ON public.feature_flags;
+DROP POLICY IF EXISTS feature_flags_admin_delete ON public.feature_flags;
+CREATE POLICY feature_flags_admin_insert ON public.feature_flags FOR INSERT TO authenticated
+  WITH CHECK (public.is_current_user_super_admin());
+CREATE POLICY feature_flags_admin_update ON public.feature_flags FOR UPDATE TO authenticated
+  USING (public.is_current_user_super_admin())
+  WITH CHECK (public.is_current_user_super_admin());
+CREATE POLICY feature_flags_admin_delete ON public.feature_flags FOR DELETE TO authenticated
+  USING (public.is_current_user_super_admin());
+
+DROP POLICY IF EXISTS security_settings_admin_all ON public.security_settings;
+CREATE POLICY security_settings_admin_all ON public.security_settings
+  FOR ALL TO authenticated
+  USING (
+    public.is_current_user_super_admin()
+    OR (
+      tenant_id = public.get_current_tenant_id()
+      AND public.user_has_permission(
+        (select auth.uid()),
+        'settings.write'::text,
+        public.get_current_tenant_id()
+      )
+    )
+  )
+  WITH CHECK (
+    public.is_current_user_super_admin()
+    OR (
+      tenant_id = public.assert_tenant()
+      AND public.user_has_permission(
+        (select auth.uid()),
+        'settings.write'::text,
+        public.get_current_tenant_id()
+      )
+    )
+  );
+
+DROP POLICY IF EXISTS rate_limit_rules_admin ON public.rate_limit_rules;
+CREATE POLICY rate_limit_rules_admin ON public.rate_limit_rules
+  FOR ALL TO authenticated
+  USING (public.is_current_user_super_admin())
+  WITH CHECK (public.is_current_user_super_admin());
+
+DROP POLICY IF EXISTS admin_only_all ON public.cache_invalidation_queue;
+CREATE POLICY admin_only_all ON public.cache_invalidation_queue
+  FOR ALL TO authenticated
+  USING (false)
+  WITH CHECK (false);
 
 -- -- D. FORCE ROW LEVEL SECURITY (patch 14) ------------------------------------
 DO $$

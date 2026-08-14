@@ -476,6 +476,128 @@ BEGIN
   );
 END $$;
 
+
+-- Check 15: Tenant-scoped privileged writes must bind target rows to the
+-- current database tenant, with super_admin as the only cross-tenant exception.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(tablename || ':' || policyname ORDER BY tablename, policyname)
+    INTO v_bad
+  FROM pg_policies
+  WHERE schemaname = 'public'
+    AND tablename IN (
+      'users', 'roles', 'role_permissions', 'user_roles',
+      'tenant_settings', 'security_settings'
+    )
+    AND policyname IN (
+      'users_admin_insert', 'users_admin_delete',
+      'roles_admin_insert', 'roles_admin_update', 'roles_admin_delete',
+      'role_permissions_admin_insert', 'role_permissions_admin_update',
+      'role_permissions_admin_delete',
+      'user_roles_admin_insert', 'user_roles_admin_update',
+      'user_roles_admin_delete',
+      'tenant_settings_admin_insert', 'tenant_settings_admin_update',
+      'tenant_settings_admin_delete',
+      'security_settings_admin_all'
+    )
+    AND NOT (
+      (
+        coalesce(qual, '') ILIKE '%is_current_user_super_admin()%'
+        OR coalesce(with_check, '') ILIKE '%is_current_user_super_admin()%'
+      )
+      AND (
+        coalesce(qual, '') ILIKE '%tenant_id = public.get_current_tenant_id()%'
+        OR coalesce(with_check, '') ILIKE '%tenant_id = public.assert_tenant()%'
+        OR coalesce(qual, '') ILIKE '%get_current_tenant_id()%'
+        OR coalesce(with_check, '') ILIKE '%get_current_tenant_id()%'
+        OR coalesce(with_check, '') ILIKE '%assert_tenant()%'
+        OR (
+          tablename = 'role_permissions'
+          AND (
+            coalesce(qual, '') ILIKE '%r.tenant_id = %get_current_tenant_id()%'
+            OR coalesce(with_check, '') ILIKE '%r.tenant_id = %get_current_tenant_id()%'
+          )
+        )
+      )
+    );
+
+  INSERT INTO validation_results VALUES (
+    'Tenant-Scoped Privileged Writes Are Row-Bound',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: privileged policy lacks tenant-row binding: '
+        || array_to_string(v_bad, ', '),
+      'Tenant-scoped privileged writes require current tenant or explicit super_admin authority'
+    )
+  );
+END $$;
+
+-- Check 16: Global authorization/control-plane tables are not writable by
+-- tenant admins. These tables affect every tenant or define authorization itself.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(tablename || ':' || policyname ORDER BY tablename, policyname)
+    INTO v_bad
+  FROM pg_policies
+  WHERE schemaname = 'public'
+    AND (
+      (tablename = 'permissions' AND policyname IN (
+        'permissions_super_admin_insert',
+        'permissions_super_admin_update',
+        'permissions_super_admin_delete'
+      ))
+      OR
+      (tablename = 'feature_flags' AND policyname IN (
+        'feature_flags_admin_insert',
+        'feature_flags_admin_update',
+        'feature_flags_admin_delete'
+      ))
+      OR
+      (tablename = 'settings_kv' AND policyname IN (
+        'settings_admin_insert',
+        'settings_admin_update',
+        'settings_admin_delete'
+      ))
+      OR
+      (tablename = 'rate_limit_rules' AND policyname = 'rate_limit_rules_admin')
+      OR
+      (tablename = 'tenants' AND policyname IN (
+        'tenants_write_insert',
+        'tenants_write_update',
+        'tenants_write_delete'
+      ))
+    )
+    AND NOT (
+      (cmd = 'INSERT'
+        AND coalesce(with_check, '') ILIKE '%is_current_user_super_admin()%')
+      OR
+      (cmd = 'UPDATE'
+        AND coalesce(qual, '') ILIKE '%is_current_user_super_admin()%'
+        AND coalesce(with_check, '') ILIKE '%is_current_user_super_admin()%')
+      OR
+      (cmd = 'DELETE'
+        AND coalesce(qual, '') ILIKE '%is_current_user_super_admin()%')
+      OR
+      (cmd = 'ALL'
+        AND coalesce(qual, '') ILIKE '%is_current_user_super_admin()%'
+        AND coalesce(with_check, '') ILIKE '%is_current_user_super_admin()%')
+    );
+
+  INSERT INTO validation_results VALUES (
+    'Global Authorization Tables Are Super-Admin Controlled',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: global control-plane policy is not restricted to super_admin: '
+        || array_to_string(v_bad, ', '),
+      'Global authorization/configuration mutations require server-validated super_admin authority'
+    )
+  );
+END $$;
+
 -- Display Results
 SELECT * FROM validation_results ORDER BY check_name;
 
