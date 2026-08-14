@@ -17,7 +17,8 @@ other — file an issue rather than assume either is right.
 
 This pass is scoped to **Architecture only** (layering + Riverpod provider
 dependency graph). It does not touch Design System / Accessibility tooling,
-which were covered separately.
+which were covered separately. Security posture specifically is covered in
+[`SECURITY.md`](SECURITY.md), not here.
 
 > **Why this file lives at the repo root and not in `docs/`:** `.gitignore`
 > excludes `docs/` entirely (grouped with `.agents/`, `.amazonq/`,

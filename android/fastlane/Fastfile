@@ -1,0 +1,47 @@
+# UNVERIFIED: written without a Ruby/fastlane environment available to run
+# `fastlane` or even `ruby -c` against this file. Standard Fastlane actions
+# (`gradle`, `upload_to_play_store`) used in the conventional documented
+# way, but treat the first real run here as the actual verification, not
+# this file's existence. See IMPLEMENTATION.md (CI-001) for what has to
+# exist before `internal` below can do anything but fail on a missing key.
+
+default_platform(:android)
+
+platform :android do
+  desc "Build the release AAB using the Flutter-generated Gradle project. " \
+       "Assumes `flutter build appbundle --release --dart-define-from-file=<env>` " \
+       "was already run by the CI job calling this lane (fastlane builds " \
+       "the *Android* project; it does not invoke the Flutter build step " \
+       "itself)."
+  lane :build_only do
+    gradle(
+      task: "bundle",
+      build_type: "Release",
+      project_dir: "."
+    )
+  end
+
+  desc "Upload the already-built AAB to the Play Console 'internal testing' " \
+       "track. Requires PLAY_STORE_JSON_KEY_PATH (see Appfile) pointing at " \
+       "a real Play Console service-account JSON key — this repo ships no " \
+       "such key. Fails loudly (not silently) if that file doesn't exist, " \
+       "rather than pretending to succeed."
+  lane :internal do
+    unless ENV["PLAY_STORE_JSON_KEY_PATH"] && File.exist?(ENV["PLAY_STORE_JSON_KEY_PATH"])
+      UI.user_error!(
+        "PLAY_STORE_JSON_KEY_PATH is not set or does not point at a real " \
+        "file. This lane cannot authenticate to the Play Console without " \
+        "it — see IMPLEMENTATION.md (CI-001) for how to provision one. " \
+        "Refusing to continue rather than fail with a confusing API error."
+      )
+    end
+
+    upload_to_play_store(
+      track: "internal",
+      aab: "../build/app/outputs/bundle/release/app-release.aab",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+end

@@ -1,0 +1,179 @@
+# Security
+
+Status: statically inspected against repository state as of commit
+`960f53043ff9f19a574757a3c3ae23b8eb3c8696` — no Flutter/Dart toolchain or
+device/emulator available in the environment this was written in, so
+nothing here reflects a runtime-verified test, only direct source
+inspection (grep/read, not execution). See `ARCHITECTURE.md` for the
+layering/dependency-direction contract; this file is security posture
+specifically, not architecture.
+
+This file documents the security controls that actually exist in this
+repository today, and — just as importantly — what they do *not* provide.
+Per the project's own instructions, this repo avoids claiming "secure" or
+"production-ready" as a blanket statement; controls are described
+individually, each with what it defends against and what it doesn't.
+
+If you're looking for the full offline-download threat model and key
+lifecycle, see `EduZone_Offline_Download_Security_Trusted_Playback_Architecture.md`.
+This file is the shorter, code-grounded companion referenced directly from
+inline comments (`android/app/build.gradle.kts`, `.env.security.example`).
+
+---
+
+## Secrets and configuration
+
+- The Flutter client only ever reads `SUPABASE_ANON_KEY` at runtime
+  (verified: no reference to a service-role key anywhere under `lib/`).
+  `.env.example` intentionally does **not** include
+  `SUPABASE_SERVICE_ROLE_KEY` — that key belongs only in trusted
+  backend/Edge Function environments, never in code shipped to a device.
+- `.env*`, `*.keystore`, `*.jks`, and `android/key.properties` are
+  git-ignored. `.env.example` and `.env.security.example` are templates
+  only — see `.gitignore` for the exact rules.
+- Session tokens (`access_token`, `refresh_token`) are stored via
+  `flutter_secure_storage` (Android Keystore / iOS Keychain-backed), not
+  `SharedPreferences`. See `lib/features/auth/application/services/logout_orchestrator.dart`
+  for where they're wiped on logout.
+
+## Session revocation (server-side, DB-authoritative)
+
+`public.validate_user_session()` (`supabase/schema/07_functions.sql`) is
+the single point every RLS-facing role/admin check funnels through. It
+compares the JWT's `token_version` claim against the current
+`token_version` stored on `public.users` — a real per-request database
+lookup, not a JWT-only comparison. This matters specifically because an
+earlier version of this function had a "fast path" that compared two
+copies of `token_version` embedded in the *same* JWT against each other
+(trivially always equal), which meant bumping `token_version` server-side
+to revoke a session had no actual effect until the JWT itself expired.
+That fast path has been removed; revocation is now enforced immediately
+on the next request, at the cost of one row lookup per validation instead
+of zero (a deliberate correctness-over-performance trade — see the
+`AUTH-FIX-01` comment in `07_functions.sql` for the reasoning). The
+"lite" role-check helpers (`is_current_user_admin_lite`,
+`is_current_user_super_admin_lite`) previously trusted `primary_role` /
+`is_admin` claims straight from the JWT with no revocation check at all;
+they now delegate to the full DB-backed functions, closing the same gap
+for admin-privilege checks specifically.
+
+## Transient network errors never force a logout
+
+`AuthState` has a dedicated `AuthDegraded` variant
+(`lib/features/auth/domain/entities/auth_state.dart`): when a local
+Supabase session exists but the app can't reach the server to verify it
+(timeout, DNS failure, no connectivity, 5xx — anything
+`AuthErrorPolicy.isTransient()` classifies as transient), the session is
+left completely untouched — no local cleanup, no server-side sign-out
+call, no redirect to `/login`. The router keeps the user on `/splash`
+while `Auth` retries automatically with capped exponential backoff (2s,
+4s, 8s, 16s, 32s; 5 attempts max — `_scheduleDegradedRetry` in
+`auth_provider.dart`), and stops auto-retrying past the cap rather than
+retry-storming indefinitely. This exists specifically because the
+opposite used to be true: any transient error hit during cold-start
+session verification fell straight through to `AuthUnauthenticated`,
+which the router maps directly to `/login` — silently discarding a valid
+session over a network blip. An **explicit** denial from the server
+(banned/suspended/locked/maintenance) is never affected by this and still
+redirects immediately, regardless of the transient-error path above.
+
+## Network security
+
+- Android: `usesCleartextTraffic="false"` in `AndroidManifest.xml`, with
+  `network_security_config.xml` allowing cleartext **only** for
+  `127.0.0.1` / `localhost` (local dev tooling), nothing else.
+- iOS: no `NSAllowsArbitraryLoads` or other ATS exceptions in
+  `Info.plist` — default (secure) App Transport Security applies.
+- Certificate pinning: `lib/core/network/certificate_pinning.dart` pins
+  against the certs in `assets/certs/` (`supabase.pem`, `supabase_leaf.pem`,
+  `backup_ca.pem`) for Supabase-hosted requests specifically (see
+  `isSupabaseHost()` in that file for exactly which hosts are covered).
+  Traffic to other hosts (e.g. the video proxy, see `PROXY_BASE_URL`) is
+  **not** pinned.
+
+## Device integrity (freeRASP)
+
+Configured in `lib/core/security/freerasp_config.dart`. Detects
+root/jailbreak, hooking frameworks, and app tampering/repackaging (via
+`SECURITY_ANDROID_SIGNING_HASH` / `SECURITY_IOS_TEAM_ID`, both required at
+release build time — see `IMPLEMENTATION.md`, REL-001).
+
+**Default posture is log-only, not enforcing:**
+`SECURITY_ENFORCE_THREAT_TERMINATION` defaults to `false`
+(`.env.security.example`). Threats are reported to a Supabase
+`security_incidents` table (fire-and-forget insert with a device
+fingerprint, app version, and platform info — see `_logThreatToSupabase`
+in `lib/core/security/security_service.dart`), with a capped in-memory
+fallback buffer if the insert can't complete (e.g. offline, or Supabase
+not initialized yet at startup). This is a separate path from the
+Sentry/`CrashHandler` event pipeline described above — freeRASP threats do
+**not** currently go through Sentry. The app is **not** terminated on
+detection until `SECURITY_ENFORCE_THREAT_TERMINATION` is deliberately
+flipped to `true` for a release, after confirming an acceptably low
+false-positive rate against the `security_incidents` data. Until that
+flip happens, treat root/jailbreak/tamper detection as telemetry, not
+enforcement.
+
+## Offline downloads
+
+AES-256-GCM, one randomly generated 256-bit key per download (verified in
+`lib/core/services/encryption_service.dart`), 512 KiB chunked encryption,
+SHA-256 integrity hashing. Keys live in `flutter_secure_storage`, never in
+SQLite alongside the download metadata.
+
+Cleanup (`lib/core/services/cleanup_scheduler.dart`) deletes the
+encrypted file, then the key, then the DB row, in that order — if key
+deletion fails, the DB row is deliberately **not** deleted, so the next
+cleanup cycle retries that item instead of leaving an untracked orphaned
+key. `OfflineAccountGuard.purgeDownloadsForOtherAccounts` (called right
+after login) follows the identical fail-safe order for the same reason.
+
+Playback authorization is centralized in `OfflinePolicyEngine.authorize`
+(`lib/features/downloads/application/services/offline_policy_engine.dart`)
+— every offline playback attempt re-reads the download's status, expiry,
+account/device binding, file presence, and key presence from local storage
+at the moment of play (not a cached in-memory value), and denies playback
+if any check fails. Account/device binding (`user_id`/`device_id` columns,
+schema v7) means a second account signing in on the same device neither
+sees nor can play back a previous account's downloads — enforced at three
+independent points: the downloads list query, the playback-time policy
+check, and an active purge on login. Downloads created before this binding
+existed (`user_id`/`device_id` both `NULL`) are adopted by whichever
+account plays them first rather than retroactively invalidated — a
+deliberate one-time migration trade-off, not an ongoing gap for anything
+downloaded from this point on.
+
+`OfflineCrashRecovery` (called once at startup) reclassifies any download
+stuck in `pending`/`downloading` status to `failed`, since nothing in this
+codebase auto-resumes a download across an app restart — a row in one of
+those statuses at cold start can only mean the process that was writing
+to it is gone.
+
+**What this is not:** client-side AES-GCM encryption is not equivalent to
+hardware-backed DRM (Widevine L1 / FairPlay). It raises the bar against a
+casual user copying files off the device; it does not defend against a
+sufficiently motivated attacker with root/jailbreak access extracting keys
+from a compromised device at the moment of use. See the offline-security
+architecture doc for the full threat model this is explicitly scoped
+against (and not against).
+
+## What's explicitly NOT verified here
+
+Per the project's own "No Fake Completion" rule — these have not been
+exercised in a real build/release environment as of this document:
+
+- A real Android release build signed with a production keystore (only
+  the debug-keystore fallback path has been exercised locally).
+- Any iOS release/archive build or provisioning profile.
+- CI-side release signing (`key.properties` is not currently written from
+  CI secrets — see `IMPLEMENTATION.md`, CI-001).
+- Store submission via `deploy.yml` (Android is wired to real secrets
+  now but has never had a successful CI run; iOS deliberately stops
+  short of a build/archive step — see `IMPLEMENTATION.md`, "Known
+  gaps").
+- Row Level Security (RLS) policy correctness on the Supabase backend —
+  this repo is the Flutter client only; RLS lives in the backend project
+  and must be audited there, not assumed correct from the client side.
+
+Report a security issue by opening a private security advisory on this
+repository (GitHub → Security → Advisories), not a public issue.

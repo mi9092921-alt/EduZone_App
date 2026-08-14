@@ -1,0 +1,41 @@
+# UNVERIFIED: written without a macOS/Xcode/fastlane environment available
+# to run this. Standard Fastlane actions (`upload_to_testflight`) used in
+# the conventional documented way, but treat the first real run on a
+# macOS CI runner as the actual verification, not this file's existence.
+# This repo has never had a verified iOS release/archive build — see
+# SECURITY.md ("What's explicitly NOT verified here").
+
+default_platform(:ios)
+
+platform :ios do
+  desc "Upload an already-built/archived .ipa to TestFlight. Assumes the " \
+       "Xcode archive + export step already ran (this lane does not build " \
+       "or sign anything itself — that needs real provisioning profiles " \
+       "and signing certificates this repo does not ship). Requires " \
+       "App Store Connect API key credentials via env vars " \
+       "(ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_CONTENT), none of which " \
+       "exist yet — see IMPLEMENTATION.md's 'Known gaps'."
+  lane :beta do
+    unless ENV["ASC_KEY_ID"] && ENV["ASC_ISSUER_ID"] && ENV["ASC_KEY_CONTENT"]
+      UI.user_error!(
+        "ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_CONTENT are not all set. " \
+        "This lane cannot authenticate to App Store Connect without them " \
+        "— see IMPLEMENTATION.md for what's needed. Refusing to continue " \
+        "rather than fail with a confusing API error."
+      )
+    end
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV["ASC_KEY_ID"],
+      issuer_id: ENV["ASC_ISSUER_ID"],
+      key_content: ENV["ASC_KEY_CONTENT"],
+      is_key_content_base64: true
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      ipa: "../build/ios/ipa/app.ipa",
+      skip_waiting_for_build_processing: true
+    )
+  end
+end

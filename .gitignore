@@ -119,18 +119,19 @@ ROLE.md
 Auth Security and Functional Audit Report.md
 tools/
 TASK.md
-SECURITY.md
 issues.md
-IMPLEMENTATION.md
 implementation_plan.md
 engineering_report.md
+# SECURITY.md and IMPLEMENTATION.md were removed from this exclusion list
+# deliberately: they're real, committed documentation now (referenced from
+# android/app/build.gradle.kts and .env.security.example), not scratch
+# working notes like the files above. If you're re-adding either of them
+# here, make sure that's actually intended first.
 
 # Golden test failure diffs (auto-generated on golden test mismatch, never commit)
 **/failures/
 TASK.md
-SECURITY.md
 issues.md
-IMPLEMENTATION.md
 EDUZONE_FIX_PLAN.md
 EduZone_App_Audit_Report_ar.md
 CONTRIBUTING.md

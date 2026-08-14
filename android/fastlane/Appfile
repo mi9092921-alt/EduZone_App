@@ -1,0 +1,6 @@
+package_name("com.eduzone.learn.app") # matches applicationId in app/build.gradle.kts
+
+# Path to the Play Console service account JSON key, resolved from an env
+# var rather than committed — see IMPLEMENTATION.md (CI-001) for how CI is
+# expected to write this file from a secret before invoking any lane here.
+json_key_file(ENV["PLAY_STORE_JSON_KEY_PATH"]) if ENV["PLAY_STORE_JSON_KEY_PATH"]

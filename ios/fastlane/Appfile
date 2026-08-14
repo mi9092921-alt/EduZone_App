@@ -1,0 +1,6 @@
+app_identifier("com.eduzone.learn.app") # matches PRODUCT_BUNDLE_IDENTIFIER in Runner.xcodeproj
+
+# Intentionally left unset — real values (Apple ID team, ASC key) must come
+# from CI secrets, never committed here. See IMPLEMENTATION.md.
+# apple_id(ENV["APPLE_ID"])
+# itc_team_id(ENV["ASC_TEAM_ID"])
