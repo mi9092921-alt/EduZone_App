@@ -58,20 +58,24 @@ class UserInfoCard extends StatelessWidget {
                     ),
                   ),
                   if (onEditPressed != null)
-                    GestureDetector(
-                      onTap: onEditPressed,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: ds.primary,
-                          border: Border.all(color: ds.surface, width: 2),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppSpacing.xs2), // check-ignore -- already a token; false positive
-                          child: Icon(
-                            AppIcons.camera,
-                            size: 12,
-                            color: ds.surface,
+                    Semantics(
+                      button: true,
+                      label: l10n.changeAvatar,
+                      child: GestureDetector(
+                        onTap: onEditPressed,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: ds.primary,
+                            border: Border.all(color: ds.surface, width: 2),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppSpacing.xs2), // check-ignore -- already a token; false positive
+                            child: Icon(
+                              AppIcons.camera,
+                              size: 12,
+                              color: ds.surface,
+                            ),
                           ),
                         ),
                       ),

@@ -71,6 +71,7 @@ class TodoListTile extends StatelessWidget {
                       TodoCheckbox(
                         value: todo.isCompleted,
                         onChanged: onStatusChanged,
+                        label: todo.title,
                       ),
                       const SizedBox(width: AppSpacing.md),
                       Expanded(

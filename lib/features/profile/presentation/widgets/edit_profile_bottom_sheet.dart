@@ -153,34 +153,38 @@ class _EditProfileBottomSheetState
           const SizedBox(height: AppSpacing.xl),
 
           // Avatar with edit button
-          GestureDetector(
-            onTap: _pickImage,
-            child: Stack(
-              alignment: AlignmentDirectional.bottomEnd,
-              children: [
-                if (_selectedImagePath != null)
-                  CircleAvatar(
-                    radius: 44,
-                    backgroundImage: FileImage(File(_selectedImagePath!)),
-                  )
-                else
-                  AppAvatar(
-                    url: widget.profile.avatarUrl,
-                    name: widget.profile.displayName,
-                    radius: 44,
+          Semantics(
+            button: true,
+            label: l10n.changeAvatar,
+            child: GestureDetector(
+              onTap: _pickImage,
+              child: Stack(
+                alignment: AlignmentDirectional.bottomEnd,
+                children: [
+                  if (_selectedImagePath != null)
+                    CircleAvatar(
+                      radius: 44,
+                      backgroundImage: FileImage(File(_selectedImagePath!)),
+                    )
+                  else
+                    AppAvatar(
+                      url: widget.profile.avatarUrl,
+                      name: widget.profile.displayName,
+                      radius: 44,
+                    ),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.primary,
+                      border: Border.all(color: ds.surface, width: 2),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.xs),
+                      child: Icon(AppIcons.camera, size: 14, color: ds.surface),
+                    ),
                   ),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.primary,
-                    border: Border.all(color: ds.surface, width: 2),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.xs),
-                    child: Icon(AppIcons.camera, size: 14, color: ds.surface),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
 

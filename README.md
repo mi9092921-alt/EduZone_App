@@ -714,10 +714,19 @@ chore(deps):       Dependency updates
 
 | Document | Description |
 |---|---|
-| `docs/EduZone_App_Design_System_v1.md` | Complete app design system |
-| `docs/EduZone_API_Design_v1.md` | RPC and Edge Function contracts |
-| `docs/EduZone_Clean_Architecture.md` | Platform architecture |
-| `docs/SECURITY_DESIGN.md` | Security model and authentication flows |
+| `ARCHITECTURE.md` | Layering contract, what's CI-enforced vs. spot-checked, known architecture debt |
+| `DESIGN_SYSTEM.md` | Token-system audit, what `check_design_tokens.py` enforces and why, known gaps |
+| `ACCESSIBILITY.md` | Accessibility audit, what `check_a11y.py` enforces and why, known gaps |
+| `SECURITY.md` | Certificate pinning strategy, threat model, verification procedures |
+| `IMPLEMENTATION.md` | Implementation notes |
+
+(An earlier version of this table pointed at four files under `docs/` —
+`EduZone_App_Design_System_v1.md`, `EduZone_API_Design_v1.md`,
+`EduZone_Clean_Architecture.md`, `SECURITY_DESIGN.md` — none of which exist
+anywhere in this repository. `docs/` itself is excluded in `.gitignore`
+alongside AI-agent scratch folders, so anything placed there would never
+actually be committed; every doc above lives at the repo root instead,
+which is why it's visible in this list at all.)
 
 ---
 

@@ -54,6 +54,7 @@ class TodoPreviewTile extends StatelessWidget {
               TodoCheckbox(
                 value: item.isCompleted,
                 onChanged: isLoading ? (_) {} : (_) => onToggle?.call(),
+                label: item.title,
               ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
