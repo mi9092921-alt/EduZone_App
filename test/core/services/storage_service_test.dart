@@ -1,8 +1,12 @@
 import 'dart:io';
 import 'package:app/core/services/storage_service.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+class MockFlutterSecureStorage extends Mock implements FlutterSecureStorage {}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -204,5 +208,190 @@ void main() {
     // 7. Cleanup
     await service.close();
     tempDir.deleteSync(recursive: true);
+  });
+
+  group('metadata tamper-evidence (P6.22/P6.23 security_signature)', () {
+    late MockFlutterSecureStorage secureStorage;
+    late Map<String, String> keyStore;
+    late Directory tempDir;
+    late StorageService service;
+
+    setUp(() {
+      keyStore = {};
+      secureStorage = MockFlutterSecureStorage();
+      when(() => secureStorage.read(key: any(named: 'key'))).thenAnswer(
+        (invocation) async =>
+            keyStore[invocation.namedArguments[#key] as String],
+      );
+      when(
+        () => secureStorage.write(
+          key: any(named: 'key'),
+          value: any(named: 'value'),
+        ),
+      ).thenAnswer((invocation) async {
+        keyStore[invocation.namedArguments[#key] as String] =
+            invocation.namedArguments[#value] as String;
+      });
+
+      tempDir = Directory.systemTemp.createTempSync('eduzone_test_db_sig');
+      service = StorageService(
+        documentsDirectoryPath: tempDir.path,
+        secureStorage: secureStorage,
+      );
+    });
+
+    tearDown(() async {
+      await service.close();
+      tempDir.deleteSync(recursive: true);
+    });
+
+    Future<void> insertRow(
+      StorageService svc, {
+      String id = 'dl_signed',
+      String status = 'completed',
+      String? userId = 'user_a',
+      String? deviceId = 'device_a',
+    }) {
+      return svc.insertDownload({
+        'id': id,
+        'lesson_id': 'lesson_1',
+        'course_id': 'course_1',
+        'course_title': 'Course',
+        'title': 'Lesson',
+        'local_path': '/local',
+        'encrypted_path': '/enc',
+        'video_url': 'http://test',
+        'quality': 'high',
+        'file_size': 1,
+        'download_status': status,
+        'downloaded_at': 1,
+        'expires_at': DateTime.now()
+            .add(const Duration(days: 1))
+            .millisecondsSinceEpoch,
+        'user_id': userId,
+        'device_id': deviceId,
+      });
+    }
+
+    test('a freshly inserted row is signed and verifies as intact', () async {
+      await insertRow(service);
+      expect(await service.verifyDownloadSignature('dl_signed'), isTrue);
+
+      final db = await service.database;
+      final rows = await db.query('downloaded_lessons');
+      expect(rows.first['security_signature'], isNotNull);
+    });
+
+    test('updateDownloadStatus re-signs so verification still passes',
+        () async {
+      await insertRow(service);
+      await service.updateDownloadStatus('dl_signed', 'failed');
+
+      expect(await service.verifyDownloadSignature('dl_signed'), isTrue);
+    });
+
+    test('updateDownload re-signs so verification still passes', () async {
+      await insertRow(service);
+      await service.updateDownload('dl_signed', {'user_id': 'user_b'});
+
+      expect(await service.verifyDownloadSignature('dl_signed'), isTrue);
+    });
+
+    test(
+      'a row edited directly via SQL, bypassing this class, fails verification',
+      () async {
+        await insertRow(service);
+
+        // Simulate exactly the T4 threat this feature exists for: someone
+        // with raw access to the SQLite file (e.g. a SQLite browser on a
+        // rooted device) editing expires_at directly, without going
+        // through updateDownload/updateDownloadStatus.
+        final db = await service.database;
+        await db.update(
+          'downloaded_lessons',
+          {
+            'expires_at': DateTime.now()
+                .add(const Duration(days: 3650))
+                .millisecondsSinceEpoch,
+          },
+          where: 'id = ?',
+          whereArgs: ['dl_signed'],
+        );
+
+        expect(await service.verifyDownloadSignature('dl_signed'), isFalse);
+      },
+    );
+
+    test(
+      'a row edited to change ownership directly via SQL fails verification',
+      () async {
+        await insertRow(service);
+
+        final db = await service.database;
+        await db.update(
+          'downloaded_lessons',
+          {'user_id': 'user_b'},
+          where: 'id = ?',
+          whereArgs: ['dl_signed'],
+        );
+
+        expect(await service.verifyDownloadSignature('dl_signed'), isFalse);
+      },
+    );
+
+    test('a pre-v8 row with no stored signature verifies as intact (adopted, not denied)',
+        () async {
+      // Insert bypassing insertDownload entirely, exactly mirroring what a
+      // real pre-v8 row looks like after the v8 migration: every column
+      // present except security_signature, which is NULL.
+      final db = await service.database;
+      await db.insert('downloaded_lessons', {
+        'id': 'dl_legacy',
+        'lesson_id': 'lesson_1',
+        'course_id': 'course_1',
+        'course_title': 'Course',
+        'title': 'Lesson',
+        'local_path': '/local',
+        'encrypted_path': '/enc',
+        'video_url': 'http://test',
+        'quality': 'high',
+        'file_size': 1,
+        'download_status': 'completed',
+        'downloaded_at': 1,
+        'expires_at': DateTime.now()
+            .add(const Duration(days: 1))
+            .millisecondsSinceEpoch,
+      });
+
+      expect(await service.verifyDownloadSignature('dl_legacy'), isTrue);
+    });
+
+    test('a nonexistent row verifies as intact (nothing to tamper with)',
+        () async {
+      expect(await service.verifyDownloadSignature('does_not_exist'), isTrue);
+    });
+
+    test(
+      'without secure storage, signing is skipped and verification still passes (fails open, never crashes)',
+      () async {
+        final unsignedDir =
+            Directory.systemTemp.createTempSync('eduzone_test_db_unsigned');
+        final unsignedService =
+            StorageService(documentsDirectoryPath: unsignedDir.path);
+
+        await insertRow(unsignedService);
+        expect(
+          await unsignedService.verifyDownloadSignature('dl_signed'),
+          isTrue,
+        );
+
+        final db = await unsignedService.database;
+        final rows = await db.query('downloaded_lessons');
+        expect(rows.first['security_signature'], isNull);
+
+        await unsignedService.close();
+        unsignedDir.deleteSync(recursive: true);
+      },
+    );
   });
 }

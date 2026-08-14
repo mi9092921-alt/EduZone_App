@@ -66,9 +66,9 @@ class CleanupScheduler {
       if (task != _cleanupTask) return false;
 
       try {
-        final storageService = StorageService();
-        final localDs = DownloadLocalDataSource(storageService);
         const secureStorage = FlutterSecureStorage();
+        final storageService = StorageService(secureStorage: secureStorage);
+        final localDs = DownloadLocalDataSource(storageService);
         final encryptionService = EncryptionService(secureStorage);
 
         final expiredRows = await localDs.getExpiredDownloads();

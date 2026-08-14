@@ -34,6 +34,8 @@ void main() {
 
     when(() => localDataSource.updateDownload(any(), any()))
         .thenAnswer((_) async {});
+    when(() => localDataSource.verifyDownloadIntegrity(any()))
+        .thenAnswer((_) async => true);
   });
 
   tearDown(() {
@@ -83,6 +85,84 @@ void main() {
       // Not a legacy row, so no adoption write should happen.
       verifyNever(() => localDataSource.updateDownload(any(), any()));
     });
+  });
+
+  group('OfflinePolicyEngine.authorize — tamper detection (P6.22/P6.23)', () {
+    test('denies when the stored signature does not match current fields',
+        () async {
+      when(() => localDataSource.getDownloadById(downloadId))
+          .thenAnswer((_) async => validRow());
+      when(() => localDataSource.verifyDownloadIntegrity(downloadId))
+          .thenAnswer((_) async => false);
+
+      await expectLater(
+        buildEngine().authorize(downloadId),
+        throwsA(
+          isA<OfflinePlaybackDeniedException>().having(
+            (e) => e.reason,
+            'reason',
+            OfflinePlaybackDenialReason.tampered,
+          ),
+        ),
+      );
+
+      // Denied before any decryption is attempted.
+      verifyNever(() => encryptionService.retrieveKey(any()));
+    });
+
+    test(
+      'tamper check wins even when the (untrustworthy) field values would '
+      'otherwise look fine',
+      () async {
+        when(() => localDataSource.getDownloadById(downloadId))
+            .thenAnswer((_) async => validRow());
+        when(() => localDataSource.verifyDownloadIntegrity(downloadId))
+            .thenAnswer((_) async => false);
+        when(() => encryptionService.retrieveKey(downloadId))
+            .thenAnswer((_) async => 'a-key');
+
+        await expectLater(
+          buildEngine().authorize(downloadId),
+          throwsA(
+            isA<OfflinePlaybackDeniedException>().having(
+              (e) => e.reason,
+              'reason',
+              OfflinePlaybackDenialReason.tampered,
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'tamper check runs before status/expiry/ownership are trusted for a '
+      'decision — e.g. a tampered "completed" status does not leak through '
+      'as notCompleted instead',
+      () async {
+        when(() => localDataSource.getDownloadById(downloadId)).thenAnswer(
+          (_) async => validRow(
+            status: 'downloading',
+            userId: 'someone_else',
+            expiresAt: DateTime.now()
+                .subtract(const Duration(days: 1))
+                .millisecondsSinceEpoch,
+          ),
+        );
+        when(() => localDataSource.verifyDownloadIntegrity(downloadId))
+            .thenAnswer((_) async => false);
+
+        await expectLater(
+          buildEngine().authorize(downloadId),
+          throwsA(
+            isA<OfflinePlaybackDeniedException>().having(
+              (e) => e.reason,
+              'reason',
+              OfflinePlaybackDenialReason.tampered,
+            ),
+          ),
+        );
+      },
+    );
   });
 
   group('OfflinePolicyEngine.authorize — deny paths (P6.41 invariants)', () {

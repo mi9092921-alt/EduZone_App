@@ -14,6 +14,7 @@ import '../../data/datasources/download_local_ds.dart';
 /// no valid/owned/un-expired/un-tampered download => no playback.
 enum OfflinePlaybackDenialReason {
   downloadNotFound,
+  tampered,
   notCompleted,
   expired,
   ownerMismatch,
@@ -44,6 +45,9 @@ class OfflinePlaybackDeniedException implements Exception {
     switch (reason) {
       case OfflinePlaybackDenialReason.downloadNotFound:
         return 'This download is no longer available.';
+      case OfflinePlaybackDenialReason.tampered:
+        return 'This download can no longer be verified and must be '
+            'downloaded again.';
       case OfflinePlaybackDenialReason.notCompleted:
         return 'This download has not finished yet.';
       case OfflinePlaybackDenialReason.expired:
@@ -79,12 +83,18 @@ class OfflinePlaybackDeniedException implements Exception {
 /// **Honest security boundary** (documented per project instructions §12
 /// and P6.50 of the architecture doc): this engine enforces status /
 /// expiry / account-binding / device-binding / integrity-presence checks
-/// against locally stored metadata plus a device-local AES-256-GCM key. It
-/// does **not** implement a server-issued, cryptographically signed
-/// license (P6.4), anti-replay protection (P6.25), or hardware-backed DRM.
-/// A local attacker capable of tampering with both the app's SQLite
-/// database and its secure storage together (T2 in the threat model —
-/// root/jailbreak) could still defeat these checks. That is a real,
+/// against locally stored metadata plus a device-local AES-256-GCM key.
+/// Since schema v8, the security-critical fields (status, expiry, account
+/// and device binding) are also HMAC-signed with a key that lives only in
+/// secure storage (`StorageService`'s `security_signature` column) — so a
+/// direct SQLite edit (T4: "مستخدم يحاول تعديل metadata") is detected as
+/// [OfflinePlaybackDenialReason.tampered] rather than silently trusted.
+/// This engine still does **not** implement a server-issued,
+/// cryptographically signed license (P6.4) or anti-replay protection
+/// (P6.25) — the HMAC key is device-generated and device-held, not
+/// server-controlled, so it raises the bar against casual local tampering
+/// but cannot detect a fully compromised device that extracts the key
+/// itself (T2 in the threat model — root/jailbreak). That remains a real,
 /// intentionally-documented limitation of client-only enforcement, not a
 /// DRM-equivalence claim.
 class OfflinePolicyEngine {
@@ -137,6 +147,20 @@ class OfflinePolicyEngine {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.downloadNotFound,
         'No local record for downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
+      );
+    }
+
+    // Tamper-evidence check (P6.22/P6.23) — must run before any of the
+    // fields below are trusted for a decision. A signature mismatch means
+    // something wrote to this row's security-critical fields outside this
+    // app's own signing write path (e.g. direct SQLite edit on a rooted
+    // device) — see StorageService.verifyDownloadSignature for exactly
+    // what counts as a mismatch vs. a legitimate "not yet signed" row.
+    final isIntact = await _localDataSource.verifyDownloadIntegrity(downloadId);
+    if (!isIntact) {
+      throw OfflinePlaybackDeniedException(
+        OfflinePlaybackDenialReason.tampered,
+        'downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
       );
     }
 

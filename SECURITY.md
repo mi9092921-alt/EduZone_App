@@ -184,11 +184,43 @@ codebase auto-resumes a download across an app restart — a row in one of
 those statuses at cold start can only mean the process that was writing
 to it is gone.
 
+Since schema v8, the security-critical fields that `OfflinePolicyEngine`
+actually bases its decision on (`id`, `user_id`, `device_id`, `expires_at`,
+`download_status`) are HMAC-SHA256 signed on every write
+(`StorageService._sign`/`_signAfterMerge`, applied inside
+`insertDownload`/`updateDownloadStatus`/`updateDownload` — the only three
+write paths every caller in this codebase funnels through) with a key that
+lives only in `flutter_secure_storage`, never in SQLite next to the data
+it protects. `OfflinePolicyEngine.authorize` re-verifies this signature
+(`StorageService.verifyDownloadSignature`) before trusting any of those
+fields — a row edited directly in the SQLite file (e.g. via a SQLite
+browser on a rooted device, bypassing this app's own code entirely) no
+longer matches its signature and is denied as
+`OfflinePlaybackDenialReason.tampered`, regardless of what the edited
+field values say. Rows created before this signing existed
+(`security_signature IS NULL`) are treated as "not yet signed" rather than
+denied, and get a real signature automatically the next time anything
+legitimately updates them — the same one-time migration trade-off as the
+v7 account/device binding above.
+
+This closes the gap where a security decision depended purely on local
+metadata a user could edit directly — but the HMAC key is
+device-generated and device-held, not server-issued: it raises the bar
+against casual local tampering, not against an attacker who has fully
+compromised the device and can extract the key itself alongside
+everything else. That remains a real, deliberately-documented limitation
+below.
+
 **What this is not:** client-side AES-GCM encryption is not equivalent to
 hardware-backed DRM (Widevine L1 / FairPlay). It raises the bar against a
 casual user copying files off the device; it does not defend against a
 sufficiently motivated attacker with root/jailbreak access extracting keys
-from a compromised device at the moment of use. See the offline-security
+from a compromised device at the moment of use. Likewise, the
+`security_signature` HMAC above raises the bar against direct database
+edits but is not a server-issued, cryptographically signed license — there
+is no backend entitlement/license-issuance endpoint in this repo (see
+`EduZone_Offline_Download_Security_Trusted_Playback_Architecture.md`
+P6.3/P6.4), and no anti-replay protection (P6.25). See the offline-security
 architecture doc for the full threat model this is explicitly scoped
 against (and not against).
 

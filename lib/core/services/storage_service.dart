@@ -1,6 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:crypto/crypto.dart' as crypto;
+import 'package:encrypt/encrypt.dart' show Key;
+import 'package:flutter/foundation.dart' hide Key;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -16,17 +20,35 @@ import 'package:sqflite/sqflite.dart';
 /// - File sizes and checksums
 class StorageService {
   static const _databaseName = 'eduzone_downloads.db';
-  static const _databaseVersion = 7;
+  static const _databaseVersion = 8;
 
   static const _tableDownloadedLessons = 'downloaded_lessons';
   static const _tableBookmarks = 'bookmarks';
 
+  /// Secure-storage key for the device-bound HMAC key used to sign
+  /// security-critical download metadata (P6.22/P6.23). Never the AES
+  /// download-decryption keys — those stay entirely inside
+  /// `EncryptionService`, this is a separate key with a separate purpose.
+  static const _hmacKeySecureStorageKey = 'offline_metadata_hmac_key';
+
   final String? _documentsDirectoryPath;
+
+  /// Nullable and passed in explicitly (never auto-constructed here),
+  /// mirroring `EncryptionService`'s exact convention: pass null in tests
+  /// or contexts where secure storage isn't available, and every signing
+  /// method below degrades to "skip signing" rather than throwing. This
+  /// keeps every existing `StorageService()` construction site (including
+  /// every existing test) working unchanged; production call sites pass a
+  /// real `FlutterSecureStorage()` explicitly — see `storage_provider.dart`.
+  final FlutterSecureStorage? _secureStorage;
+
+  String? _cachedHmacKey;
 
   Database? _database;
 
-  StorageService({String? documentsDirectoryPath})
-      : _documentsDirectoryPath = documentsDirectoryPath;
+  StorageService({String? documentsDirectoryPath, FlutterSecureStorage? secureStorage})
+      : _documentsDirectoryPath = documentsDirectoryPath,
+        _secureStorage = secureStorage;
 
   /// Gets the database instance, initializing it if necessary.
   Future<Database> get database async {
@@ -80,7 +102,8 @@ class StorageService {
         source_url TEXT,
         link_validated_at INTEGER,
         user_id TEXT,
-        device_id TEXT
+        device_id TEXT,
+        security_signature TEXT
       )
     ''');
 
@@ -198,6 +221,31 @@ class StorageService {
       ''');
     }
 
+    if (oldVersion < 8) {
+      // P6.22/P6.23 ("Metadata Authenticity"): every write to
+      // id/user_id/device_id/expires_at/download_status made through this
+      // class (insertDownload/updateDownloadStatus/updateDownload — every
+      // write site in the app funnels through exactly these three
+      // methods) is now signed with a device-bound HMAC key that never
+      // touches SQLite. `OfflinePolicyEngine.authorize` recomputes and
+      // compares this signature before trusting any of those fields, so
+      // an `UPDATE downloaded_lessons SET expires_at = ...` issued outside
+      // this app (e.g. a SQLite browser on a rooted device) produces a row
+      // whose stored fields no longer match its signature and is denied
+      // playback — see OfflinePlaybackDenialReason.tampered.
+      //
+      // Same migration policy as v7: existing rows get
+      // security_signature = NULL rather than being retroactively denied.
+      // A NULL signature is treated as "not yet signed" (allowed) by
+      // StorageService.verifyDownloadSignature, and gets a real signature
+      // automatically the next time anything legitimately updates that
+      // row (including the v7 legacy user/device adoption path in
+      // OfflinePolicyEngine, which already writes on first play).
+      await db.execute('''
+        ALTER TABLE $_tableDownloadedLessons ADD COLUMN security_signature TEXT
+      ''');
+    }
+
     // Preventive data-integrity sweep: any 'completed' row that is missing
     // critical numeric fields would cause a silent TypeError in _mapToEntity
     // (swallowed by the catch block), making it invisible in the downloads
@@ -215,9 +263,11 @@ class StorageService {
   /// Inserts a new download record.
   Future<void> insertDownload(Map<String, dynamic> download) async {
     final db = await database;
+    final id = download['id'] as String;
+    final signature = await _sign(id, download);
     await db.insert(
       _tableDownloadedLessons,
-      download,
+      signature == null ? download : {...download, 'security_signature': signature},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -308,9 +358,11 @@ class StorageService {
   /// Updates the download status.
   Future<void> updateDownloadStatus(String id, String status) async {
     final db = await database;
+    final changes = {'download_status': status};
+    final signature = await _signAfterMerge(db, id, changes);
     await db.update(
       _tableDownloadedLessons,
-      {'download_status': status},
+      signature == null ? changes : {...changes, 'security_signature': signature},
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -330,9 +382,10 @@ class StorageService {
   /// Updates multiple fields of a download.
   Future<void> updateDownload(String id, Map<String, dynamic> updates) async {
     final db = await database;
+    final signature = await _signAfterMerge(db, id, updates);
     await db.update(
       _tableDownloadedLessons,
-      updates,
+      signature == null ? updates : {...updates, 'security_signature': signature},
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -347,6 +400,130 @@ class StorageService {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  // ── Metadata tamper-evidence (P6.22/P6.23) ────────────────────────────
+  //
+  // `security_signature` is an HMAC-SHA256 over the five fields that
+  // OfflinePolicyEngine's playback decision actually depends on:
+  // id, user_id, device_id, expires_at, download_status. The HMAC key
+  // lives only in secure storage (Keystore/Keychain-backed), never in
+  // SQLite next to the data it protects — so editing the SQLite file
+  // directly (the exact T4 threat this whole file's callers exist to
+  // defend against) can change those field values, but can't produce a
+  // matching signature without also compromising secure storage.
+  //
+  // This raises the bar against local metadata tampering; it is
+  // explicitly NOT a server-issued license (P6.4) — the key is
+  // device-generated and device-held, not server-controlled, so it can't
+  // detect or prevent a *legitimate*-looking modification made through
+  // this app's own code by someone who has fully compromised the device
+  // (they could, in principle, extract the HMAC key too). See
+  // OfflinePolicyEngine's doc comment and SECURITY.md for the full
+  // honesty-required boundary statement.
+
+  /// Lazily generates (once per device install) and caches the HMAC key.
+  /// Returns null — meaning "skip signing, not sign-with-empty-key" —
+  /// whenever no [FlutterSecureStorage] was supplied to this instance, or
+  /// if reading/writing it fails for any reason. Every caller below must
+  /// treat null as "this instance can't sign right now", not as an error.
+  Future<String?> _getHmacKey() async {
+    final secureStorage = _secureStorage;
+    if (secureStorage == null) return null;
+    final cached = _cachedHmacKey;
+    if (cached != null) return cached;
+
+    try {
+      var key = await secureStorage.read(key: _hmacKeySecureStorageKey);
+      if (key == null) {
+        key = Key.fromSecureRandom(32).base64;
+        await secureStorage.write(key: _hmacKeySecureStorageKey, value: key);
+      }
+      _cachedHmacKey = key;
+      return key;
+    } catch (e) {
+      debugPrint('[StorageService] HMAC key unavailable, signing skipped: $e');
+      return null;
+    }
+  }
+
+  /// Canonical, order-independent string built from exactly the fields
+  /// OfflinePolicyEngine's authorization decision depends on. [values] may
+  /// be a full row or just the fields being changed merged over the
+  /// current row (see [_signAfterMerge]) — either way, missing fields are
+  /// treated as empty rather than throwing, so a partial map never crashes
+  /// signing.
+  String _canonicalPayload(String id, Map<String, dynamic> values) {
+    final userId = values['user_id'] as String? ?? '';
+    final deviceId = values['device_id'] as String? ?? '';
+    final expiresAt = values['expires_at']?.toString() ?? '';
+    final status = values['download_status'] as String? ?? '';
+    return '$id|$userId|$deviceId|$expiresAt|$status';
+  }
+
+  /// Returns the HMAC-SHA256 signature for [values], or null if signing
+  /// isn't available on this instance (see [_getHmacKey]).
+  Future<String?> _sign(String id, Map<String, dynamic> values) async {
+    final key = await _getHmacKey();
+    if (key == null) return null;
+    final hmac = crypto.Hmac(crypto.sha256, utf8.encode(key));
+    return hmac.convert(utf8.encode(_canonicalPayload(id, values))).toString();
+  }
+
+  /// Reads the current row for [id] (if any), merges [changes] on top of
+  /// it, and signs the result. Returns null when the row doesn't exist yet
+  /// (nothing to merge against — `insertDownload` handles the create case
+  /// separately) or when signing isn't available. Centralizing this here,
+  /// rather than in each of the three write methods, is what makes every
+  /// write path across the app (repository, execution service, link
+  /// refresher, crash recovery, policy-engine adoption) signed by
+  /// construction instead of needing every call site to remember to do it.
+  Future<String?> _signAfterMerge(
+    DatabaseExecutor db,
+    String id,
+    Map<String, dynamic> changes,
+  ) async {
+    final current = await db.query(
+      _tableDownloadedLessons,
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (current.isEmpty) return null;
+    final merged = {...current.first, ...changes};
+    return _sign(id, merged);
+  }
+
+  /// Re-verifies [id]'s stored `security_signature` against its current
+  /// field values. Returns:
+  ///  - `true` when the row doesn't exist (nothing to verify — callers
+  ///    like `OfflinePolicyEngine` already deny "not found" separately),
+  ///    when there is no stored signature yet (pre-v8 row — adopted, not
+  ///    denied, exactly like the v7 user/device binding migration), or
+  ///    when this instance can't sign (no secure storage supplied — fails
+  ///    open only for "can't verify", never for a confirmed mismatch).
+  ///  - `false` only when a signature exists AND it does not match the
+  ///    row's current fields — i.e. something wrote to this row's
+  ///    security-critical fields without going through this class's own
+  ///    signing write path.
+  Future<bool> verifyDownloadSignature(String id) async {
+    final db = await database;
+    final rows = await db.query(
+      _tableDownloadedLessons,
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return true;
+
+    final row = rows.first;
+    final storedSignature = row['security_signature'] as String?;
+    if (storedSignature == null) return true;
+
+    final expected = await _sign(id, row);
+    if (expected == null) return true;
+
+    return expected == storedSignature;
   }
 
   /// Deletes a download record.

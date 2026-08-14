@@ -169,6 +169,13 @@ class DownloadLocalDataSource {
     return await _storageService.getDownloadById(id);
   }
 
+  /// Re-verifies [id]'s tamper-evidence signature against its current
+  /// field values (P6.22/P6.23). See `StorageService.verifyDownloadSignature`
+  /// for exactly what `true`/`false` mean — used by `OfflinePolicyEngine`.
+  Future<bool> verifyDownloadIntegrity(String id) async {
+    return await _storageService.verifyDownloadSignature(id);
+  }
+
   /// Gets downloads by course ID.
   Future<List<Map<String, dynamic>>> getDownloadsByCourse(String courseId) async {
     return await _storageService.getDownloadsByCourse(courseId);
