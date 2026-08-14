@@ -87,6 +87,8 @@ class CheckUserAccessService {
             value: userId,
           ),
           callback: (payload) {
+            if (!_active) return;
+
             final newStatusStr = payload.newRecord['account_status'] as String?;
             final status = AccountStatus.fromString(newStatusStr ?? 'active');
             final oldVersion = payload.oldRecord['token_version'] as int?;
@@ -123,6 +125,8 @@ class CheckUserAccessService {
     if (!_active) return;
     try {
       final response = await _supabase.rpc('check_user_access');
+      if (!_active) return;
+
       final data = response as Map<String, dynamic>;
 
       final dbTokenVersion = data['token_version'] as int?;
@@ -171,6 +175,8 @@ class CheckUserAccessService {
               ? DateTime.tryParse(data['ends_at'])
               : null,
         );
+
+        if (!_active) return;
 
         // maintenance_mode/app_locked: show UI but DO NOT logout
         if (status == AccountStatus.maintenance ||

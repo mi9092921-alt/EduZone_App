@@ -53,12 +53,24 @@ ALTER TABLE public.users FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS users_select_policy ON public.users;
 
 CREATE POLICY users_select_policy ON public.users
-  FOR SELECT
+  FOR SELECT TO authenticated
   USING (
-    public.validate_user_session()
+    deleted_at IS NULL
     AND (
-      id = (select auth.uid())
-      OR public.tenant_matches_jwt(tenant_id)
+      public.is_admin_with_session_validation()
+      OR id = (select auth.uid())
+      OR (
+        tenant_id = public.get_current_tenant_id()
+        AND EXISTS (
+          SELECT 1
+          FROM public.courses c
+          JOIN public.enrollments e ON e.course_id = c.id
+          WHERE c.teacher_id = (select auth.uid())
+            AND e.user_id = users.id
+            AND c.tenant_id = public.get_current_tenant_id()
+            AND e.status = 'active'
+        )
+      )
     )
   );
 
@@ -83,12 +95,12 @@ ALTER TABLE public.user_roles FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS user_roles_select_policy ON public.user_roles;
 
 CREATE POLICY user_roles_select_policy ON public.user_roles
-  FOR SELECT
+  FOR SELECT TO authenticated
   USING (
     public.validate_user_session()
     AND (
       user_id = (select auth.uid())
-      OR public.tenant_matches_jwt(tenant_id)
+      OR public.is_admin_with_session_validation()
     )
   );
 
@@ -132,8 +144,24 @@ DROP POLICY IF EXISTS courses_select_policy ON public.courses;
 CREATE POLICY courses_select_policy ON public.courses
   FOR SELECT
   USING (
-    (status = 'published' OR public.tenant_matches_jwt(tenant_id))
-    AND deleted_at IS NULL
+    deleted_at IS NULL
+    AND (
+      status = 'published'
+      OR (
+        public.validate_user_session()
+        AND tenant_id = public.get_current_tenant_id()
+        AND (
+          public.is_admin_with_session_validation()
+          OR teacher_id = (select auth.uid())
+          OR public.has_course_access(id)
+          OR public.user_has_permission(
+            public.get_auth_user_id(),
+            'courses.read'::text,
+            tenant_id
+          )
+        )
+      )
+    )
   );
 
 DROP POLICY IF EXISTS courses_admin_all ON public.courses;
@@ -156,21 +184,31 @@ ALTER TABLE public.enrollments FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS enrollments_select_policy ON public.enrollments;
 
 CREATE POLICY enrollments_select_policy ON public.enrollments
-  FOR SELECT
+  FOR SELECT TO authenticated
   USING (
-    public.validate_user_session()
-    AND public.tenant_matches_jwt(tenant_id)
-    AND deleted_at IS NULL
+    deleted_at IS NULL
+    AND tenant_id = public.get_current_tenant_id()
+    AND (
+      user_id = (select auth.uid())
+      OR public.is_admin_with_session_validation()
+      OR EXISTS (
+        SELECT 1
+        FROM public.courses c
+        WHERE c.id = enrollments.course_id
+          AND c.tenant_id = enrollments.tenant_id
+          AND c.teacher_id = (select auth.uid())
+      )
+    )
   );
 
 DROP POLICY IF EXISTS enrollments_insert_policy ON public.enrollments;
 
 CREATE POLICY enrollments_insert_policy ON public.enrollments
-  FOR INSERT
+  FOR INSERT TO authenticated
   WITH CHECK (
-    public.validate_user_session()
-    AND public.tenant_matches_jwt(tenant_id)
-    -- Insert only if not deleted
+    public.is_admin_with_session_validation()
+    AND tenant_id = public.assert_tenant()
+    AND deleted_at IS NULL
   );
 
 DROP POLICY IF EXISTS enrollments_update_policy ON public.enrollments;
@@ -195,11 +233,21 @@ ALTER TABLE public.user_progress FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS user_progress_select_policy ON public.user_progress;
 
 CREATE POLICY user_progress_select_policy ON public.user_progress
-  FOR SELECT
+  FOR SELECT TO authenticated
   USING (
-    public.validate_user_session()
-    AND (user_id = (select auth.uid()) OR public.tenant_matches_jwt(tenant_id))
-    AND deleted_at IS NULL
+    deleted_at IS NULL
+    AND tenant_id = public.get_current_tenant_id()
+    AND (
+      user_id = (select auth.uid())
+      OR public.is_admin_with_session_validation()
+      OR EXISTS (
+        SELECT 1
+        FROM public.courses c
+        WHERE c.id = user_progress.course_id
+          AND c.tenant_id = user_progress.tenant_id
+          AND c.teacher_id = (select auth.uid())
+      )
+    )
   );
 
 DROP POLICY IF EXISTS user_progress_all_policy ON public.user_progress;
@@ -312,6 +360,7 @@ ALTER TABLE public.sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.video_views ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.todos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.todos FORCE ROW LEVEL SECURITY;
 
 ALTER TABLE public.warnings ENABLE ROW LEVEL SECURITY;
 
@@ -1006,6 +1055,24 @@ CREATE POLICY video_views_access ON public.video_views
     AND user_id = (select auth.uid())
   );
 
+-- Canonical source of truth: remove any legacy/duplicate policies left by older deployments.
+-- Preserves: auth_session_required_* (auto-generated restrictive baseline) and todos_access (canonical).
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT policyname
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'todos'
+      AND policyname NOT LIKE 'auth_session_required_%'
+      AND policyname <> 'todos_access'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.todos', r.policyname);
+  END LOOP;
+END $$;
+
 DROP POLICY IF EXISTS todos_access ON public.todos;
 
 CREATE POLICY todos_access ON public.todos
@@ -1435,19 +1502,16 @@ CREATE POLICY courses_select_merged ON public.courses
   FOR SELECT TO authenticated
   USING (
     deleted_at IS NULL
+    AND tenant_id = public.get_current_tenant_id()
     AND (
       public.is_admin_with_session_validation()
-      OR (
-        (status = 'published' OR public.tenant_matches_jwt(tenant_id))
-        OR (
-          tenant_id = public.get_current_tenant_id()
-          AND (
-            status = 'published'
-            OR teacher_id = public.get_auth_user_id()
-            OR public.has_course_access(id)
-            OR public.user_has_permission(public.get_auth_user_id(), 'courses.read'::text, tenant_id)
-          )
-        )
+      OR status = 'published'
+      OR teacher_id = public.get_auth_user_id()
+      OR public.has_course_access(id)
+      OR public.user_has_permission(
+        public.get_auth_user_id(),
+        'courses.read'::text,
+        tenant_id
       )
     )
   );
@@ -1459,7 +1523,7 @@ DROP POLICY IF EXISTS courses_select_policy ON public.courses;
 CREATE POLICY courses_select_policy ON public.courses
   FOR SELECT TO anon, authenticated, authenticator, dashboard_user, supabase_privileged_role
   USING (
-    (status = 'published' OR public.tenant_matches_jwt(tenant_id))
+    status = 'published'
     AND deleted_at IS NULL
   );
 
@@ -1654,37 +1718,29 @@ DROP POLICY IF EXISTS enrollments_insert_merged ON public.enrollments;
 CREATE POLICY enrollments_insert_merged ON public.enrollments
   FOR INSERT TO authenticated
   WITH CHECK (
-    (
-      public.is_admin_with_session_validation()
-      OR (tenant_id = public.get_current_tenant_id() AND public.is_current_user_admin_lite())
-    )
-    OR (
-      public.validate_user_session()
-      AND public.tenant_matches_jwt(tenant_id)
-    )
-    OR (user_id = public.get_auth_user_id() AND tenant_id = public.assert_tenant())
+    public.is_admin_with_session_validation()
+    AND tenant_id = public.assert_tenant()
+    AND deleted_at IS NULL
   );
 
 DROP POLICY IF EXISTS enrollments_update_merged ON public.enrollments;
 CREATE POLICY enrollments_update_merged ON public.enrollments
   FOR UPDATE TO authenticated
   USING (
-    (
+    deleted_at IS NULL
+    AND tenant_id = public.get_current_tenant_id()
+    AND (
       public.is_admin_with_session_validation()
-      OR (tenant_id = public.get_current_tenant_id() AND public.is_current_user_admin_lite())
+      OR user_id = (select auth.uid())
     )
-    OR (
-      (user_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-      AND deleted_at IS NULL
-    )
-    OR (user_id = public.get_auth_user_id() AND tenant_id = public.get_current_tenant_id())
   )
   WITH CHECK (
-    (
+    deleted_at IS NULL
+    AND tenant_id = public.assert_tenant()
+    AND (
       public.is_admin_with_session_validation()
-      OR (tenant_id = public.assert_tenant() AND public.is_current_user_admin_lite())
+      OR user_id = (select auth.uid())
     )
-    OR (user_id = public.get_auth_user_id() AND tenant_id = public.assert_tenant())
   );
 
 DROP POLICY IF EXISTS enrollments_delete_merged ON public.enrollments;
@@ -1709,11 +1765,10 @@ CREATE POLICY user_progress_insert_merged ON public.user_progress
   FOR INSERT TO authenticated
   WITH CHECK (
     deleted_at IS NULL
+    AND tenant_id = public.assert_tenant()
     AND (
       public.is_admin_with_session_validation()
-      OR (tenant_id = public.get_current_tenant_id() AND public.is_current_user_admin_lite())
-      OR (user_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-      OR (user_id = (select auth.uid()) AND tenant_id = public.assert_tenant())
+      OR user_id = (select auth.uid())
     )
   );
 
@@ -1722,20 +1777,18 @@ CREATE POLICY user_progress_update_merged ON public.user_progress
   FOR UPDATE TO authenticated
   USING (
     deleted_at IS NULL
+    AND tenant_id = public.get_current_tenant_id()
     AND (
       public.is_admin_with_session_validation()
-      OR (tenant_id = public.get_current_tenant_id() AND public.is_current_user_admin_lite())
-      OR (user_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-      OR (user_id = (select auth.uid()) AND tenant_id = public.get_current_tenant_id())
+      OR user_id = (select auth.uid())
     )
   )
   WITH CHECK (
     deleted_at IS NULL
+    AND tenant_id = public.assert_tenant()
     AND (
       public.is_admin_with_session_validation()
-      OR (tenant_id = public.assert_tenant() AND public.is_current_user_admin_lite())
-      OR (user_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-      OR (user_id = (select auth.uid()) AND tenant_id = public.assert_tenant())
+      OR user_id = (select auth.uid())
     )
   );
 
@@ -1744,11 +1797,10 @@ CREATE POLICY user_progress_delete_merged ON public.user_progress
   FOR DELETE TO authenticated
   USING (
     deleted_at IS NULL
+    AND tenant_id = public.get_current_tenant_id()
     AND (
       public.is_admin_with_session_validation()
-      OR (tenant_id = public.get_current_tenant_id() AND public.is_current_user_admin_lite())
-      OR (user_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-      OR (user_id = (select auth.uid()) AND tenant_id = public.get_current_tenant_id())
+      OR user_id = (select auth.uid())
     )
   );
 
@@ -1882,11 +1934,21 @@ CREATE POLICY user_validity_cache_anon_deny ON public.user_validity_cache
 -- Advisor pass 2: split remaining FOR ALL admin policies (Postgres allows one cmd per policy).
 DROP POLICY IF EXISTS enrollments_select_policy ON public.enrollments;
 CREATE POLICY enrollments_select_policy ON public.enrollments
-  FOR SELECT TO anon, authenticated, authenticator, dashboard_user, supabase_privileged_role
+  FOR SELECT TO authenticated
   USING (
-    public.validate_user_session()
-    AND public.tenant_matches_jwt(tenant_id)
-    AND deleted_at IS NULL
+    deleted_at IS NULL
+    AND tenant_id = public.get_current_tenant_id()
+    AND (
+      user_id = (select auth.uid())
+      OR public.is_admin_with_session_validation()
+      OR EXISTS (
+        SELECT 1
+        FROM public.courses c
+        WHERE c.id = enrollments.course_id
+          AND c.tenant_id = enrollments.tenant_id
+          AND c.teacher_id = (select auth.uid())
+      )
+    )
   );
 
 DROP POLICY IF EXISTS feature_flags_admin_all ON public.feature_flags;

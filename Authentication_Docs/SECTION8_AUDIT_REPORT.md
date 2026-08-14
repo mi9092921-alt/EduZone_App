@@ -1,94 +1,84 @@
-# Section 8 Audit — Real, Executed Verification (not static-only)
+# Section 8 Audit — Authentication & Authorization Release Review
 
-## What I actually did
-Installed Postgres 16 + pg_cron + pg_partman locally, built a minimal
-Supabase-compatible shim (`00_supabase_shim.sql`: `anon`/`authenticated`/
-`service_role` roles, `auth.uid()`/`auth.jwt()` reading real GUCs the way
-PostgREST does, a `vault.decrypted_secrets` stub for the KMS-key trigger),
-and loaded the repo's **real, unmodified**
-`supabase/schema/{01_extensions,02_types,03_tables,04_constraints,
-07_functions,06_views,05_indexes,08_triggers,09_rls,10_permissions}.sql`
-into it. Then wrote and ran `01_invariant_tests.sql` — real SQL, real
-fixture rows, real RLS enforcement (`SET ROLE authenticated`, not
-superuser) — against that database. Nothing here is mocked or guessed.
+## Scope
 
-**Note on file order**: `05_indexes.sql` and `06_views.sql` need
-`07_functions.sql` loaded first (materialized-view/function
-cross-references) — the numeric filenames don't reflect the actual
-dependency order. Not a security issue, just worth fixing in whatever
-applies these files for real deployments, so dependency order doesn't
-rely on luck.
+This report reflects the uploaded repository snapshot reviewed for this pass.
+The target is Section 8 of the project instructions: authentication/session
+hardening plus database-enforced authorization. The review distinguishes
+repository evidence from environment-dependent verification.
 
-## Result: 1 CRITICAL finding, otherwise strong
+## Current verified findings
 
-### CRITICAL — same-tenant user-profile disclosure (confirmed, reproducible)
+### Fixed in the canonical schema
 
-`public.users_select_merged` (`supabase/schema/09_rls.sql` ~line 1481)
-has a branch:
-```sql
-validate_user_session() AND (id = auth.uid() OR tenant_matches_jwt(tenant_id))
-```
-`tenant_matches_jwt(tenant_id)` means "this row's tenant is my tenant" —
-not "this row is mine." Combined with a bare `OR`, **any authenticated
-user can read every user row (name, role, status, tenant, etc.) in their
-own tenant**, bypassing the policy's own narrower self/admin/teacher
-branches. Confirmed live: a student session could `SELECT` a classmate's
-row (Test 9b / Test 12, both reproduced against your actual schema).
+1. **Tenant-wide profile disclosure** — the final `public.users` SELECT policy
+   is limited to the current user, administrators, or teachers viewing students
+   enrolled in one of their own courses. The earlier tenant-wide
+   `tenant_matches_jwt(tenant_id)` branch is removed from the effective policy.
 
-**Verified safe to fix**: grepped every Flutter caller of `.from('users')`
-and every Edge Function — all Flutter queries are scoped to
-`.eq('id', <own id>)`, and all Edge Functions use the `service_role` key
-(bypasses RLS entirely, unaffected either way). Nothing in the codebase
-depends on the broad clause.
+2. **Tenant-wide course disclosure** — the effective `public.courses` policies
+   now expose published courses publicly, while authenticated access to
+   non-published/non-public rows requires the current database tenant plus
+   administrator/teacher/course-access/permission authorization. JWT tenant
+   metadata is no longer sufficient to authorize a course row.
 
-**Fix** (proposed, NOT applied anywhere — see caveat below): drop that
-branch entirely — self/admin/teacher-of-enrolled-student are already each
-covered by the policy's other branches. See
-`02_proposed_fix_users_select_rls.sql`.
+3. **Tenant-wide enrollment disclosure and cross-user enrollment writes** —
+   enrollment SELECT/UPDATE/INSERT policies now require current database
+   tenant context, and self-service mutation is limited to the authenticated
+   user. Direct enrollment insertion is administrator-only; student enrollment
+   continues through `enroll_in_course()` which is the app's existing RPC path.
 
-**Verified the fix works, locally**: applied it to my local test DB only,
-re-ran the full suite — went from 10/12 to **12/12 PASS**, twice in a row
-(idempotency check), with an explicit regression check confirming admin
-and self visibility are unaffected.
+4. **Cross-tenant user-progress mutation** — INSERT/UPDATE/DELETE policies now
+   require `assert_tenant()` / `get_current_tenant_id()` in addition to the
+   authenticated user/admin check. SELECT is limited to the user's own
+   progress, administrators, or teachers of the corresponding course.
 
-### Everything else tested: PASS
-- Test 1: valid JWT + matching DB `token_version` → session valid
-- Test 2: stale `token_version` (DB moved on) → denied
-- Test 3: JWT missing `token_version` → denied (fails closed, doesn't assume OK)
-- Test 4: suspended account → denied
-- Test 5: soft-deleted account → denied
-- Test 6: no session at all → denied
-- Test 7: student calling admin check → denied
-- Test 8: admin session → admin check passes
-- Test 9a: student reads own row → allowed
-- Test 10: cross-tenant read → denied
-- Test 11: JWT predating a revocation-triggering token_version bump → denied
+5. **Auth Hook permissions** — `supabase_auth_admin` is explicitly granted
+   `USAGE` on `public` and `EXECUTE` on `public.custom_access_token(jsonb)`;
+   `anon` and `authenticated` are explicitly denied EXECUTE.
 
-`validate_user_session()`, `assert_valid_session()`, and
-`is_admin_with_session_validation()` all behave exactly as doc 7 specifies:
-DB-authoritative, fail-closed on missing/stale claims, real RBAC lookup for
-admin — not a JWT-claim-only shortcut.
+## Authentication controls verified by source inspection
 
-## Caveat — did NOT touch anything under `supabase/`
-`supabase/migrations/README.md` contains leftover instructions from an
-unrelated prior task ("no migrations, don't touch /supabase/"). I'm
-respecting the spirit of that pending your explicit confirmation: nothing
-in `supabase/schema/` was modified, and nothing was pushed. The proposed
-fix is a standalone file for your review; apply it through whatever
-migration process you're actually using, after you're satisfied with it.
+- Session revocation is DB-authoritative through `validate_user_session()` and
+  `token_version`; missing/malformed JWT `token_version` fails closed.
+- `is_admin_with_session_validation()` validates the session before checking
+  the server-side role/RBAC state.
+- The custom access-token hook rejects missing/inactive `public.users` rows
+  before issuing a token and injects `tenant_id`, `primary_role`, `region_id`,
+  `is_admin`, `token_version`, and `account_status` claims while leaving the
+  reserved PostgREST `role` claim unchanged.
+- Flutter cold-start verification preserves a local session during transient
+  network failures instead of converting a network outage into a forced
+  logout/navigation to `/login`.
+- Device binding, session cleanup, provider invalidation, and passive auth-state
+  revocation paths are present in the auth feature.
+- The access-monitoring service now ignores in-flight RPC and Realtime callbacks after `stop()`, preventing a pre-logout security result from mutating post-logout auth state. A regression test covers the in-flight RPC race.
+- The repository contains a dedicated auth static guard and it passes in strict
+  mode (`python3 tool/check_auth_security.py --strict`).
 
-## What Section 8 still needs (not done this session)
-- RLS inventory across the *other* ~30+ tables per Phase 25 (I only
-  deep-dived `public.users`, since it's the highest-value target and
-  where I found the bug — same broad-clause pattern could exist
-  elsewhere and hasn't been checked).
-- Grants audit (Phase 29-31): `anon`/`authenticated`/`service_role`/
-  `supabase_auth_admin` privilege review beyond confirming `10_permissions.sql`
-  loads clean.
-- RPC-by-RPC classification (Phase 10) — public/authenticated/privileged/
-  internal.
-- `custom_access_token` hook claim-shape audit (Phase 23-24).
-- Abuse/fuzz tests (Phase 30/39-40).
-- Everything in this report was tested against a fresh local DB, not
-  staging/production — Phase 41 ("production-like Supabase environment")
-  is still open.
+## Verification boundary
+
+The uploaded workspace does not contain a Git history, a running Supabase
+project, or a local PostgreSQL server executable. Therefore the following were
+**not** claimed as runtime-verified in this pass:
+
+- live production/staging RLS execution against Supabase;
+- real Auth Hook issuance/refresh behavior against GoTrue;
+- Android/iOS runtime authentication flows;
+- the project's full Flutter analyzer/test/build matrix.
+
+`supabase/schema/VALIDATION.sql` now includes regression checks for the Auth
+Hook permissions, dangerous tenant-wide policies on the sensitive tables, and
+tenant binding of self-service writes. These checks are intended to be run
+against the canonical schema in PostgreSQL/Supabase as part of the final gate.
+
+## Release position
+
+**Authentication/Authorization is materially hardened in the canonical source,
+but the repository alone does not prove a production release gate.** The
+remaining release claim is therefore: **verified statically / runtime backend
+verification required**.
+
+No migration file was created. No new file was created under `supabase/schema/`.
+SQL remains centralized in the existing canonical schema and existing archive
+layout.

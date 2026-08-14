@@ -46,6 +46,21 @@ String _fakeJwt(Map<String, dynamic> payload) {
   return '$header.$body.';
 }
 
+
+class _DelayedPostgrestFilterBuilder<T> extends Fake
+    implements PostgrestFilterBuilder<T> {
+  _DelayedPostgrestFilterBuilder(this._future);
+  final Future<T> _future;
+
+  @override
+  Future<S> then<S>(
+    FutureOr<S> Function(T value) onValue, {
+    Function? onError,
+  }) {
+    return _future.then(onValue, onError: onError);
+  }
+}
+
 void main() {
   late MockSupabaseClient supabase;
   late MockGoTrueClient auth;
@@ -201,6 +216,26 @@ void main() {
       expect(deniedReasons, isEmpty);
       await service.checkNow(); // strike 3
       expect(deniedReasons, ['token_version_mismatch']);
+    });
+  });
+
+  group('stale async security callbacks', () {
+    test('a check that completes after stop cannot force access denial', () async {
+      final completer = Completer<Map<String, dynamic>>();
+      when(() => supabase.rpc('check_user_access')).thenAnswer(
+        (_) => _DelayedPostgrestFilterBuilder<Map<String, dynamic>>(
+          completer.future,
+        ),
+      );
+      mockAccessToken = _fakeJwt({'sub': 'user-123', 'token_version': 5});
+
+      final service = buildService();
+      final pending = service.checkNow();
+      service.stop();
+      completer.complete({'token_version': 9, 'allowed': true});
+
+      await pending;
+      expect(deniedReasons, isEmpty);
     });
   });
 

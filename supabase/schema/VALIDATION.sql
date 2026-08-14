@@ -206,6 +206,7 @@ DECLARE
   v_for_all_count int;
   v_delete_count int;
   v_expected_count int;
+  v_canonical_count int;
   v_can_delete boolean;
 BEGIN
   SELECT c.relrowsecurity, c.relforcerowsecurity
@@ -236,7 +237,15 @@ BEGIN
   FROM pg_policies
   WHERE schemaname = 'public'
     AND tablename = 'todos'
-    AND policyname IN ('todos_select', 'todos_insert', 'todos_update');
+    AND policyname = 'todos_access';
+
+  SELECT count(*) INTO v_canonical_count
+  FROM pg_policies
+  WHERE schemaname = 'public'
+    AND tablename = 'todos'
+    AND policyname = 'todos_access'
+    AND cmd = 'ALL'
+    AND roles = ARRAY['authenticated'::name];
 
   SELECT has_table_privilege('authenticated', 'public.todos', 'DELETE')
   INTO v_can_delete;
@@ -246,9 +255,10 @@ BEGIN
     CASE
       WHEN v_rls_enabled
         AND v_rls_forced
-        AND v_policy_count = 3
-        AND v_expected_count = 3
-        AND v_for_all_count = 0
+        AND v_policy_count = 2
+        AND v_expected_count = 1
+        AND v_canonical_count = 1
+        AND v_for_all_count = 2
         AND v_delete_count = 0
         AND NOT v_can_delete
         THEN 'PASS'
@@ -258,6 +268,7 @@ BEGIN
       || ', rls_forced=' || COALESCE(v_rls_forced::text, 'null')
       || ', policy_count=' || v_policy_count
       || ', expected_policies=' || v_expected_count
+      || ', canonical_policy=' || v_canonical_count
       || ', for_all_policies=' || v_for_all_count
       || ', delete_policies=' || v_delete_count
       || ', authenticated_can_delete=' || COALESCE(v_can_delete::text, 'null')
@@ -346,6 +357,121 @@ BEGIN
     COALESCE(
       'Missing baseline policies: ' || array_to_string(v_missing, ', '),
       'Every public RLS-protected table has a restrictive session-validity policy'
+    )
+  );
+END $$;
+
+
+
+-- Check 12: Authentication hook is callable only by Supabase Auth / trusted backend.
+DO $$
+DECLARE
+  v_hook_exists boolean;
+  v_schema_usage boolean;
+  v_auth_admin_exec boolean;
+  v_anon_exec boolean;
+  v_authenticated_exec boolean;
+BEGIN
+  SELECT EXISTS(
+    SELECT 1
+    FROM information_schema.routines
+    WHERE routine_schema = 'public'
+      AND routine_name = 'custom_access_token'
+      AND specific_name LIKE 'custom_access_token%'
+  ) INTO v_hook_exists;
+
+  SELECT has_schema_privilege('supabase_auth_admin', 'public', 'USAGE')
+    INTO v_schema_usage;
+  SELECT has_function_privilege(
+    'supabase_auth_admin',
+    'public.custom_access_token(jsonb)',
+    'EXECUTE'
+  ) INTO v_auth_admin_exec;
+  SELECT has_function_privilege(
+    'anon',
+    'public.custom_access_token(jsonb)',
+    'EXECUTE'
+  ) INTO v_anon_exec;
+  SELECT has_function_privilege(
+    'authenticated',
+    'public.custom_access_token(jsonb)',
+    'EXECUTE'
+  ) INTO v_authenticated_exec;
+
+  INSERT INTO validation_results VALUES (
+    'Custom Access Token Hook Permissions',
+    CASE
+      WHEN v_hook_exists
+       AND v_schema_usage
+       AND v_auth_admin_exec
+       AND NOT v_anon_exec
+       AND NOT v_authenticated_exec
+      THEN 'PASS' ELSE 'FAIL'
+    END,
+    'hook=' || COALESCE(v_hook_exists::text, 'null')
+      || ', schema_usage=' || COALESCE(v_schema_usage::text, 'null')
+      || ', auth_admin_execute=' || COALESCE(v_auth_admin_exec::text, 'null')
+      || ', anon_execute=' || COALESCE(v_anon_exec::text, 'null')
+      || ', authenticated_execute=' || COALESCE(v_authenticated_exec::text, 'null')
+  );
+END $$;
+
+-- Check 13: Sensitive tenant tables must not use permissive tenant-wide
+-- authorization through tenant_matches_jwt(). Multiple permissive policies
+-- are OR-combined by PostgreSQL, so one broad policy can defeat a narrower one.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(tablename || ':' || policyname ORDER BY tablename, policyname)
+    INTO v_bad
+  FROM pg_policies
+  WHERE schemaname = 'public'
+    AND tablename IN ('users', 'user_roles', 'courses', 'enrollments', 'user_progress')
+    AND (
+      coalesce(qual, '') ILIKE '%tenant_matches_jwt(%'
+      OR coalesce(with_check, '') ILIKE '%tenant_matches_jwt(%'
+    );
+
+  INSERT INTO validation_results VALUES (
+    'Sensitive Tables Avoid Tenant-Only JWT Authorization',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: permissive tenant_matches_jwt policies remain: '
+        || array_to_string(v_bad, ', '),
+      'No sensitive-table policy delegates row authorization to tenant_matches_jwt()'
+    )
+  );
+END $$;
+
+-- Check 14: Self-service writes must remain bound to the authenticated
+-- tenant. This guards against policies that check auth.uid() but omit tenant
+-- equality in either USING or WITH CHECK.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(tablename || ':' || policyname ORDER BY tablename, policyname)
+    INTO v_bad
+  FROM pg_policies
+  WHERE schemaname = 'public'
+    AND tablename IN ('enrollments', 'user_progress')
+    AND (
+      coalesce(qual, '') ILIKE '%user_id = (select auth.uid())%'
+      OR coalesce(qual, '') ILIKE '%user_id = public.get_auth_user_id()%'
+      OR coalesce(with_check, '') ILIKE '%user_id = (select auth.uid())%'
+      OR coalesce(with_check, '') ILIKE '%user_id = public.get_auth_user_id()%'
+    )
+    AND coalesce(qual || ' ' || with_check, '') NOT ILIKE '%get_current_tenant_id()%'
+    AND coalesce(qual || ' ' || with_check, '') NOT ILIKE '%assert_tenant()%';
+
+  INSERT INTO validation_results VALUES (
+    'Self-Service Writes Are Tenant-Bound',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: self-service policy lacks tenant binding: '
+        || array_to_string(v_bad, ', '),
+      'Self-service enrollment/progress policies require canonical tenant context'
     )
   );
 END $$;

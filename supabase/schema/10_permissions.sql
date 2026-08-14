@@ -450,8 +450,11 @@ GRANT EXECUTE ON FUNCTION public.worker_control_user_account(uuid, uuid, text, t
 GRANT EXECUTE ON FUNCTION public.worker_terminate_user_sessions(uuid, uuid, text) TO service_role;
 
 -- 5. SUPABASE AUTH HOOK
-REVOKE ALL ON FUNCTION public.custom_access_token(jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.custom_access_token(jsonb) TO service_role, supabase_auth_admin;
+-- Supabase Auth needs schema USAGE plus EXECUTE to invoke Postgres hooks.
+GRANT USAGE ON SCHEMA public TO supabase_auth_admin;
+REVOKE ALL ON FUNCTION public.custom_access_token(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.custom_access_token(jsonb) TO supabase_auth_admin;
+GRANT EXECUTE ON FUNCTION public.custom_access_token(jsonb) TO service_role;
 
 GRANT EXECUTE ON FUNCTION private.refresh_all_materialized_views() TO service_role;
 

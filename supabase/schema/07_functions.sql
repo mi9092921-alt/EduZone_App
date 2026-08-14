@@ -62,24 +62,28 @@ STABLE
 SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 BEGIN
-  RETURN (
-    (coalesce(auth.jwt()->'app_metadata'->>'tenant_id', '00000000-0000-0000-0000-000000000000'))::uuid = p_tenant_id
-    OR
-    EXISTS (
-      SELECT 1 FROM public.users u
-      WHERE u.id = auth.uid()
-        AND u.tenant_id = p_tenant_id
-        AND u.deleted_at IS NULL
-        AND u.account_status = 'active'
-    )
-    OR
-    EXISTS (
-      SELECT 1 FROM public.user_roles ur
-      WHERE ur.user_id = auth.uid()
-        AND ur.tenant_id = p_tenant_id
-        AND ur.is_active = true
-        AND (ur.role_id IN (SELECT id FROM public.roles WHERE name IN ('admin', 'super_admin', 'tenant_admin')))
-    )
+  IF auth.role() <> 'service_role'
+     AND NOT public.validate_user_session() THEN
+    RETURN false;
+  END IF;
+
+  RETURN EXISTS (
+    SELECT 1
+    FROM public.users u
+    WHERE u.id = auth.uid()
+      AND u.tenant_id = p_tenant_id
+      AND u.deleted_at IS NULL
+      AND u.account_status = 'active'
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM public.user_roles ur
+    JOIN public.roles r ON r.id = ur.role_id
+    WHERE ur.user_id = auth.uid()
+      AND ur.tenant_id = p_tenant_id
+      AND ur.is_active = true
+      AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
+      AND r.name IN ('admin', 'super_admin', 'tenant_admin')
   );
 END;
 $$;
