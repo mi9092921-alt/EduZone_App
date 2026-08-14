@@ -26,7 +26,17 @@ class ErrorHandler {
     } else if (error is EmailNotConfirmedException) {
       return l10n.errorEmailNotConfirmed;
     } else if (error is ServerException) {
-      return error.message;
+      // error.message is an internal, English-only diagnostic string set
+      // in the data layer (see e.g. auth_remote_ds.dart) -- it's meant
+      // for logs/debugging, not translated, and was never designed to be
+      // shown to the user directly. Returning it here was a real bug:
+      // every caller across the app that catches a server-side failure
+      // and displays ErrorHandler.getMessage() (courses, downloads, todo,
+      // notifications, auth) would show raw English text to Arabic-locale
+      // users. Map to the localized generic key instead, matching how
+      // AuthErrorPolicy.mapExceptionToKey already correctly never
+      // surfaces that internal message to a user-facing widget.
+      return l10n.errorGeneric;
     }
 
     return l10n.errorGeneric;

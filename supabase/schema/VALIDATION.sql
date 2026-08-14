@@ -371,9 +371,9 @@ BEGIN
   RAISE NOTICE '';
   RAISE NOTICE '========== VALIDATION SUMMARY ==========';
   RAISE NOTICE 'Total Checks: %', v_total;
-  RAISE NOTICE 'Passed:       % Γ£ô', v_pass;
-  RAISE NOTICE 'Failed:       % Γ£ù', v_fail;
-  RAISE NOTICE 'Warnings:     % ΓÜá', v_warn;
+  RAISE NOTICE 'Passed:       % ✓', v_pass;
+  RAISE NOTICE 'Failed:       % ✗', v_fail;
+  RAISE NOTICE 'Warnings:     % ⚠', v_warn;
   RAISE NOTICE '========================================';
   
   IF v_fail > 0 THEN

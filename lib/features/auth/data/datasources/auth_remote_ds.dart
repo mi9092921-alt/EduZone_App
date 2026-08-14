@@ -13,6 +13,18 @@ import '../../domain/enums/user_role.dart';
 ///
 /// Handles raw RPC calls, Supabase Auth, and error mapping
 /// from Supabase error codes to typed [AppException]s.
+///
+/// The `ServerException(...)` messages thrown throughout this file are
+/// internal, developer-facing diagnostic strings (English-only, by
+/// design) -- they are never shown to the user directly. Verified: every
+/// caller reaches either `AuthErrorPolicy.mapExceptionToKey` (which
+/// doesn't special-case `ServerException`, so it always falls through to
+/// the localized `errorGeneric` key) or `ErrorHandler.getMessage`
+/// (`shared/utils/error_handler.dart`, fixed to return `l10n.errorGeneric`
+/// for `ServerException` rather than `error.message` -- it previously
+/// didn't, which was a real bug this same audit pass found and fixed).
+/// Each `// check-ignore` below is this file's per-line acknowledgment of
+/// that same review, per this project's suppression convention.
 class AuthRemoteDataSource {
   final SupabaseClient _client;
 
@@ -32,7 +44,7 @@ class AuthRemoteDataSource {
         // unknown authorization decision as a server failure so callers
         // fail closed instead of granting an implicit active session.
         throw const ServerException(
-          'Authentication access check returned no data',
+          'Authentication access check returned no data', // check-ignore
         );
       }
 
@@ -59,7 +71,7 @@ class AuthRemoteDataSource {
             : null,
       );
     } on PostgrestException {
-      throw const ServerException('Authentication backend request failed');
+      throw const ServerException('Authentication backend request failed'); // check-ignore
     }
   }
 
@@ -241,7 +253,7 @@ class AuthRemoteDataSource {
       // A database/RLS/network failure is not proof that the device is
       // missing. Preserve the failure so startup cannot silently turn a
       // verification outage into an automatic device re-bind/logout path.
-      throw const ServerException('Authentication backend request failed');
+      throw const ServerException('Authentication backend request failed'); // check-ignore
     }
   }
 
@@ -272,7 +284,7 @@ class AuthRemoteDataSource {
       if (userData == null) return null;
       return _mapUserData(userData);
     } on PostgrestException {
-      throw const ServerException('Authentication backend request failed');
+      throw const ServerException('Authentication backend request failed'); // check-ignore
     }
   }
 
@@ -347,7 +359,7 @@ class AuthRemoteDataSource {
     if (e is AuthRetryableFetchException) {
       return e.statusCode == null
           ? const NoInternetException()
-          : const ServerException('Authentication service unavailable');
+          : const ServerException('Authentication service unavailable'); // check-ignore
     }
 
     final msg = e.message.toLowerCase();
@@ -360,7 +372,7 @@ class AuthRemoteDataSource {
     if (msg.contains('api key') ||
         msg.contains('invalid jwt') ||
         msg.contains('signature')) {
-      return const ServerException('Authentication service configuration error');
+      return const ServerException('Authentication service configuration error'); // check-ignore
     }
 
     if (msg.contains('invalid') || msg.contains('credentials')) {
@@ -369,7 +381,7 @@ class AuthRemoteDataSource {
     if (msg.contains('rate') || msg.contains('limit')) {
       return const RateLimitedException();
     }
-    return const ServerException('Authentication service unavailable');
+    return const ServerException('Authentication service unavailable'); // check-ignore
   }
 
   AppException _mapRpcException(PostgrestException e) {
@@ -383,6 +395,6 @@ class AuthRemoteDataSource {
     if (msg.contains('RATE_LIMIT')) {
       return const RateLimitedException();
     }
-    return const ServerException('Authentication backend request failed');
+    return const ServerException('Authentication backend request failed'); // check-ignore
   }
 }
