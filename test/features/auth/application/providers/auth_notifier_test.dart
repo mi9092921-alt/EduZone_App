@@ -620,15 +620,13 @@ when(() => mockSupabase.rpc('check_user_access')).thenAnswer(
     });
   });
 
-  // ─── _initializeSession(): device re-bind on cold start ──────────────────
+  // ─── _initializeSession(): device authorization on cold start ─────────────
   //
-  // Covers the branch in _initializeSession() (auth_provider.dart) that
-  // handles a session whose device fingerprint is no longer registered —
-  // e.g. the backing `devices` row was deleted/deactivated out of band.
-  // Previously untested: only the happy path (device already valid) was
-  // covered indirectly by other tests.
+  // A restored session whose device is missing/inactive must fail closed.
+  // Re-binding is reserved for a fresh login where the user establishes a
+  // new device binding explicitly.
 
-  group('_initializeSession(): device re-bind on cold start', () {
+  group('_initializeSession(): device authorization on cold start', () {
     void stubValidSession() {
       final mockSession = _MockSession();
       final mockUser = _MockSupabaseUser();
@@ -678,50 +676,34 @@ when(() => mockSupabase.rpc('check_user_access')).thenAnswer(
     }
 
     test(
-        're-binds and resumes the session when the device is missing but '
-        're-bind succeeds', () async {
+        'forces local logout when the restored session device is no longer '
+        'authorized', () async {
       stubValidSession();
       when(() => mockDataSource.validateDeviceExists(any(), any()))
           .thenAnswer((_) async => false);
-      when(() => mockDataSource.bindDevice(any(), any(), any()))
-          .thenAnswer((_) async => _tBindResult);
-      when(() => mockDataSource.checkUserAccess())
-          .thenAnswer((_) async => _tActiveAccess);
-      when(() => mockDataSource.getCurrentUser())
-          .thenAnswer((_) async => _tUser);
-      when(() => mockDataSource.syncUserActivity(
-            userId: any(named: 'userId'),
-            tenantId: any(named: 'tenantId'),
-            deviceFingerprint: any(named: 'deviceFingerprint'),
-          )).thenAnswer((_) async {});
 
       final rebindContainer = buildRebindContainer();
       rebindContainer.read(authProvider);
       await _settleInitialization();
 
-      expect(rebindContainer.read(authProvider), isA<AuthAuthenticated>());
+      expect(rebindContainer.read(authProvider), isA<AuthUnauthenticated>());
+      verify(() => mockAuth.signOut()).called(1);
+      verifyNever(() => mockDataSource.bindDevice(any(), any(), any()));
     });
 
     test(
-        'forces a full local logout when the device is missing AND '
-        're-bind fails (e.g. MAX_DEVICES_REACHED)', () async {
+        'does not attempt to re-bind a device after restored-session '
+        'validation fails', () async {
       stubValidSession();
       when(() => mockDataSource.validateDeviceExists(any(), any()))
           .thenAnswer((_) async => false);
-      when(() => mockDataSource.bindDevice(any(), any(), any()))
-          .thenThrow(const MaxDevicesReachedException());
 
       final rebindContainer = buildRebindContainer();
       rebindContainer.read(authProvider);
       await _settleInitialization();
 
-      expect(
-        rebindContainer.read(authProvider),
-        isA<AuthUnauthenticated>(),
-        reason: 'a device that cannot be (re-)bound must never be left in '
-            'an authenticated state — this is the security-critical branch '
-            'in _initializeSession() (auth_provider.dart)',
-      );
+      expect(rebindContainer.read(authProvider), isA<AuthUnauthenticated>());
+      verifyNever(() => mockDataSource.bindDevice(any(), any(), any()));
     });
   });
 

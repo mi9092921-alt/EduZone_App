@@ -1,7 +1,6 @@
 import 'package:app/core/error/exceptions.dart';
 import 'package:app/features/auth/data/datasources/auth_remote_ds.dart';
 import 'package:app/features/auth/domain/entities/bind_device_result.dart';
-import 'package:app/features/auth/domain/entities/user_access.dart';
 import 'package:app/features/auth/domain/enums/account_status.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -76,12 +75,13 @@ void main() {
       expect(result.isAllowed, isFalse);
     });
 
-    test('returns active when response is null', () async {
+    test('fails closed when response is null', () async {
       stubRpc('check_user_access', null);
 
-      final result = await dataSource.checkUserAccess();
-
-      expect(result, const UserAccess(status: AccountStatus.active));
+      await expectLater(
+        () => dataSource.checkUserAccess(),
+        throwsA(isA<ServerException>()),
+      );
     });
 
     test('throws ServerException on PostgrestException', () async {

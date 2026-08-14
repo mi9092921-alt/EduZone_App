@@ -28,7 +28,12 @@ class AuthRemoteDataSource {
       final res = await _client.rpc('check_user_access');
 
       if (res == null) {
-        return const UserAccess(status: AccountStatus.active);
+        // Missing authorization data is not proof of access. Treat an
+        // unknown authorization decision as a server failure so callers
+        // fail closed instead of granting an implicit active session.
+        throw const ServerException(
+          'Authentication access check returned no data',
+        );
       }
 
       final data = res as Map<String, dynamic>;

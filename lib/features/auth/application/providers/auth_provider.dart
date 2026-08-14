@@ -145,7 +145,10 @@ class Auth extends _$Auth {
         return;
       }
 
-      // Session exists — verify access status
+      // Session exists — the server-side device binding must still be valid.
+      // A missing/inactive device is a revoked or otherwise stale session
+      // boundary; do not silently re-bind the device from an existing session.
+      // A fresh login is required to establish a new device binding.
       final device = ref.read(deviceServiceProvider);
       final fingerprint = device.fingerprint;
       final deviceValid = await ref.read(validateDeviceExistsUseCaseProvider)(
@@ -155,34 +158,11 @@ class Auth extends _$Auth {
 
       if (!deviceValid) {
         debugPrint(
-          '[Auth] Device not in DB — attempting re-bind before logout.',
+          '[Auth] Session device is no longer authorized. Wiping session.',
         );
-        try {
-          await ref.read(bindDeviceUseCaseProvider)(
-            fingerprint,
-            device.deviceInfoJson,
-            device.platform,
-          );
-          // Re-bind succeeded — device is now registered; continue normally.
-          debugPrint('[Auth] Device re-bound successfully. Resuming session.');
-        } catch (e, st) {
-          // Re-bind failed (e.g. max devices reached) — must force logout.
-          // Sentry-worthy: this forces a real user out of a session they
-          // held a moment ago, and "max devices reached" aside, an
-          // unexpected failure here is worth knowing the frequency of.
-          GlobalErrorHandler.logError(e, st);
-          debugPrint('[Auth] Device re-bind failed: $e. Wiping session.');
-          final orchestrator = LogoutOrchestrator(
-            supabase: client,
-            secureStorage: const FlutterSecureStorage(),
-            cancellationManager: ref.read(requestCancellationManagerProvider),
-            fcmConfigured: AppConfig.fcmEnabled,
-          );
-          await orchestrator.forceLocalCleanup();
-          _invalidateAllUserProviders();
-          _safeSetStateIfStillPending(const AuthUnauthenticated());
-          return;
-        }
+        await _forceLocalSignOutOnly(client);
+        _safeSetStateIfStillPending(const AuthUnauthenticated());
+        return;
       }
 
       final access = await ref.read(checkUserAccessUseCaseProvider)();
