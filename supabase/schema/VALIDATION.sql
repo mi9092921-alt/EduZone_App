@@ -679,6 +679,39 @@ BEGIN
   );
 END $$;
 
+-- Check 17: Canonical auth function definitions must be unique.
+-- Duplicate CREATE OR REPLACE definitions are dangerous because a partial
+-- execution could leave an older, weaker implementation active.
+DO $$
+DECLARE
+  v_logout_count int;
+  v_bind_count int;
+BEGIN
+  SELECT COUNT(*) INTO v_logout_count
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname = 'logout_current_user';
+
+  SELECT COUNT(*) INTO v_bind_count
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname = 'bind_device_for_current_user';
+
+  INSERT INTO validation_results VALUES (
+    'Canonical Auth Function Definitions Are Unique',
+    CASE WHEN v_logout_count = 1 AND v_bind_count = 1 THEN 'PASS' ELSE 'FAIL' END,
+    CASE
+      WHEN v_logout_count = 1 AND v_bind_count = 1
+        THEN 'logout_current_user and bind_device_for_current_user each have exactly one canonical definition'
+      ELSE
+        'CRITICAL: expected exactly one canonical definition; logout='
+          || v_logout_count || ', bind_device=' || v_bind_count
+    END
+  );
+END $$;
+
 -- Display Results
 SELECT * FROM validation_results ORDER BY check_name;
 

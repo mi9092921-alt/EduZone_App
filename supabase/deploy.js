@@ -30,11 +30,15 @@ async function main() {
   }
 
   console.log('Connecting to remote database...');
-  // We disable SSL certificate validation for ease of connection with Supabase pooled endpoints
   const client = new Client({
     connectionString: dbUrl,
+    // Never disable TLS certificate verification for schema deployment.
+    // If a private CA is required, provide its PEM via SUPABASE_DB_CA_CERT.
     ssl: {
-      rejectUnauthorized: false
+      rejectUnauthorized: true,
+      ...(process.env.SUPABASE_DB_CA_CERT
+        ? { ca: process.env.SUPABASE_DB_CA_CERT }
+        : {}),
     }
   });
 

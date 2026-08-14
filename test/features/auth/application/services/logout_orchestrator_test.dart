@@ -108,6 +108,26 @@ void main() {
   });
 
   group('forceLocalCleanup', () {
+    test('wipes the actual Supabase access token key after local signOut', () async {
+      final remainingKeys = <String>{'supabase_access_token'};
+
+      when(
+        () => mockAuth.signOut(scope: any(named: 'scope')),
+      ).thenAnswer((_) async {});
+      when(() => mockStorage.delete(key: any(named: 'key')))
+          .thenAnswer((invocation) async {
+        remainingKeys.remove(invocation.namedArguments[#key] as String);
+      });
+
+      await orchestrator.forceLocalCleanup();
+
+      expect(remainingKeys, isEmpty);
+      verify(() => mockStorage.delete(key: 'supabase_access_token')).called(1);
+      verifyNever(() => mockStorage.delete(key: 'access_token'));
+      verifyNever(() => mockStorage.delete(key: 'refresh_token'));
+      verifyNever(() => mockStorage.delete(key: 'user_id_cache'));
+    });
+
     test('calls signOut with local scope', () async {
       when(
         () => mockAuth.signOut(scope: any(named: 'scope')),

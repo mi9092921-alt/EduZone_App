@@ -66,6 +66,17 @@ jobs:
         # period, that should be a documented, deliberate decision here,
         # not a silent side effect.
 
+  secret_scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Secret scan (Gitleaks)
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   dependency_check:
     runs-on: ubuntu-latest
     steps:

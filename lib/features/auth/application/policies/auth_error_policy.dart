@@ -56,9 +56,11 @@ abstract final class AuthErrorPolicy {
     if (e is MaxDevicesReachedException) return 'errorMaxDevices';
     if (e is DeviceAlreadyBoundException) return 'errorDeviceBound';
 
+    // Never log exception messages here: SDK/backend errors may contain
+    // request details or other sensitive diagnostic data. Keep only the
+    // runtime type, which is sufficient to classify and monitor the gap.
     debugPrint(
-      '[AuthErrorPolicy] Unmapped exception type in mapExceptionToKey: '
-      '${e.runtimeType}: $e',
+      '[AuthErrorPolicy] Unmapped exception type: ${e.runtimeType}',
     );
     return 'errorGeneric';
   }

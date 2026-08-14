@@ -19,9 +19,7 @@ const _preservedPrefKeys = {
 
 /// Keys that are always wiped on logout.
 const _sensitiveSecureKeys = {
-  'access_token',
-  'refresh_token',
-  'user_id_cache',
+  'supabase_access_token',
 };
 
 class LogoutOrchestrator {
