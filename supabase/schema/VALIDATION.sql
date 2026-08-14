@@ -363,6 +363,87 @@ END $$;
 
 
 
+-- Check 12A: Session revocation is tied to the real Supabase Auth session.
+DO $$
+DECLARE
+  v_has_session_helper boolean;
+  v_has_session_check boolean;
+  v_helper_public boolean;
+BEGIN
+  SELECT EXISTS(
+    SELECT 1
+    FROM information_schema.routines
+    WHERE routine_schema = 'private'
+      AND routine_name = 'revoke_auth_sessions'
+  ) INTO v_has_session_helper;
+
+  SELECT pg_get_functiondef(p.oid) ILIKE '%auth.sessions s%session_id%'
+  INTO v_has_session_check
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname = 'validate_user_session'
+    AND pg_get_function_identity_arguments(p.oid) = '';
+
+  SELECT has_function_privilege(
+    'authenticated',
+    'private.revoke_auth_sessions(uuid)',
+    'EXECUTE'
+  ) OR has_function_privilege(
+    'anon',
+    'private.revoke_auth_sessions(uuid)',
+    'EXECUTE'
+  ) INTO v_helper_public;
+
+  INSERT INTO validation_results VALUES (
+    'Auth Session Revocation Boundary',
+    CASE
+      WHEN v_has_session_helper
+       AND coalesce(v_has_session_check, false)
+       AND NOT v_helper_public
+      THEN 'PASS' ELSE 'FAIL'
+    END,
+    'private.revoke_auth_sessions exists; validate_user_session checks auth.sessions; helper is not API-callable'
+  );
+END $$;
+
+-- Check 12B: All server-side token-version revocation paths also revoke
+-- the underlying Supabase Auth sessions, preventing a refresh from minting
+-- a fresh JWT after an application-level revocation.
+DO $$
+DECLARE
+  v_missing text[];
+BEGIN
+  SELECT array_agg(routine_name ORDER BY routine_name)
+    INTO v_missing
+  FROM (VALUES
+    ('trg_increment_token_version_on_role_change'),
+    ('increment_token_version'),
+    ('control_user_account'),
+    ('worker_control_user_account'),
+    ('logout_current_user'),
+    ('reset_user_device'),
+    ('worker_reset_user_device')
+  ) AS expected(routine_name)
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = expected.routine_name
+      AND pg_get_functiondef(p.oid) ILIKE '%private.revoke_auth_sessions(%'
+  );
+
+  INSERT INTO validation_results VALUES (
+    'Token Revocation Paths Revoke Auth Sessions',
+    CASE WHEN v_missing IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'Missing auth-session revocation calls in: ' || array_to_string(v_missing, ', '),
+      'All token/device/account revocation paths invalidate Supabase Auth sessions'
+    )
+  );
+END $$;
+
 -- Check 12: Authentication hook is callable only by Supabase Auth / trusted backend.
 DO $$
 DECLARE

@@ -89,10 +89,48 @@ END;
 $$;
 
 -- =============================================================================
+-- AUTH-REV-02: Supabase Auth-session revocation boundary.
+-- `token_version` invalidates application JWTs, but a still-live Supabase
+-- refresh session can otherwise mint a fresh JWT. Supabase documents the
+-- `session_id` JWT claim as the primary key of auth.sessions; deleting that
+-- row is the Auth-native revocation boundary.
+CREATE OR REPLACE FUNCTION private.revoke_auth_sessions(p_user_id uuid)
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  DELETE FROM auth.sessions
+   WHERE user_id = p_user_id;
+$$;
+
+-- Safely extract the Supabase Auth session id. Invalid/missing claims fail
+-- closed instead of raising through every RLS policy that depends on this
+-- function.
+CREATE OR REPLACE FUNCTION private.current_jwt_session_id()
+RETURNS uuid
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_session_id text := nullif(auth.jwt() ->> 'session_id', '');
+BEGIN
+  IF v_session_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  RETURN v_session_id::uuid;
+EXCEPTION
+  WHEN invalid_text_representation THEN
+    RETURN NULL;
+END;
+$$;
+
 -- AUTH-FIX-01: DB-authoritative session validation.
--- JWT claims identify the request, but public.users is the authority for
--- account state and token revocation. Missing or malformed token_version fails
--- closed instead of falling back to the stored database value.
+-- JWT claims identify the request, but public.users and auth.sessions are the
+-- authorities for account state, logout/revocation, and token validity. Missing
+-- or malformed token_version/session_id fails closed.
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION private.current_jwt_token_version()
@@ -132,8 +170,11 @@ AS $$
 DECLARE
   v_uid uuid := auth.uid();
   v_jwt_token_version integer := private.current_jwt_token_version();
+  v_session_id uuid := private.current_jwt_session_id();
 BEGIN
-  IF v_uid IS NULL OR v_jwt_token_version IS NULL THEN
+  IF v_uid IS NULL
+     OR v_jwt_token_version IS NULL
+     OR v_session_id IS NULL THEN
     RETURN false;
   END IF;
 
@@ -144,6 +185,12 @@ BEGIN
       AND u.deleted_at IS NULL
       AND u.account_status = 'active'
       AND u.token_version = v_jwt_token_version
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM auth.sessions s
+    WHERE s.id = v_session_id
+      AND s.user_id = v_uid
   );
 END;
 $$;
@@ -582,6 +629,8 @@ BEGIN
   SET token_version = token_version + 1,
       updated_at = pg_catalog.now()
   WHERE id = NEW.user_id;
+
+  PERFORM private.revoke_auth_sessions(NEW.user_id);
   RETURN NEW;
 END;
 $$;
@@ -1513,6 +1562,10 @@ BEGIN
       updated_at = pg_catalog.now()
   WHERE id = p_user_id
     AND (public.is_current_user_super_admin() OR tenant_id = public.get_current_tenant_id()) RETURNING token_version;
+
+  IF FOUND THEN
+    PERFORM private.revoke_auth_sessions(p_user_id);
+  END IF;
 END;
 $$;
 
@@ -2148,6 +2201,15 @@ BEGIN
   SET is_active = false
   WHERE user_id = p_user_id
     AND tenant_id = public.get_current_tenant_id();
+
+  UPDATE public.users
+  SET token_version = token_version + 1,
+      updated_at = pg_catalog.now()
+  WHERE id = p_user_id
+    AND tenant_id = public.get_current_tenant_id()
+    AND deleted_at IS NULL;
+
+  PERFORM private.revoke_auth_sessions(p_user_id);
 END;
 $$;
 
@@ -2196,6 +2258,7 @@ BEGIN
     AND tenant_id = public.get_current_tenant_id();
 
   IF p_action <> 'unlock' THEN
+    PERFORM private.revoke_auth_sessions(p_user_id);
     PERFORM public.terminate_user_sessions(p_user_id, 'account_' || p_action);
   END IF;
 
@@ -3696,6 +3759,8 @@ BEGIN
   END IF;
 
   IF p_action <> 'unlock' THEN
+    PERFORM private.revoke_auth_sessions(p_user_id);
+
     UPDATE public.sessions
     SET is_active = false,
         ended_at = coalesce(ended_at, pg_catalog.now()),
@@ -3836,6 +3901,15 @@ BEGIN
   SET is_active = false
   WHERE user_id = p_user_id
     AND tenant_id = v_tenant_id;
+
+  UPDATE public.users
+  SET token_version = token_version + 1,
+      updated_at = pg_catalog.now()
+  WHERE id = p_user_id
+    AND tenant_id = v_tenant_id
+    AND deleted_at IS NULL;
+
+  PERFORM private.revoke_auth_sessions(p_user_id);
 END;
 $$;
 
@@ -5443,6 +5517,7 @@ BEGIN
    WHERE id = auth.uid()
      AND deleted_at IS NULL;
 
+  PERFORM private.revoke_auth_sessions(auth.uid());
   PERFORM public.terminate_user_sessions(auth.uid(), 'self_logout');
 END;
 $$;

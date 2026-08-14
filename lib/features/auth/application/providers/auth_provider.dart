@@ -54,6 +54,16 @@ class Auth extends _$Auth {
   late final AuthRemoteDataSource _remoteDataSource;
   CheckUserAccessService? _accessService;
 
+  // Monotonic generation used to invalidate stale async auth work. Any
+  // explicit auth action (login/logout) or passive revocation increments this
+  // value so an older operation cannot mutate state or clear a newer session.
+  int _authOperationGeneration = 0;
+
+  int _beginAuthOperation() => ++_authOperationGeneration;
+
+  bool _isCurrentAuthOperation(int generation) =>
+      ref.mounted && generation == _authOperationGeneration;
+
   // ─── Degraded-session retry (AuthDegraded) ───────────────────────────────
   Timer? _degradedRetryTimer;
   int _degradedRetryCount = 0;
@@ -70,7 +80,8 @@ class Auth extends _$Auth {
     });
 
     // Kick off session check — UI shows splash via AuthInitializing.
-    Future.microtask(() => _initializeSession());
+    final generation = _authOperationGeneration;
+    Future.microtask(() => _initializeSession(generation: generation));
 
     return const AuthInitializing();
   }
@@ -121,7 +132,9 @@ class Auth extends _$Auth {
   /// Update check runs FIRST — before any session check — so that:
   /// 1. Force updates block access even before login.
   /// 2. Optional update info is carried into [AuthAuthenticated].
-  Future<void> _initializeSession() async {
+  Future<void> _initializeSession({int? generation}) async {
+    final operationGeneration = generation ?? _authOperationGeneration;
+    if (!_isCurrentAuthOperation(operationGeneration)) return;
     try {
       // ── Step 1: Check for app updates ───────────────────────────────────
       final packageInfo = await PackageInfo.fromPlatform();
@@ -129,6 +142,7 @@ class Auth extends _$Auth {
 
       final svc = ref.read(updateServiceProvider);
       final updateInfo = await svc.checkForUpdate(currentVersion);
+      if (!_isCurrentAuthOperation(operationGeneration)) return;
 
       // Force update → block immediately, skip auth
       if (updateInfo.status == UpdateStatus.forceUpdate) {
@@ -155,6 +169,7 @@ class Auth extends _$Auth {
         session.user.id,
         fingerprint,
       );
+      if (!_isCurrentAuthOperation(operationGeneration)) return;
 
       if (!deviceValid) {
         debugPrint(
@@ -166,10 +181,13 @@ class Auth extends _$Auth {
       }
 
       final access = await ref.read(checkUserAccessUseCaseProvider)();
+      if (!_isCurrentAuthOperation(operationGeneration)) return;
 
       if (access.isAllowed) {
         final appUser = await ref.read(getCurrentUserUseCaseProvider)();
+        if (!_isCurrentAuthOperation(operationGeneration)) return;
         if (appUser != null) {
+          if (!_isCurrentAuthOperation(operationGeneration)) return;
           if (!_isStudentUser(appUser)) {
             debugPrint('[Auth] Non-student user blocked from student app.');
             await _forceLocalSignOutOnly(client);
@@ -192,6 +210,7 @@ class Auth extends _$Auth {
           await ref
               .read(authActivitySyncServiceProvider)
               .syncActivityAndSession(appUser, skipBind: true);
+          if (!_isCurrentAuthOperation(operationGeneration)) return;
 
           // Start security monitoring (polling + Realtime token_version check)
           _startAccessMonitoring(appUser.id, appUser.tenantId);
@@ -280,7 +299,7 @@ class Auth extends _$Auth {
     _degradedRetryTimer?.cancel();
     _degradedRetryTimer = Timer(Duration(seconds: delaySeconds), () async {
       if (!ref.mounted || state is! AuthDegraded) return;
-      await _initializeSession();
+      await _initializeSession(generation: _authOperationGeneration);
       // A successful (or explicitly-denied) retry moves state out of
       // AuthDegraded — reset the counter so a *future*, unrelated outage
       // starts its own fresh backoff instead of inheriting this one's.
@@ -296,7 +315,7 @@ class Auth extends _$Auth {
   Future<void> retryDegradedSession() async {
     if (state is! AuthDegraded) return;
     _degradedRetryTimer?.cancel();
-    await _initializeSession();
+    await _initializeSession(generation: _authOperationGeneration);
     if (ref.mounted && state is! AuthDegraded) {
       _degradedRetryCount = 0;
     }
@@ -317,7 +336,10 @@ class Auth extends _$Auth {
         // This prevents a race condition where our own signOut() call in
         // forceLocalCleanup() triggers this listener concurrently.
         if (state is! AuthLoggingOut && state is! AuthUnauthenticated) {
+          ++_authOperationGeneration;
           debugPrint('[Auth] Passive revocation detected. Cleaning up.');
+          _accessService?.stop();
+          _accessService = null;
           _invalidateAllUserProviders();
           _safeSetState(const AuthUnauthenticated());
         }
@@ -330,6 +352,8 @@ class Auth extends _$Auth {
   /// Entry point for LoginScreen.
   /// Transitions: AuthAuthenticating → AuthAuthenticated | AuthRestricted | AuthUnauthenticated(error)
   Future<void> login(String email, String password) async {
+    final generation = _beginAuthOperation();
+
     // An explicit login attempt supersedes any pending degraded-session
     // auto-retry from a previous cold start.
     _degradedRetryTimer?.cancel();
@@ -338,6 +362,7 @@ class Auth extends _$Auth {
 
     try {
       final appUser = await ref.read(loginUserUseCaseProvider)(email, password);
+      if (!_isCurrentAuthOperation(generation)) return;
 
       // Bind device synchronously first to check limits
       final device = ref.read(deviceServiceProvider);
@@ -347,8 +372,10 @@ class Auth extends _$Auth {
         device.deviceInfoJson,
         device.platform,
       );
+      if (!_isCurrentAuthOperation(generation)) return;
 
       final access = await ref.read(checkUserAccessUseCaseProvider)();
+      if (!_isCurrentAuthOperation(generation)) return;
 
       if (access.isAllowed) {
         if (!_isStudentUser(appUser)) {
@@ -359,6 +386,7 @@ class Auth extends _$Auth {
         }
 
         _safeSetState(AuthAuthenticated(user: appUser, access: access));
+        if (!_isCurrentAuthOperation(generation)) return;
 
         // Offline downloads account isolation (P6.20): purge any local
         // download files/keys left behind by a *different* account that
@@ -399,6 +427,7 @@ class Auth extends _$Auth {
               ),
             );
       } else {
+        if (!_isCurrentAuthOperation(generation)) return;
         // Sign out if not allowed, but do not let a cleanup failure override
         // the user-facing restricted-state screen.
         final client = ref.read(supabaseClientProvider);
@@ -415,6 +444,8 @@ class Auth extends _$Auth {
         _safeSetState(AuthRestricted(status: access.status, access: access));
       }
     } catch (e) {
+      if (!_isCurrentAuthOperation(generation)) return;
+
       // Unlike _initializeSession/verifyAccess, login() has no prior
       // authenticated state worth preserving — the user is actively trying
       // to establish a session. Transient vs. non-transient only affects
@@ -474,11 +505,14 @@ class Auth extends _$Auth {
   // ─── Verify Access (used by restricted screens to re-check) ──────────────
 
   Future<void> verifyAccess() async {
+    final generation = _authOperationGeneration;
     try {
       final access = await ref.read(checkUserAccessUseCaseProvider)();
+      if (!_isCurrentAuthOperation(generation)) return;
 
       if (access.isAllowed) {
         final appUser = await ref.read(getCurrentUserUseCaseProvider)();
+        if (!_isCurrentAuthOperation(generation)) return;
         if (appUser != null) {
           if (!_isStudentUser(appUser)) {
             debugPrint('[Auth] Non-student user blocked during access verify.');
@@ -586,6 +620,11 @@ class Auth extends _$Auth {
     // Prevent double-logout
     if (state is AuthLoggingOut || state is AuthUnauthenticated) return;
 
+    // Invalidate every in-flight auth operation before starting cleanup so
+    // a late login/session-restore result can never sign out or overwrite a
+    // newer session.
+    final generation = _beginAuthOperation();
+
     final client = ref.read(supabaseClientProvider);
     final userId = client.auth.currentUser?.id;
 
@@ -629,8 +668,14 @@ class Auth extends _$Auth {
       debugPrint('[Logout] Server cleanup error (non-critical): ${e.runtimeType}');
     }
 
+    // A new login/passive revocation may have superseded this logout while
+    // server cleanup was in flight. Do not clear the newer session locally.
+    if (!_isCurrentAuthOperation(generation)) return;
+
     // ── Phase 3: Clear local session securely ───────────────────────────────
     await orchestrator.forceLocalCleanup();
+
+    if (!_isCurrentAuthOperation(generation)) return;
 
     // ── Phase 4: Invalidate user data Providers ─────────────────────────────
     // Now that the session is wiped, clear memory safely.
@@ -638,7 +683,9 @@ class Auth extends _$Auth {
 
     // ── Phase 5: Finalize State ─────────────────────────────────────────────
     // This triggers GoRouter to immediately snap to /login natively.
-    _safeSetState(const AuthUnauthenticated());
+    if (_isCurrentAuthOperation(generation)) {
+      _safeSetState(const AuthUnauthenticated());
+    }
   }
 
   /// Centralized provider invalidation — ensures zero data leakage

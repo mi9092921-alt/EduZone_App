@@ -55,21 +55,12 @@ const _tBindResult = BindDeviceResult(status: BindDeviceStatus.bound);
 
 /// Flushes pending microtasks/timers repeatedly.
 ///
-/// [AuthNotifier.build] fires `Future.microtask(() => _initializeSession())`
-/// WITHOUT awaiting it (production code, lib/features/auth/presentation/
-/// providers/auth_provider.dart:112). If that call is still pending when a
-/// test invokes login()/logout()/verifyAccess(), its eventual
-/// `_safeSetState(AuthUnauthenticated())` write can land AFTER the test's
-/// own call and silently overwrite the state the test is asserting on —
-/// this was the confirmed root cause of the previous
-/// "Expected AuthAuthenticated, Actual AuthUnauthenticated" failures.
-///
-/// This helper drains the event queue so `_initializeSession()` settles
-/// into its own (harmless, no-session) AuthUnauthenticated state FIRST,
-/// before the test proceeds — so later writes are the true last word.
-/// This is a test-only workaround; the underlying unawaited-Future race in
-/// production code is a separate, still-open finding (see chat above) that
-/// needs an explicit decision before touching lib/.
+/// [AuthNotifier.build] intentionally starts session restoration in a
+/// microtask because Riverpod's notifier build is synchronous. The
+/// production notifier now tags that asynchronous work with a monotonic
+/// operation generation, so a later login/logout cannot be overwritten by
+/// a stale cold-start result. This helper simply lets the startup task
+/// settle before tests assert on the resulting state.
 Future<void> _settleInitialization() async {
   for (var i = 0; i < 10; i++) {
     await Future<void>.delayed(Duration.zero);
@@ -856,6 +847,84 @@ when(() => mockSupabase.rpc('check_user_access')).thenAnswer(
       await container.read(authProvider.notifier).retryDegradedSession();
 
       expect(container.read(authProvider), before);
+    });
+  });
+
+  // ─── concurrency: stale login cannot overwrite a newer login ─────────────
+  //
+  // Regression invariant: once a second explicit login starts, every async
+  // step belonging to the first login becomes stale. In particular, the
+  // first result must not change AuthAuthenticated to the wrong account,
+  // enter the restricted branch, emit a stale error, or sign out the session
+  // established by the newer login.
+
+  group('concurrency: stale login generation', () {
+    test(
+        'newer login wins when an older login completes later',
+        () async {
+      container.read(authProvider);
+      await _settleInitialization();
+
+      final firstLoginGate = Completer<AppUser>();
+      const firstUser = AppUser(
+        id: 'user-first',
+        email: 'first@example.com',
+        firstName: 'First',
+        tenantId: 'tenant-1',
+      );
+      const secondUser = AppUser(
+        id: 'user-second',
+        email: 'second@example.com',
+        firstName: 'Second',
+        tenantId: 'tenant-1',
+      );
+
+      when(() => mockDataSource.login(any(), any())).thenAnswer((invocation) async {
+        final email = invocation.positionalArguments.first as String;
+        if (email == 'first@example.com') return firstLoginGate.future;
+        return secondUser;
+      });
+      when(() => mockDataSource.bindDevice(any(), any(), any()))
+          .thenAnswer((_) async => _tBindResult);
+      when(() => mockDataSource.checkUserAccess())
+          .thenAnswer((_) async => _tActiveAccess);
+      when(() => mockDataSource.syncUserActivity(
+            userId: any(named: 'userId'),
+            tenantId: any(named: 'tenantId'),
+            deviceFingerprint: any(named: 'deviceFingerprint'),
+          )).thenAnswer((_) async {});
+      when(() => mockSupabase.channel(any())).thenReturn(
+        _FakeRealtimeChannel(),
+      );
+      when(() => mockSupabase.removeChannel(any()))
+          .thenAnswer((_) async => 'ok');
+
+      final notifier = container.read(authProvider.notifier);
+
+      final first = notifier.login('first@example.com', 'password');
+      await Future<void>.delayed(Duration.zero);
+
+      final second = notifier.login('second@example.com', 'password');
+      await second;
+
+      expect(container.read(authProvider), isA<AuthAuthenticated>());
+      expect(
+        (container.read(authProvider) as AuthAuthenticated).user.id,
+        'user-second',
+      );
+
+      firstLoginGate.complete(firstUser);
+      await first;
+
+      final finalState = container.read(authProvider);
+      expect(finalState, isA<AuthAuthenticated>());
+      expect(
+        (finalState as AuthAuthenticated).user.id,
+        'user-second',
+        reason: 'a stale first login must never overwrite the newer session',
+      );
+      verify(() => mockDataSource.bindDevice(any(), any(), any()))
+          .called(1);
     });
   });
 
