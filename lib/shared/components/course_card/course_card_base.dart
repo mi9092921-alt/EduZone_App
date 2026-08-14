@@ -56,7 +56,7 @@ class _CourseCardBaseState extends State<CourseCardBase> {
         onExit: (_) => setState(() => _isHovered = false),
         child: AnimatedScale(
           scale: _scale,
-          duration: const Duration(milliseconds: 150),
+          duration: AppMotion.fast,
           curve: Curves.easeOut,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),

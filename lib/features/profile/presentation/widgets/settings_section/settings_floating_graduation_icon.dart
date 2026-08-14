@@ -1,3 +1,4 @@
+import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -23,7 +24,7 @@ class _SettingsFloatingGraduationIconState
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: AppMotion.shimmer,
     )..repeat(reverse: true);
 
     _scaleAnimation = Tween<double>(begin: 1.0, end: 1.08).animate(

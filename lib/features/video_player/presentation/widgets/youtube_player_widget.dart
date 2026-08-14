@@ -100,7 +100,7 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
               behavior: HitTestBehavior.opaque,
               child: AnimatedOpacity(
                 opacity: _showOverlay ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 300),
+                duration: AppMotion.medium,
                 child: ColoredBox(
                   color: Colors.black.withValues(alpha: 0.5),
                   child: AnimatedBuilder(

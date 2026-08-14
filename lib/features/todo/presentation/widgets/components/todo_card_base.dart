@@ -21,7 +21,7 @@ class TodoCardBase extends StatelessWidget {
 
     return AnimatedContainer(
       constraints: const BoxConstraints(minHeight: 48), // إضافة حد أدنى للارتفاع
-      duration: const Duration(milliseconds: 300),
+      duration: AppMotion.medium,
       curve: Curves.easeInOut,
       decoration: BoxDecoration(
         color: background ?? (isCompleted ? ds.surface2 : ds.surface),

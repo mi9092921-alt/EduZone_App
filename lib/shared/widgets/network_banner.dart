@@ -30,7 +30,7 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
     super.initState();
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: AppMotion.medium,
     );
 
     _slideAnimation = Tween<Offset>(

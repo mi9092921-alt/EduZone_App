@@ -51,7 +51,7 @@ class OfflinePlayerControlsOverlay extends StatelessWidget {
         ignoring: !showControls,
         child: AnimatedOpacity(
           opacity: showControls ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 300),
+          duration: AppMotion.medium,
           child: ColoredBox(
             color: Colors.transparent,
             child: Column(

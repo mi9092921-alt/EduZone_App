@@ -535,36 +535,51 @@ lib/
 
 ## 🎨 Design System
 
-The app follows the **EduZone App Design System v1.0**, fully documented at:
-
-```
-docs/EduZone_App_Design_System_v1.md
-```
+The app has a real token system at `lib/design_system/tokens/` (colors,
+typography, spacing, radius, motion, elevation/shadows, icons) — see
+**[`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md)** for the audit of what's
+enforced by `tool/check_design_tokens.py` today, what's deliberately not
+enforced (and why), and known gaps. There is no separate
+`EduZone_App_Design_System_v1.md` doc — an earlier version of this section
+referenced one, but it does not exist anywhere in this repository, and the
+example color names below it (`AppColors.primary700`, `success700`,
+`error700`, `warning700`) don't match any member of the actual `AppColors`
+class either. Fixed below to the real token names.
 
 ### Primary Colors
 
 ```dart
-AppColors.primary700   // #1B4F8A — Primary buttons
-AppColors.neutral0     // #FFFFFF — Card surfaces
-AppColors.neutral50    // #F1F5F9 — Page background
-AppColors.success700   // #0E7C61 — Success / Active
-AppColors.error700     // #B91C1C — Errors / Banned
-AppColors.warning700   // #B7600A — Warnings
+AppColors.primary       // #2563EB — Primary buttons, brand
+AppColors.lightSurface  // #FFFFFF — Card surfaces (light mode)
+AppColors.lightBackground // #F1F5F9 — Page background (light mode)
+AppColors.success       // #22C55E — Success / Active
+AppColors.error         // #EF4444 — Errors / Banned
+AppColors.warning       // #F59E0B — Warnings
 ```
+
+(`lib/design_system/tokens/app_colors.dart` is the source of truth — it
+also has full `dark*` equivalents for every light-mode color above.)
 
 ### Strict Rules
 
 ```dart
 // ❌ Forbidden
 Container(color: Color(0xFF1B4F8A))
-SizedBox(height: 16)
+BorderRadius.circular(12)
 TextStyle(fontSize: 14)
 
 // ✅ Correct
-Container(color: AppColors.primary700)
-SizedBox(height: AppSpacing.lg)
+Container(color: AppColors.primary)
+BorderRadius.circular(AppRadius.md)
 AppTextStyles.bodyMedium
 ```
+
+`Color(...)`, `TextStyle(...)`, magic-number `EdgeInsets`/
+`BorderRadius.circular`, `Duration(...)` passed to animation-timing
+parameters, and raw `BoxShadow(...)` are all checked by
+`tool/check_design_tokens.py` in CI — see `DESIGN_SYSTEM.md` for exactly
+what's covered and the false-positive traps found (and avoided) while
+building each check.
 
 ---
 
