@@ -8,6 +8,31 @@
 ## [Unreleased]
 
 ### Added / Fixed
+- **Security (Offline Download — P6.16 Offline Clock Security)**:
+  `OfflinePolicyEngine.authorize` previously trusted `DateTime.now()`
+  directly for its offline-expiry check, with no defense against a user
+  disconnecting from the network and winding the device clock backward
+  before every playback attempt to defeat expiry indefinitely (T5 in the
+  offline threat model). Added `OfflineClockGuard`
+  (`lib/features/downloads/application/services/offline_clock_guard.dart`),
+  which persists — in `flutter_secure_storage`, not SQLite — the highest
+  device time this app instance has ever observed, and denies playback
+  (`OfflinePlaybackDenialReason.clockRollbackSuspected`) if the current
+  device time falls more than 6 hours behind that watermark. Wired into
+  `OfflinePolicyEngine.authorize` immediately before the expiry check, and
+  into the real playback call site
+  (`offline_player_wrapper.dart`) with a real
+  `FlutterSecureStorage`-backed instance. Unit tests added for both the
+  new guard (`offline_clock_guard_test.dart`) and its integration into the
+  policy engine (`offline_policy_engine_test.dart`). Honest boundary
+  documented in `SECURITY.md` and in the class doc comments: this is a
+  local, device-held heuristic, not a server-issued trusted-time
+  guarantee — it does not detect a device that never advanced its clock
+  while online, or one whose secure storage is itself compromised
+  (root/jailbreak). Not yet independently re-verified with
+  `flutter analyze`/`flutter test` in this session (no Flutter/Dart
+  toolchain available in this environment) — statically inspected only.
+
 - **Security (WebView/JS injection)**: `extractModernPlayerVideoId` (Modern
   Player, `youtube-nocookie.com` WebView) previously fell through to
   returning the raw, unrecognized `content.videoUrl` value unchanged when it

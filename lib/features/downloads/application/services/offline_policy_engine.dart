@@ -4,6 +4,7 @@ import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/encryption_service.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../data/datasources/download_local_ds.dart';
+import 'offline_clock_guard.dart';
 
 /// Why offline playback of a specific download was denied.
 ///
@@ -21,6 +22,7 @@ enum OfflinePlaybackDenialReason {
   deviceMismatch,
   missingFile,
   missingKey,
+  clockRollbackSuspected,
 }
 
 /// Thrown by [OfflinePolicyEngine.authorize] when offline playback is not
@@ -65,6 +67,9 @@ class OfflinePlaybackDeniedException implements Exception {
       case OfflinePlaybackDenialReason.missingKey:
         return 'This download can no longer be decrypted on this device. '
             'Delete it and download it again.';
+      case OfflinePlaybackDenialReason.clockRollbackSuspected:
+        return "This device's clock appears to have changed. Reconnect to "
+            'the internet and try again.';
     }
   }
 
@@ -89,11 +94,16 @@ class OfflinePlaybackDeniedException implements Exception {
 /// secure storage (`StorageService`'s `security_signature` column) — so a
 /// direct SQLite edit (T4: "مستخدم يحاول تعديل metadata") is detected as
 /// [OfflinePlaybackDenialReason.tampered] rather than silently trusted.
+/// Since this hardening pass, expiry is additionally guarded against
+/// device-clock rollback (P6.16) via [OfflineClockGuard] — see its doc
+/// comment for exactly what that does and does not catch.
+///
 /// This engine still does **not** implement a server-issued,
 /// cryptographically signed license (P6.4) or anti-replay protection
-/// (P6.25) — the HMAC key is device-generated and device-held, not
-/// server-controlled, so it raises the bar against casual local tampering
-/// but cannot detect a fully compromised device that extracts the key
+/// (P6.25) — the HMAC key and clock watermark are device-generated and
+/// device-held, not server-controlled, so together they raise the bar
+/// against casual local tampering and clock manipulation but cannot
+/// detect a fully compromised device that extracts the key/watermark
 /// itself (T2 in the threat model — root/jailbreak). That remains a real,
 /// intentionally-documented limitation of client-only enforcement, not a
 /// DRM-equivalence claim.
@@ -103,15 +113,25 @@ class OfflinePolicyEngine {
     required EncryptionService encryptionService,
     String Function()? deviceFingerprint,
     String? Function()? currentUserId,
+    OfflineClockGuard? clockGuard,
   })  : _localDataSource = localDataSource,
         _encryptionService = encryptionService,
         _deviceFingerprint = deviceFingerprint ?? _defaultDeviceFingerprint,
-        _currentUserId = currentUserId ?? _defaultCurrentUserId;
+        _currentUserId = currentUserId ?? _defaultCurrentUserId,
+        // Defaults to a no-secure-storage instance (degrades to "cannot
+        // detect rollback" rather than throwing) so every existing
+        // construction site — including every existing test — keeps
+        // working unchanged. Production call sites should pass a real
+        // `OfflineClockGuard(secureStorage: const FlutterSecureStorage())`
+        // explicitly, mirroring `EncryptionService`'s convention — see
+        // `offline_player_wrapper.dart`.
+        _clockGuard = clockGuard ?? OfflineClockGuard();
 
   final DownloadLocalDataSource _localDataSource;
   final EncryptionService _encryptionService;
   final String Function() _deviceFingerprint;
   final String? Function() _currentUserId;
+  final OfflineClockGuard _clockGuard;
 
   static String _defaultDeviceFingerprint() {
     try {
@@ -169,6 +189,19 @@ class OfflinePolicyEngine {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.notCompleted,
         'downloadId=$downloadId status=$status', // check-ignore: dev-only debugDetail, never rendered — see userMessage
+      );
+    }
+
+    // Clock-rollback detection (P6.16) — must run before the expiry check
+    // below, since that check is exactly what a rolled-back clock is used
+    // to defeat. See OfflineClockGuard's doc comment for the honest
+    // security boundary this provides.
+    try {
+      await _clockGuard.checkAndRecord();
+    } on ClockRollbackSuspectedException catch (e) {
+      throw OfflinePlaybackDeniedException(
+        OfflinePlaybackDenialReason.clockRollbackSuspected,
+        'downloadId=$downloadId ${e.detail}', // check-ignore: dev-only debugDetail, never rendered — see userMessage
       );
     }
 

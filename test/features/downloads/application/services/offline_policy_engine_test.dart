@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:app/core/services/encryption_service.dart';
+import 'package:app/features/downloads/application/services/offline_clock_guard.dart';
 import 'package:app/features/downloads/application/services/offline_policy_engine.dart';
 import 'package:app/features/downloads/data/datasources/download_local_ds.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +11,26 @@ class MockDownloadLocalDataSource extends Mock
     implements DownloadLocalDataSource {}
 
 class MockEncryptionService extends Mock implements EncryptionService {}
+
+/// Deterministic stand-in for [OfflineClockGuard] so tests don't depend on
+/// real secure storage — mirrors the real class's contract (throw =
+/// rollback suspected, otherwise succeed) without any I/O.
+class FakeClockGuard implements OfflineClockGuard {
+  FakeClockGuard({this.shouldThrow = false});
+  final bool shouldThrow;
+  int callCount = 0;
+
+  @override
+  Future<void> checkAndRecord({DateTime? now}) async {
+    callCount++;
+    if (shouldThrow) {
+      throw const ClockRollbackSuspectedException('simulated rollback');
+    }
+  }
+
+  @override
+  Duration get tolerance => const Duration(hours: 6);
+}
 
 void main() {
   late MockDownloadLocalDataSource localDataSource;
@@ -45,12 +66,14 @@ void main() {
   OfflinePolicyEngine buildEngine({
     String? userId = currentUserId,
     String device = currentDeviceId,
+    OfflineClockGuard? clockGuard,
   }) {
     return OfflinePolicyEngine(
       localDataSource: localDataSource,
       encryptionService: encryptionService,
       currentUserId: () => userId,
       deviceFingerprint: () => device,
+      clockGuard: clockGuard,
     );
   }
 
@@ -163,6 +186,66 @@ void main() {
         );
       },
     );
+  });
+
+  group('OfflinePolicyEngine.authorize — clock rollback (P6.16)', () {
+    test('denies playback when a clock rollback is suspected', () async {
+      when(() => localDataSource.getDownloadById(downloadId))
+          .thenAnswer((_) async => validRow());
+      final clockGuard = FakeClockGuard(shouldThrow: true);
+
+      await expectLater(
+        buildEngine(clockGuard: clockGuard).authorize(downloadId),
+        throwsA(
+          isA<OfflinePlaybackDeniedException>().having(
+            (e) => e.reason,
+            'reason',
+            OfflinePlaybackDenialReason.clockRollbackSuspected,
+          ),
+        ),
+      );
+
+      expect(clockGuard.callCount, 1);
+      // Denied before the key is ever fetched.
+      verifyNever(() => encryptionService.retrieveKey(any()));
+    });
+
+    test('clock check runs before the expiry check, so a rolled-back clock '
+        "can't be used to make an expired download look unexpired",
+        () async {
+      when(() => localDataSource.getDownloadById(downloadId)).thenAnswer(
+        (_) async => validRow(
+          expiresAt: DateTime.now()
+              .subtract(const Duration(days: 1))
+              .millisecondsSinceEpoch,
+        ),
+      );
+
+      await expectLater(
+        buildEngine(clockGuard: FakeClockGuard(shouldThrow: true))
+            .authorize(downloadId),
+        throwsA(
+          isA<OfflinePlaybackDeniedException>().having(
+            (e) => e.reason,
+            'reason',
+            OfflinePlaybackDenialReason.clockRollbackSuspected,
+          ),
+        ),
+      );
+    });
+
+    test('allows playback when the clock guard reports no rollback',
+        () async {
+      when(() => localDataSource.getDownloadById(downloadId))
+          .thenAnswer((_) async => validRow());
+      when(() => encryptionService.retrieveKey(downloadId))
+          .thenAnswer((_) async => 'a-key');
+      final clockGuard = FakeClockGuard();
+
+      await buildEngine(clockGuard: clockGuard).authorize(downloadId);
+
+      expect(clockGuard.callCount, 1);
+    });
   });
 
   group('OfflinePolicyEngine.authorize — deny paths (P6.41 invariants)', () {

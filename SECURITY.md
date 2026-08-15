@@ -228,14 +228,35 @@ compromised the device and can extract the key itself alongside
 everything else. That remains a real, deliberately-documented limitation
 below.
 
+Since this hardening pass, the expiry check specifically is also guarded
+against device-clock rollback (P6.16) by `OfflineClockGuard`
+(`lib/features/downloads/application/services/offline_clock_guard.dart`).
+`OfflinePolicyEngine.authorize` calls it immediately before evaluating
+`expires_at`. It persists — in `flutter_secure_storage`, not SQLite — the
+highest device time this app instance has ever observed, and denies
+playback (`OfflinePlaybackDenialReason.clockRollbackSuspected`) if the
+current device time is more than 6 hours behind that watermark, which is
+otherwise how a user could defeat offline expiry indefinitely: disconnect
+from the network and wind the clock back before every playback attempt
+(T5 in the threat model). Small backward jumps (timezone changes, NTP
+correction, DST) stay within the 6-hour tolerance and are not flagged. The
+watermark only ever advances; a detected rollback attempt never rewrites
+it. Same honest boundary as the HMAC signature above: this is a local
+heuristic against a device-held clock, not a server-issued trusted-time
+guarantee, and a device that has never advanced its clock online, or
+whose secure storage is itself compromised (root/jailbreak), is outside
+what it can catch.
+
 **What this is not:** client-side AES-GCM encryption is not equivalent to
 hardware-backed DRM (Widevine L1 / FairPlay). It raises the bar against a
 casual user copying files off the device; it does not defend against a
 sufficiently motivated attacker with root/jailbreak access extracting keys
 from a compromised device at the moment of use. Likewise, the
-`security_signature` HMAC above raises the bar against direct database
-edits but is not a server-issued, cryptographically signed license — there
-is no backend entitlement/license-issuance endpoint in this repo (see
+`security_signature` HMAC and the `OfflineClockGuard` watermark above
+raise the bar against direct database edits and clock manipulation
+respectively, but neither is a server-issued, cryptographically signed
+license or a trusted-time source — there is no backend
+entitlement/license-issuance endpoint in this repo (see
 `EduZone_Offline_Download_Security_Trusted_Playback_Architecture.md`
 P6.3/P6.4), and no anti-replay protection (P6.25). See the offline-security
 architecture doc for the full threat model this is explicitly scoped

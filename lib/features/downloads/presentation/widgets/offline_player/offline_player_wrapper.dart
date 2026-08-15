@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -13,6 +14,7 @@ import '../../../../../core/services/encryption_service.dart'
     show detectContainerExt;
 import '../../../../../core/services/offline_playback_service.dart';
 import '../../../application/providers/downloads_provider.dart';
+import '../../../application/services/offline_clock_guard.dart';
 import '../../../application/services/offline_policy_engine.dart';
 import '../../../domain/entities/downloaded_lesson.dart';
 import 'offline_player_center_button.dart';
@@ -117,6 +119,10 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
     _policyEngine = OfflinePolicyEngine(
       localDataSource: ref.read(downloadLocalDataSourceProvider),
       encryptionService: ref.read(encryptionServiceProvider),
+      // Real secure-storage-backed clock guard (P6.16) — see
+      // OfflinePolicyEngine's constructor doc comment for why this must be
+      // passed explicitly rather than relying on the default.
+      clockGuard: OfflineClockGuard(secureStorage: const FlutterSecureStorage()),
     );
     _initializePlayer();
     _resetAutoHideTimer();
