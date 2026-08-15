@@ -891,6 +891,67 @@ BEGIN
   );
 END $$;
 
+-- Check 22: get_lesson_content()/check_lesson_access() must be callable by
+-- authenticated (see SECTION-09 FIX in 10_permissions.sql). Without this,
+-- the get-lesson-content edge function's authorization RPC call fails
+-- outright rather than actually being enforced.
+DO $$
+DECLARE
+  v_missing text[];
+BEGIN
+  SELECT array_agg(fn ORDER BY fn)
+    INTO v_missing
+  FROM (VALUES
+    ('public.get_lesson_content(uuid, inet, uuid)'),
+    ('public.check_lesson_access(uuid)')
+  ) AS f(fn)
+  WHERE NOT has_function_privilege('authenticated', f.fn, 'EXECUTE');
+
+  INSERT INTO validation_results VALUES (
+    'Lesson Content RPCs Executable By Authenticated',
+    CASE WHEN v_missing IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: authenticated cannot EXECUTE: ' || array_to_string(v_missing, ', '),
+      'get_lesson_content and check_lesson_access are callable by authenticated'
+    )
+  );
+END $$;
+
+-- Check 23: sessions_admin_all / devices_admin_all must not grant
+-- unscoped cross-tenant access via is_admin_with_session_validation() /
+-- is_current_user_admin_lite() alone. The policy definition text must
+-- reference the strictly-super_admin, tenant-unscoped helper
+-- (is_current_user_super_admin_lite) for its cross-tenant branch.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(polname ORDER BY polname)
+    INTO v_bad
+  FROM (
+    SELECT pol.polname,
+           pg_get_expr(pol.polqual, pol.polrelid) AS using_expr
+    FROM pg_policy pol
+    JOIN pg_class c ON c.oid = pol.polrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname IN ('sessions', 'devices')
+      AND pol.polname IN ('sessions_admin_all', 'devices_admin_all')
+  ) p
+  WHERE using_expr IS NULL
+     OR using_expr NOT ILIKE '%is_current_user_super_admin_lite%';
+
+  INSERT INTO validation_results VALUES (
+    'Sessions/Devices Admin Policy Is Tenant-Scoped',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: cross-tenant admin bypass not using super_admin-only check: '
+        || array_to_string(v_bad, ', '),
+      'sessions_admin_all / devices_admin_all restrict the unscoped branch to super_admin'
+    )
+  );
+END $$;
+
 -- Display Results
 SELECT * FROM validation_results ORDER BY check_name;
 

@@ -241,6 +241,17 @@ GRANT EXECUTE ON FUNCTION public.is_teacher_of_course(uuid, uuid) TO authenticat
 REVOKE EXECUTE ON FUNCTION public.enroll_in_course(uuid) FROM anon;
 GRANT EXECUTE ON FUNCTION public.enroll_in_course(uuid) TO authenticated, service_role;
 
+-- SECTION-09 FIX: get_lesson_content()/check_lesson_access() are the
+-- server-side authorization boundary for streaming lesson video (see
+-- get-lesson-content/index.ts). They were defined with SECURITY DEFINER
+-- but never explicitly GRANTed. Grant EXECUTE explicitly, matching the
+-- other user-callable course/lesson RPCs above.
+REVOKE EXECUTE ON FUNCTION public.get_lesson_content(uuid, inet, uuid) FROM anon;
+GRANT EXECUTE ON FUNCTION public.get_lesson_content(uuid, inet, uuid) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.check_lesson_access(uuid) FROM anon;
+GRANT EXECUTE ON FUNCTION public.check_lesson_access(uuid) TO authenticated, service_role;
+
 REVOKE EXECUTE ON FUNCTION public.logout_current_user() FROM anon;
 GRANT EXECUTE ON FUNCTION public.logout_current_user() TO authenticated, service_role;
 
@@ -458,6 +469,17 @@ GRANT EXECUTE ON FUNCTION public.is_teacher_of_course(uuid, uuid) TO authenticat
 
 REVOKE EXECUTE ON FUNCTION public.enroll_in_course(uuid) FROM anon;
 GRANT EXECUTE ON FUNCTION public.enroll_in_course(uuid) TO authenticated, service_role;
+
+-- SECTION-09 FIX: get_lesson_content()/check_lesson_access() are the
+-- server-side authorization boundary for streaming lesson video (see
+-- get-lesson-content/index.ts). They were defined with SECURITY DEFINER
+-- but never explicitly GRANTed. Grant EXECUTE explicitly, matching the
+-- other user-callable course/lesson RPCs above.
+REVOKE EXECUTE ON FUNCTION public.get_lesson_content(uuid, inet, uuid) FROM anon;
+GRANT EXECUTE ON FUNCTION public.get_lesson_content(uuid, inet, uuid) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.check_lesson_access(uuid) FROM anon;
+GRANT EXECUTE ON FUNCTION public.check_lesson_access(uuid) TO authenticated, service_role;
 
 REVOKE EXECUTE ON FUNCTION public.logout_current_user() FROM anon;
 GRANT EXECUTE ON FUNCTION public.logout_current_user() TO authenticated, service_role;

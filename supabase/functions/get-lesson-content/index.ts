@@ -7,6 +7,27 @@ const corsHeaders = {
   'Cache-Control': 'private, no-store, max-age=0',
 };
 
+function jsonResponse(body: unknown, status: number) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+// get_lesson_content()'s p_ip parameter is `inet`. x-forwarded-for can be a
+// comma-separated proxy chain (or absent/malformed), which Postgres would
+// fail to cast -- take only the first hop and validate it loosely so a bad
+// header can never turn into a failed RPC call / hidden 500.
+function parseClientIp(header: string | null): string | null {
+  if (!header) return null;
+  const first = header.split(',')[0]?.trim();
+  if (!first) return null;
+  const ipv4 = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+  const ipv6 = /^[0-9a-fA-F:]+$/;
+  if (ipv4.test(first) || ipv6.test(first)) return first;
+  return null;
+}
+
 serve(async (req) => {
   // Handle CORS preflight request
   if (req.method === 'OPTIONS') {
@@ -14,121 +35,117 @@ serve(async (req) => {
   }
 
   try {
-    const { lesson_id } = await req.json();
+    const { lesson_id, device_id } = await req.json();
 
-    if (!lesson_id) {
-      return new Response(JSON.stringify({ error: "Missing lesson_id" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!lesson_id || typeof lesson_id !== "string") {
+      return jsonResponse({ error: "Missing lesson_id" }, 400);
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-    // Create a Supabase client with the Service Role key to bypass RLS for data fetching/signing.
-    // However, we still validate the user token manually to ensure security.
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing Authorization header" }), { 
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Missing Authorization header" }, 401);
     }
 
-    const { data: userData, error: userError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-
-    if (userError || !userData.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const userId = userData.user.id;
-
-    // 1. Check access using the RPC we created
-    // We pass the user token to a NEW client instance so the RPC runs in the context of the user
-    const userClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
+    // SECTION-09 CRITICAL FIX: access control must be evaluated, and the
+    // access decision logged, atomically and server-side -- not by the
+    // edge function re-implementing the check itself.
+    //
+    // The previous version called check_lesson_access() (which returns a
+    // JSON object such as {"allowed": false, "reason": "not_enrolled"})
+    // and then branched on `!access`. A non-null JS object is always
+    // truthy, so that condition only ever caught an actual RPC error --
+    // never a legitimate access denial. Any authenticated user, from any
+    // tenant, could request a signed video URL for any lesson_id and
+    // receive one. It also tried to audit-log the access with
+    // `.from("audit.lesson_access_log")`, but the `audit` schema is not in
+    // config.toml's exposed api.schemas, so that insert silently failed on
+    // every call -- there was no real audit trail for video access either.
+    //
+    // Fix: call the existing public.get_lesson_content() RPC as the user
+    // (so it runs against their real auth.uid()/tenant). That function
+    // already performs the enrollment/tenant/preview/teacher/admin check,
+    // inserts into audit.lesson_access_log for both allowed and denied
+    // attempts (bypassing PostgREST/api schema exposure since it's a
+    // regular in-database INSERT inside a SECURITY DEFINER function), and
+    // raises a plain 'ACCESS_DENIED' / 'LESSON_NOT_FOUND' / 'AUTH_REQUIRED'
+    // exception when the caller may not proceed. There is no boolean/JSON
+    // truthiness trap here: an exception is the only non-success outcome.
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { data: access, error: accessError } = await userClient.rpc("check_lesson_access", {
-      p_lesson_id: lesson_id,
-    });
-
-    if (accessError || !access) {
-      return new Response(JSON.stringify({ error: "Access denied" }), { 
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const { data: userData, error: userError } = await userClient.auth.getUser();
+    if (userError || !userData.user) {
+      return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
-    // 2. Get video_path (server-side only via service role)
-    const { data: content, error: contentError } = await supabase
-      .from("lesson_contents")
-      .select("video_path, provider, captions_path, duration_sec")
-      .eq("lesson_id", lesson_id)
-      .single();
+    const { data: lessonContent, error: accessError } = await userClient.rpc(
+      "get_lesson_content",
+      {
+        p_lesson_id: lesson_id,
+        p_ip: parseClientIp(req.headers.get('x-forwarded-for')),
+        p_device_id: typeof device_id === "string" ? device_id : null,
+      },
+    );
 
-    if (contentError || !content) {
-      return new Response(JSON.stringify({ error: "Content not found" }), { 
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (accessError || !lessonContent) {
+      const reason = accessError?.message ?? "";
+      if (reason.includes("AUTH_REQUIRED")) {
+        return jsonResponse({ error: "Unauthorized" }, 401);
+      }
+      if (reason.includes("LESSON_NOT_FOUND")) {
+        return jsonResponse({ error: "Lesson not found" }, 404);
+      }
+      // ACCESS_DENIED and any other unexpected failure are both a 403 from
+      // the caller's point of view -- do not leak the raw Postgres error
+      // (schema/constraint/internal detail) to the client.
+      return jsonResponse({ error: "Access denied" }, 403);
     }
 
-    // 3. Generate signed URLs (Valid for 3 minutes to prevent replay attacks)
-    let videoUrl = content.video_path;
-    let captionsUrl = content.captions_path;
+    const videoPath: string | null = lessonContent.videoPath ?? null;
+    const captionsPath: string | null = lessonContent.captionsPath ?? null;
+    const provider: string | null = lessonContent.provider ?? null;
 
-    // Only generate signed URL if it's stored in a bucket (e.g. S3/bunny mapping or local supabase storage)
-    // If it's just a youtube ID, we return the ID. Assuming all paths starting with 'lessons/' or similar are Storage objects.
-    // Assuming the user's setup uses a 'videos' bucket for actual file hosting.
-    if (content.provider !== 'youtube' && content.video_path) {
-      const { data: signedVideo } = await supabase.storage
+    // Signed URL generation needs storage access the user-scoped client
+    // doesn't have; the service-role client is used ONLY here, after
+    // authorization has already been established above.
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+
+    let videoUrl = videoPath;
+    let captionsUrl = captionsPath;
+
+    if (provider !== 'youtube' && videoPath) {
+      const { data: signedVideo } = await adminClient.storage
         .from("videos")
-        .createSignedUrl(content.video_path, 180);
-      
+        .createSignedUrl(videoPath, 180);
+
       if (signedVideo) videoUrl = signedVideo.signedUrl;
 
-      if (content.captions_path) {
-        const { data: signedCaptions } = await supabase.storage
+      if (captionsPath) {
+        const { data: signedCaptions } = await adminClient.storage
           .from("videos")
-          .createSignedUrl(content.captions_path, 180);
-        
+          .createSignedUrl(captionsPath, 180);
+
         if (signedCaptions) captionsUrl = signedCaptions.signedUrl;
       }
     }
 
-    // 4. Log access
-    await supabase.from("audit.lesson_access_log").insert({
-      lesson_id: lesson_id,
-      user_id: userId,
-      access_type: "stream",
-      ip_address: req.headers.get('x-forwarded-for') || 'unknown',
-    });
-
-    return new Response(
-      JSON.stringify({
+    return jsonResponse(
+      {
         has_access: true,
         video_url: videoUrl,
-        provider: content.provider,
-        duration: content.duration_sec,
+        provider,
+        duration: lessonContent.durationSec ?? null,
         captions_url: captionsUrl,
-      }),
-      { 
-        status: 200, 
-        headers: { ...corsHeaders, "Content-Type": "application/json" } 
-      }
+      },
+      200,
     );
-  } catch (error: any) {
-    console.error("get-lesson-content unexpected failure", error);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  } catch (error) {
+    console.error("Unhandled error in get-lesson-content:", error);
+    return jsonResponse({ error: "Internal server error" }, 500);
   }
 });

@@ -2526,3 +2526,56 @@ BEGIN
     );
   END LOOP;
 END $$;
+
+-- SECTION-09 CRITICAL FIX: sessions_admin_all / devices_admin_all cross-tenant
+-- privilege escalation.
+--
+-- Root cause: is_admin_with_session_validation() (aliased by
+-- is_current_user_admin_lite()) returns true for ANY user whose
+-- primary_role IN ('admin','super_admin') with NO tenant_id comparison at
+-- all -- it only asks "is this caller an admin of any kind", never "of
+-- which tenant". The two FOR ALL policies below used it as an *unscoped*
+-- first OR-branch:
+--
+--   USING ( is_admin_with_session_validation()
+--           OR (tenant_id = get_current_tenant_id() AND is_current_user_admin_lite()) )
+--
+-- Since is_current_user_admin_lite() IS is_admin_with_session_validation(),
+-- the first branch already covers everything the second (correctly
+-- tenant-scoped) branch would match, and it does so for every tenant, not
+-- just the caller's own. Concretely: a plain tenant-scoped 'admin' user in
+-- Tenant A could SELECT/INSERT/UPDATE/DELETE session tokens and
+-- device-binding rows belonging to every OTHER tenant, purely because
+-- their primary_role happened to be 'admin' anywhere in the system.
+--
+-- Fix: replace the unscoped branch with is_current_user_super_admin_lite(),
+-- which is already strictly primary_role = 'super_admin' with no tenant
+-- filter -- the only role this system's data model treats as legitimately
+-- cross-tenant (see public.is_current_user_super_admin()). Tenant-scoped
+-- 'admin' access is preserved unchanged via the second branch, which was
+-- already correctly gated by tenant_id = get_current_tenant_id().
+DROP POLICY IF EXISTS sessions_admin_all ON public.sessions;
+
+CREATE POLICY sessions_admin_all ON public.sessions
+  FOR ALL TO authenticated
+  USING (
+    public.is_current_user_super_admin_lite()
+    OR (tenant_id = public.get_current_tenant_id() AND public.is_current_user_admin_lite())
+  )
+  WITH CHECK (
+    public.is_current_user_super_admin_lite()
+    OR (tenant_id = public.get_current_tenant_id() AND public.is_current_user_admin_lite())
+  );
+
+DROP POLICY IF EXISTS devices_admin_all ON public.devices;
+
+CREATE POLICY devices_admin_all ON public.devices
+  FOR ALL TO authenticated
+  USING (
+    public.is_current_user_super_admin_lite()
+    OR (tenant_id = public.get_current_tenant_id() AND public.is_current_user_admin_lite())
+  )
+  WITH CHECK (
+    public.is_current_user_super_admin_lite()
+    OR (tenant_id = public.get_current_tenant_id() AND public.is_current_user_admin_lite())
+  );
