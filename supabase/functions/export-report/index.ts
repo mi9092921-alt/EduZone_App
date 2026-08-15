@@ -97,7 +97,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     // Authenticate
-    const user = await requirePermission(req, "users.read");
+    const user = await requirePermission(req, "reports.read");
 
     const body = await req.json();
     const reportType = body.report_type as ReportType;

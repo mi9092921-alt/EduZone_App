@@ -21,6 +21,15 @@ function errorResponse(code: string, message: string, status = 400, extra?: Reco
   return jsonResponse({ error: code, message, ...extra }, status);
 }
 
+function requireServiceRole(req: Request): Response | null {
+  const expected = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const authorization = req.headers.get("Authorization");
+  if (!expected || !authorization || authorization !== `Bearer ${expected}`) {
+    return errorResponse("UNAUTHORIZED", "Unauthorized", 401);
+  }
+  return null;
+}
+
 // --- Inlined from _shared/supabaseAdmin.ts ---
 function getSupabaseAdmin() {
   const url = Deno.env.get("SUPABASE_URL");
@@ -97,6 +106,9 @@ async function updateBulkJob(
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
+
+  const serviceRoleError = requireServiceRole(req);
+  if (serviceRoleError) return serviceRoleError;
 
   const admin = getSupabaseAdmin();
   let currentJobId: string | null = null;
