@@ -101,7 +101,11 @@ Deno.serve(async (req: Request) => {
 
     const filters = payload.filters as Record<string, unknown>;
     const format = (payload.params?.export_format as string) ?? "json";
-    const tenantId = (filters.tenant_id as string) ?? "default";
+
+    const tenantId = filters.tenant_id as string | undefined;
+    if (!tenantId) {
+      throw new Error("Missing tenant scope");
+    }
 
     // ── Fetch user data ──────────────────────────────────────
     let userQuery = admin
@@ -277,7 +281,7 @@ Deno.serve(async (req: Request) => {
       console.error("bulk-export failed to update job status:", updateErr);
     }
 
-    return errorResponse("EXPORT_ERROR", String(err), 500);
+    return errorResponse("EXPORT_ERROR", "Unable to complete export", 500);
   }
 });
 

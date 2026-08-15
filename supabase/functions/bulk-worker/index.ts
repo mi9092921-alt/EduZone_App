@@ -111,7 +111,7 @@ Deno.serve(async (req: Request) => {
 
     if (dequeueErr) {
       console.error("dequeue_job error:", dequeueErr);
-      return errorResponse("DEQUEUE_ERROR", dequeueErr.message, 500);
+      return errorResponse("DEQUEUE_ERROR", "Unable to dequeue bulk job", 500);
     }
 
     if (!jobs || jobs.length === 0) {
@@ -128,7 +128,22 @@ Deno.serve(async (req: Request) => {
       estimated_count: number;
     };
 
-    console.log(`Processing job ${job.id}: ${job.job_type}`, payload);
+    // Security boundary: the queued job row is authoritative for tenant scope.
+    // Never trust a tenant_id embedded in client-derived payload/filter data.
+    if (!job.tenant_id) {
+      throw new Error("Bulk job is missing tenant scope");
+    }
+
+    payload.filters = {
+      ...(payload.filters ?? {}),
+      tenant_id: job.tenant_id,
+    };
+
+    console.log(`Processing job ${job.id}: ${job.job_type}`, {
+      action: payload.action,
+      tenant_id: job.tenant_id,
+      initiator_id: payload.initiator_id,
+    });
 
     // ── Handle export separately ─────────────────────────────
     if (job.job_type === "bulk_export") {
@@ -255,7 +270,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    return errorResponse("WORKER_ERROR", String(err), 500);
+    return errorResponse("WORKER_ERROR", "Bulk worker failed", 500);
   }
 });
 
