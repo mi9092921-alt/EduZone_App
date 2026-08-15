@@ -23,4 +23,9 @@ CREATE EXTENSION IF NOT EXISTS btree_gin WITH SCHEMA extensions;
 
 CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA extensions;
 
-CREATE EXTENSION IF NOT EXISTS pg_partman WITH SCHEMA extensions;
+-- pg_partman intentionally NOT installed: partitioning is implemented natively
+-- via maintenance.create_next_partition_if_not_exists() / manage_partitions()
+-- (declarative range partitioning + explicit yearly partition creation).
+-- pg_partman was previously installed but never referenced anywhere in this
+-- schema (verified by repo-wide search) -- an unused extension is unnecessary
+-- attack/maintenance surface, so it is removed rather than left dormant.

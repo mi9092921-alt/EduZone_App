@@ -3851,10 +3851,10 @@ SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_parent regclass;
-  v_partition_name text := p_table || '_' || v_year::text;
   v_year integer := coalesce(p_year, pg_catalog.date_part('year', pg_catalog.now())::integer + 1);
-  v_start date := pg_catalog.make_date(coalesce(p_year, pg_catalog.date_part('year', pg_catalog.now())::integer + 1), 1, 1);
-  v_end date := pg_catalog.make_date(coalesce(p_year, pg_catalog.date_part('year', pg_catalog.now())::integer + 1) + 1, 1, 1);
+  v_partition_name text := p_table || '_' || v_year::text;
+  v_start date := pg_catalog.make_date(v_year, 1, 1);
+  v_end date := pg_catalog.make_date(v_year + 1, 1, 1);
 BEGIN
   IF coalesce(auth.role(), '') <> 'service_role'
      AND current_user NOT IN ('app_executor', 'app_maintenance', 'postgres', 'supabase_admin')
@@ -3902,6 +3902,36 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+-- ============================================================================
+-- pg_cron scheduling registration for maintenance.manage_partitions()
+-- Scheduled to run monthly on the 1st of the month at 03:00 (offset from the
+-- archive_soft_deleted_data job above to avoid overlap). Without this
+-- schedule, every year-partitioned table falls back to its pre-created
+-- MAXVALUE catch-all partition indefinitely: inserts still succeed, but the
+-- catch-all grows unbounded and partition pruning stops helping.
+-- ============================================================================
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
+  ) THEN
+    IF EXISTS (
+      SELECT 1 FROM pg_tables WHERE schemaname = 'cron' AND tablename = 'job'
+    ) THEN
+      PERFORM cron.unschedule(jobid)
+      FROM cron.job
+      WHERE jobname = 'manage_partitions';
+    END IF;
+
+    PERFORM cron.schedule(
+      'manage_partitions',
+      '0 3 1 * *',
+      'SELECT maintenance.manage_partitions();'
+    );
+  END IF;
+END $$;
 
 -- HIGH-06: Automatic vacuum/analyze for partitions
 CREATE OR REPLACE FUNCTION maintenance.vacuum_partition(p_schema text, p_table text)

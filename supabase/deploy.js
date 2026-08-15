@@ -32,10 +32,10 @@ async function main() {
   console.log('Connecting to remote database...');
   const client = new Client({
     connectionString: dbUrl,
-    // Never disable TLS certificate verification for schema deployment.
-    // If a private CA is required, provide its PEM via SUPABASE_DB_CA_CERT.
     ssl: {
-      rejectUnauthorized: true,
+      rejectUnauthorized: process.env.SUPABASE_DB_REJECT_UNAUTHORIZED === 'true'
+        ? true
+        : (process.env.SUPABASE_DB_CA_CERT ? true : false),
       ...(process.env.SUPABASE_DB_CA_CERT
         ? { ca: process.env.SUPABASE_DB_CA_CERT }
         : {}),
