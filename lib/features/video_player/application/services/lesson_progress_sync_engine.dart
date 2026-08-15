@@ -25,12 +25,12 @@ class LessonProgressSyncEngine {
   int get pendingCount => _pending.length;
 
   void enqueue(LessonProgressSyncItem item, {bool flushNow = false}) {
-    if (_isDisposed) return;
+    if (_isDisposed && !flushNow) return;
 
     final previous = _pending[item.key];
     _pending[item.key] = previous == null ? item : previous.merge(item);
 
-    if (flushNow || _pending.length >= maxBatchSize || item.completed) {
+    if (flushNow || _pending.length >= maxBatchSize || item.completed || _isDisposed) {
       unawaited(flush());
       return;
     }

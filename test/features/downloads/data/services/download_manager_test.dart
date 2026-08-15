@@ -8,6 +8,38 @@ import 'package:dio/io.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+const _testSupabasePem = '''-----BEGIN CERTIFICATE-----
+MIIE9DCCA9ygAwIBAgISBcjiQUz2J52IxxI9hnUQgF/QMA0GCSqGSIb3DQEBCwUA
+MDMxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQD
+EwNZUjEwHhcNMjYwNzExMTkyMjA3WhcNMjYxMDA5MTkyMjA2WjAXMRUwEwYDVQQD
+EwxzdXBhYmFzZS5jb20wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCY
+ObSVqwmIjUGKXITR4AEMno1YjQ35n9vGyhjwwThyARDRHsRxeX2CCUJMVVRbJ9uu
+Xg8WzfUXyJPB6jkCSylPAKgPFRf15bpvdv/HR8dQJ5myFg0AXoFkUwff5yAR6fCE
+E571pzpdflQqdj9UfYvHUYZfSssM1y0QvV/NIZFule4TCzwVr4saimJzd/c+/EFb
+LkcDT1G7p5NjB179ShOd5VcwtU7ayU4pLO6lc/KpNaoAxRMM1qwsxcNz2zbCDTLJ
+1WHL/xCRexYoQU25I82Fy3Ec54HRMXKZvjHAUBgFUk4+VIp9Yp/Gmb9GaUaoSs6T
+HJVOsDBt+J3A9OC3ERwvAgMBAAGjggIcMIICGDAOBgNVHQ8BAf8EBAMCBaAwEwYD
+VR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQUf1OZHfCf
+JdUEKypJbYSjsshwiEgwHwYDVR0jBBgwFoAUHy81vkYUgs1Asa55LFV4+vfUaPsw
+MwYIKwYBBQUHAQEEJzAlMCMGCCsGAQUFBzAChhdodHRwOi8veXIxLmkubGVuY3Iu
+b3JnLzAXBgNVHREEEDAOggxzdXBhYmFzZS5jb20wEwYDVR0gBAwwCjAIBgZngQwB
+AgEwLgYDVR0fBCcwJTAjoCGgH4YdaHR0cDovL3lyMS5jLmxlbmNyLm9yZy84MS5j
+cmwwggEOBgorBgEEAdZ5AgQCBIH/BIH8APoAdwDIo8R/x7OtuTVrAT9qehJt4zpO
+Q6XGRvmXrTl1mR3PmgAAAZ9S1tG1AAAEAwBIMEYCIQDKtn/MThQvZv4rq8LhDOZH
+zJJ4tDE9JikcNHEia+uyTwIhAIKZkq3PGxdSgRfkbVCWdHb5oDbRD5fcLrgKM0Vu
+GFRSAH8ARq+GPTs+5Z+ld96oJF02sNntIqIj9GF3QSKUUu6VUF8AAAGfUtbSHAAI
+AAAFAAybnuAEAwBIMEYCIQDrWlKJVogrMx+9ByeXu0PxgVNSjFg94R1rTHfEdxDZ
+HwIhAIoF16cw6Q+Yn7VuvbC3ipkO3OYpMFz79GRn0qy2zZxsMA0GCSqGSIb3DQEB
+CwUAA4IBAQBiUomjMz3+aH+C1fz0OpbESMJ9gU/Wbbxw6XpD3h5iRyVKOlWGFM4g
+sQwQ+SKKGWsGHO7MEVBEGPjzIN/MiqJqWWadQHpaJW7oCea0tQ4KNuIHL1sK+bI+
+e/rW8ZeY7/FnuyVM3iHgXwVEmxE0mTNBQo8FHdtTHMQzS9U9h/7WuAc3SfQkNwDM
+fEQQDv+PPhTb6amA9JQAZldLVzuU+MHFRlkD8dffOaLVfBWd3tfOM+3O+udbIImA
+YSqdpTcE4tcwzq1v/TB+vPzLSfaH/GBqDMgeLZhBrlX9p/LSaFKwqCimZTeOLOJx
+5zmEqJWKPBV0UKH2Qzkznk5lLI5iRYSZ
+-----END CERTIFICATE-----''';
+
+List<int> _testPemBytes() => _testSupabasePem.codeUnits;
+
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
 class MockDio extends Mock implements Dio {}
@@ -44,12 +76,16 @@ void main() {
   /// Builds a DownloadManager wired to the mocked Dio/FileDownloader, with
   /// notification configuration skipped (configureOnInit: false) since that
   /// touches background_downloader APIs unrelated to what these tests cover.
-  DownloadManager buildManager({bool isAndroid = true}) {
+  DownloadManager buildManager({
+    bool isAndroid = true,
+    Future<List<List<int>>> Function()? pinnedCertsLoader,
+  }) {
     return DownloadManager(
       downloader: fileDownloader,
       dioFactory: () => dio,
       isAndroid: isAndroid,
       configureOnInit: false,
+      pinnedCertsLoader: pinnedCertsLoader ?? (() async => [_testPemBytes()]),
     );
   }
 
@@ -188,7 +224,12 @@ void main() {
       'throws once the maximum concurrent downloads limit is reached',
       () async {
         stubProbeUnsupported();
-        final completers = <Completer<Response<void>>>[];
+        final completers = [
+          Completer<Response<void>>(),
+          Completer<Response<void>>(),
+          Completer<Response<void>>(),
+        ];
+        var completerIdx = 0;
         when(
           () => dio.download(
             any(),
@@ -198,9 +239,11 @@ void main() {
             onReceiveProgress: any(named: 'onReceiveProgress'),
           ),
         ).thenAnswer((_) {
-          final c = Completer<Response<void>>();
-          completers.add(c);
-          return c.future;
+          final idx = completerIdx++;
+          if (idx < completers.length) {
+            return completers[idx].future;
+          }
+          return Completer<Response<void>>().future;
         });
 
         final manager = buildManager();
@@ -230,11 +273,13 @@ void main() {
 
         // Resolve the 3 in-flight stubs so nothing leaks past the test.
         for (final c in completers) {
-          c.complete(
-            Response<void>(
-              requestOptions: RequestOptions(path: tempDir.path),
-            ),
-          );
+          if (!c.isCompleted) {
+            c.complete(
+              Response<void>(
+                requestOptions: RequestOptions(path: tempDir.path),
+              ),
+            );
+          }
         }
         await Future.wait(futures);
       },

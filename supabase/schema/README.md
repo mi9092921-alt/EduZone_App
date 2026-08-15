@@ -38,7 +38,7 @@ Each SQL object type has exactly one home. Cross-file duplication is invalid.
 
 ## Security & Performance Hardening (June 2026)
 
-The following improvements were implemented to reach **Production Readiness**:
+The following database-level improvements were implemented and are maintained as the canonical development schema. They improve database security and consistency, but they do **not** by themselves establish whole-application production readiness.
 
 1. **Seed Data Integrity (`11_seed_reference.sql`)**: 
    - Added System Tenant creation (ID: `00000000-0000-0000-0000-000000000001`)
@@ -58,14 +58,16 @@ The following improvements were implemented to reach **Production Readiness**:
 4. **Primary Key Enforcement (`03_tables.sql`)**: 
    - Added Primary Keys to staging tables (e.g., `internal.enrollment_progress_temp`) to resolve Performance Advisor warnings
 
-## Project Readiness Status
+## Database Readiness Status
 
 | Category | Status | Details |
 |----------|--------|---------|
 | **Auth Hydration** | ✅ Fixed | System Tenant now created in seed data; `check_user_access()` RPC succeeds |
 | **Security Advisor** | ✅ Hardened | 0 errors, 1 info (pgcrypto in public schema—planned for next window) |
 | **Performance Advisor** | ✅ Optimized | 0 errors, 0 warnings, 304 info items |
-| **Modular Schema** | ✅ Complete | 11 files (01–11), proper dependency ordering, single source of truth |
+| **Modular Schema** | ✅ Complete | 11 canonical schema layers plus `VALIDATION.sql`, proper dependency ordering, single source of truth |
+
+> **Release-gate note:** live Supabase execution, Security/Performance Advisor results, application integration tests, and release-build verification remain separate evidence requirements. This file must not be used as a blanket claim that EduZone is production-ready.
 
 ## Related Documentation
 

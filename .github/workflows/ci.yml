@@ -11,6 +11,58 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+      - name: Validate canonical Supabase SQL layout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t forbidden_sql < <(find . -type f -name '*.sql' \
+            ! -path './supabase/schema/*' \
+            ! -path './supabase/_archived_patches/*' \
+            -print)
+          if ((${#forbidden_sql[@]} > 0)); then
+            printf '::error::SQL files outside supabase/schema and supabase/_archived_patches are forbidden.\n'
+            printf '%s\n' "${forbidden_sql[@]}"
+            exit 1
+          fi
+
+          if find supabase/migrations -type f -name '*.sql' -print -quit | grep -q .; then
+            echo '::error::supabase/migrations must not contain active SQL migrations; use the canonical schema files.'
+            exit 1
+          fi
+
+          expected_schema=(
+            'supabase/schema/01_extensions.sql'
+            'supabase/schema/02_types.sql'
+            'supabase/schema/03_tables.sql'
+            'supabase/schema/04_constraints.sql'
+            'supabase/schema/05_indexes.sql'
+            'supabase/schema/06_views.sql'
+            'supabase/schema/07_functions.sql'
+            'supabase/schema/08_triggers.sql'
+            'supabase/schema/09_rls.sql'
+            'supabase/schema/10_permissions.sql'
+            'supabase/schema/11_seed_reference.sql'
+            'supabase/schema/VALIDATION.sql'
+            'supabase/schema/README.md'
+          )
+          mapfile -t actual_schema < <(find supabase/schema -maxdepth 1 -type f -print | sort)
+          for expected in "${expected_schema[@]}"; do
+            if [[ ! -f "$expected" ]]; then
+              echo "::error::Missing canonical schema file: $expected"
+              exit 1
+            fi
+          done
+          for actual in "${actual_schema[@]}"; do
+            case " ${expected_schema[*]} " in
+              *" $actual "*) ;;
+              *)
+                echo "::error::Unexpected file in supabase/schema: $actual"
+                exit 1
+                ;;
+            esac
+          done
+
       - name: Install dependencies
         run: flutter pub get
       - name: Generate l10n
@@ -42,29 +94,13 @@ jobs:
         with:
           file: coverage/lcov.info
           fail_ci_if_error: false
-      - name: Write .env.staging from secret (if configured)
-        env:
-          ENV_STAGING: ${{ secrets.ENV_STAGING }}
+      - name: Build APK (Debug smoke)
         run: |
-          if [ -n "$ENV_STAGING" ]; then
-            printf '%s' "$ENV_STAGING" > .env.staging
-          fi
-      - name: Build APK (Staging)
-        run: |
-          if [ ! -f .env.staging ]; then
-            echo "⚠️ .env.staging not found — APK build skipped. Set the ENV_STAGING repo secret (Settings → Secrets and variables → Actions) to enable this build."
-            exit 0
-          fi
-          flutter build apk --release --dart-define-from-file=.env.staging
-        # NOTE: no `continue-on-error` here on purpose. The "secret not
-        # configured" case above already exits 0 on its own, so it was
-        # never what continue-on-error was protecting. Its only real
-        # effect was to let a genuine `flutter build apk` failure (once
-        # ENV_STAGING *is* configured) go green — exactly the masked-CI-
-        # failure pattern the project instructions forbid. If this build
-        # legitimately needs to be non-blocking during a transition
-        # period, that should be a documented, deliberate decision here,
-        # not a silent side effect.
+          flutter build apk --debug --dart-define-from-file=.env.example
+        # Production signing and production environment validation belong
+        # to the explicit deploy/release pipeline. CI must not report a
+        # green release-build gate merely because production secrets are absent.
+
 
   secret_scan:
     runs-on: ubuntu-latest

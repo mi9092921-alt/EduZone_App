@@ -95,6 +95,7 @@ class DownloadManager {
   final FileDownloader _downloader;
   final Dio Function() _dioFactory;
   final bool _isAndroid;
+  final Future<List<List<int>>> Function() _pinnedCertsLoader;
   final Map<String, StreamSubscription<TaskUpdate>> _subscriptions = {};
   final Map<String, CancelToken> _dioCancelTokens = {};
   final Set<String> _activeDownloadIds = {};
@@ -102,8 +103,8 @@ class DownloadManager {
   static const int _parallelDownloadMinBytes = 8 * 1024 * 1024;
   static const int _parallelDownloadLargeBytes = 80 * 1024 * 1024;
 
-  /// [dioFactory], [isAndroid], and [configureOnInit] exist purely as
-  /// testing seams — production code should never pass them.
+  /// [dioFactory], [isAndroid], [configureOnInit], and [pinnedCertsLoader]
+  /// exist purely as testing seams — production code should never pass them.
   ///
   /// - [dioFactory]/[isAndroid]: without them, `flutter test` (host, not a
   ///   real Android device) can never exercise the Android-direct-Dio
@@ -118,9 +119,11 @@ class DownloadManager {
     @visibleForTesting Dio Function()? dioFactory,
     @visibleForTesting bool? isAndroid,
     @visibleForTesting bool configureOnInit = true,
+    @visibleForTesting Future<List<List<int>>> Function()? pinnedCertsLoader,
   })  : _downloader = downloader ?? FileDownloader(),
         _dioFactory = dioFactory ?? (() => Dio()),
-        _isAndroid = isAndroid ?? Platform.isAndroid {
+        _isAndroid = isAndroid ?? Platform.isAndroid,
+        _pinnedCertsLoader = pinnedCertsLoader ?? loadPinnedCertificatesAsset {
     if (configureOnInit) _configureDownloader();
   }
 
@@ -769,7 +772,7 @@ class DownloadManager {
 
     final dio = _dioFactory();
     if (isSupabaseHost(effectiveUrl, configuredSupabaseUrl: AppConstants.supabaseUrl)) {
-      final certs = await loadPinnedCertificatesAsset();
+      final certs = await _pinnedCertsLoader();
       if (certs.isNotEmpty) {
         applyCertificatePinning(dio, pinnedCertificatesPem: certs);
       }

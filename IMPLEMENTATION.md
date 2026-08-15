@@ -19,11 +19,8 @@ time:
 
 - **If present:** the `release` build type is signed with the real
   production keystore described in that file.
-- **If absent:** the `release` build type silently falls back to the
-  Android **debug** keystore, and Gradle prints a loud multi-line warning
-  to the build log so this is never mistaken for a real release build.
-  A build signed this way must never be uploaded to the Play Store or
-  distributed outside the machine that built it.
+- **If absent or incomplete:** the `release` build fails immediately with a
+  Gradle error. There is no debug-keystore fallback for release artifacts.
 
 `android/key.properties` and `*.keystore` / `*.jks` files are git-ignored
 (see `.gitignore`) — they are never committed, by design.
@@ -54,22 +51,19 @@ keyPassword=<your key password>
 
 ### Wiring it into CI (CI-001)
 
-`android/key.properties` does not exist in CI by default, so the `ci.yml`
-quality job's release build always falls back to the debug-signed path
-described above (safe, but not upload-ready) — that job builds for
-verification, not for shipping, so this is fine as-is.
+The CI quality job deliberately performs a debug APK smoke build using the
+non-secret `.env.example`. It does not claim to verify production release
+signing. Actual production signing is verified only by the explicit Android
+deploy/release path with real signing secrets.
 
 `deploy.yml`'s `deploy_android` job is the one that actually needs a real
-signed build, and now writes `android/key.properties` + decodes the
-keystore from CI secrets itself (`ANDROID_KEYSTORE_BASE64`,
-`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`),
-mirroring the existing `Write .env.staging from secret` pattern in
-`ci.yml`. **Status: wired but unverified** — this step only runs once all
-required secrets are added to the repo (Settings → Secrets and variables
-→ Actions); until then, the job posts a clear `::warning::` naming exactly
-which secrets are missing and skips, rather than failing confusingly deep
-inside a gradle/fastlane error. Treat CI-001 as done-but-unverified rather
-than fully done until a real run has been observed to succeed.
+signed build, and writes `android/key.properties` + decodes the keystore
+from CI secrets itself (`ANDROID_KEYSTORE_BASE64`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`).
+**Status: wired but unverified** — if any required secret is missing, the
+workflow now fails closed instead of reporting a skipped deployment as a
+success. The first real workflow run against valid secrets is still required
+for release verification.
 
 ### Getting the SHA-256 signing hash for `SECURITY_ANDROID_SIGNING_HASH`
 

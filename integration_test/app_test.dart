@@ -26,7 +26,7 @@ import 'package:integration_test/integration_test.dart';
 ///
 
 
-// TODO (tracked, not yet done — see §16 in the project instructions for
+/// Tracked items (not yet done — see §16 in the project instructions for
 /// the full required list): once a maintainer can run this against a real
 /// or mocked backend, add real integration tests here for at minimum:
 ///   - application startup → first frame

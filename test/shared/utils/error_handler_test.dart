@@ -90,15 +90,16 @@ void main() {
       expect(message, l10n.errorEmailNotConfirmed);
     });
 
-    testWidgets('returns the raw server message for ServerException', (tester) async {
+    testWidgets('maps ServerException to the localized generic error message', (tester) async {
       await tester.pumpWidget(buildLocalizedApp());
+      final l10n = AppLocalizations.of(localizedContext)!;
 
       final message = ErrorHandler.getMessage(
         localizedContext,
         const ServerException('Custom backend failure'),
       );
 
-      expect(message, 'Custom backend failure');
+      expect(message, l10n.errorGeneric);
     });
 
     testWidgets('falls back to the generic error message for unknown errors', (tester) async {

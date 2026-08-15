@@ -11,17 +11,36 @@ plugins {
 // REL-001: Load the real production keystore credentials from
 // android/key.properties. This file is NEVER committed to the repository
 // (see .gitignore) — it must be created locally per machine, or written
-// from CI secrets at build time (see CI-001). If it is absent (e.g. on a
-// fresh developer checkout who only needs `flutter run --release` locally
-// for testing, not a real store submission), we intentionally fall back to
-// the Android debug keystore so local development keeps working — but that
-// fallback path must NEVER be used for an actual release artifact that
-// leaves this machine. See SECURITY.md and IMPLEMENTATION.md (REL-001).
+// from CI secrets at build time (see CI-001). Release builds fail closed
+// when the production signing configuration is absent or invalid; there is
+// no debug-keystore fallback for release artifacts.
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties()
 val hasRealReleaseSigning = keystorePropertiesFile.exists()
 if (hasRealReleaseSigning) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+
+    val requiredSigningProperties = listOf(
+        "storeFile",
+        "storePassword",
+        "keyAlias",
+        "keyPassword",
+    )
+    val missingSigningProperties = requiredSigningProperties.filter {
+        keystoreProperties.getProperty(it).isNullOrBlank()
+    }
+    if (missingSigningProperties.isNotEmpty()) {
+        throw GradleException(
+            "android/key.properties is incomplete; missing: ${missingSigningProperties.joinToString(", ")}"
+        )
+    }
+
+    val releaseKeystore = rootProject.file(keystoreProperties.getProperty("storeFile"))
+    if (!releaseKeystore.isFile) {
+        throw GradleException(
+            "Production release keystore does not exist: ${releaseKeystore.absolutePath}"
+        )
+    }
 }
 
 android {
@@ -40,7 +59,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        // Stable production application ID used by the Android package and Play Console.
         applicationId = "com.eduzone.learn.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -79,27 +98,15 @@ android {
 
     buildTypes {
         release {
-            // REL-001: Use the real production signing config when
-            // android/key.properties is present (real machine/CI build).
-            // Fall back to the debug keystore ONLY for local convenience
-            // (`flutter run --release` on a dev machine with no keystore
-            // configured yet) — this path must never produce a build that
-            // is uploaded anywhere. A loud build-time warning is emitted
-            // below so this is never silently shipped.
-            signingConfig = if (hasRealReleaseSigning) {
-                signingConfigs.getByName("release")
-            } else {
-                logger.warn(
-                    "\n\n" +
-                    "⚠️  ⚠️  ⚠️  RELEASE BUILD IS SIGNED WITH THE DEBUG KEYSTORE  ⚠️  ⚠️  ⚠️\n" +
-                    "android/key.properties was not found, so this 'release' build type\n" +
-                    "is falling back to the DEBUG signing key. This build is NOT suitable\n" +
-                    "for any Play Store submission or distribution outside this machine.\n" +
-                    "See REL-001 in IMPLEMENTATION.md for how to generate a real\n" +
-                    "production keystore and android/key.properties.\n\n"
+            // REL-001: a release artifact is never allowed to fall back to the debug keystore.
+            // Missing or invalid production signing configuration is a hard build failure.
+            if (!hasRealReleaseSigning) {
+                throw GradleException(
+                    "Production release builds require android/key.properties with a valid " +
+                    "release keystore. Refusing to sign a release artifact with the debug key."
                 )
-                signingConfigs.getByName("debug")
             }
+            signingConfig = signingConfigs.getByName("release")
 
             // Enables R8 code shrinking + obfuscation and resource shrinking.
             // Meaningfully reduces APK/AAB size given the size of pubspec.yaml's

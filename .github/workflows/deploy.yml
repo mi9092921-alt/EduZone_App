@@ -1,12 +1,8 @@
 name: Deploy
 # Fastlane lanes now exist (android/fastlane/, ios/fastlane/ — see
-# IMPLEMENTATION.md) but this whole pipeline is UNVERIFIED end-to-end: no
-# CI run of this workflow has ever completed, because none of the secrets
-# it depends on exist yet. Every step below either no-ops with a clear
-# ::warning:: (missing secret) or genuinely attempts the real thing —
-# never a silent fake-success. Manual trigger only (workflow_dispatch),
-# same reasoning as before: this must never look like an automatic
-# deploy-on-push pipeline until it has actually been run once for real.
+# IMPLEMENTATION.md), but this workflow is intentionally fail-closed when
+# required release evidence is unavailable. Manual trigger only
+# (workflow_dispatch); a skipped deployment must never be reported as success.
 on:
   workflow_dispatch: {}
 
@@ -29,15 +25,14 @@ jobs:
           [ -z "${{ secrets.ANDROID_KEY_PASSWORD }}" ] && missing+=("ANDROID_KEY_PASSWORD")
           [ -z "${{ secrets.PLAY_STORE_JSON_KEY }}" ] && missing+=("PLAY_STORE_JSON_KEY")
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Android deploy skipped — missing repo secret(s): ${missing[*]}. See IMPLEMENTATION.md (REL-001, CI-001) for how to provision each one."
+            echo "::error::Android deploy cannot proceed; missing required repo secret(s): ${missing[*]}"
             {
-              echo "## ⚠️ Android deploy skipped"
+              echo "## ❌ Android deploy blocked"
               echo "Missing secret(s): ${missing[*]}. See \`IMPLEMENTATION.md\`."
             } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
       - name: Write signing + env config from secrets
         if: steps.check.outputs.ready == 'true'
         env:
@@ -81,19 +76,24 @@ jobs:
           [ -z "${{ secrets.ASC_ISSUER_ID }}" ] && missing+=("ASC_ISSUER_ID")
           [ -z "${{ secrets.ASC_KEY_CONTENT }}" ] && missing+=("ASC_KEY_CONTENT")
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::iOS deploy skipped — missing repo secret(s): ${missing[*]}. Also note: this repo has no signing/provisioning-profile setup documented yet at all (see IMPLEMENTATION.md 'Known gaps'), so even with these three secrets present, an actual build/archive/export step is still missing before 'fastlane ios beta' has anything to upload."
+            echo "::error::iOS deploy cannot proceed; missing required repo secret(s): ${missing[*]}"
             {
-              echo "## ⚠️ iOS deploy skipped"
-              echo "Missing secret(s): ${missing[*]}, and signing/provisioning is not yet documented — see \`IMPLEMENTATION.md\`."
+              echo "## ❌ iOS deploy blocked"
+              echo "Missing secret(s): ${missing[*]}. See \`IMPLEMENTATION.md\`."
             } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
-      # Deliberately no build/archive/export/fastlane step here yet: doing
-      # so would require fabricating signing-certificate and provisioning-
-      # profile handling this repo has never had, which is a bigger, more
-      # security-sensitive decision than this pass should make silently.
-      # `ios/fastlane/Fastfile` exists and is ready to be wired in once
-      # that setup is done for real by someone with an Apple Developer
-      # account and the actual certificates.
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+      # Deliberately block instead of reporting a green iOS deploy: this
+      # repository still has no verified signing/provisioning/archive/export
+      # path. The correct state is an explicit deployment blocker, not a
+      # skipped-success result.
+      - name: Block unverified iOS deployment
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          echo "::error::iOS deployment is not verified: signing, provisioning, archive, and export are not configured in this repository."
+          {
+            echo "## ❌ iOS deployment remains unverified"
+            echo "Configure and verify Apple signing/provisioning plus archive/export before enabling deployment."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
