@@ -130,6 +130,65 @@ REVOKE ALL ON internal.workers FROM anon, authenticated, public;
 REVOKE ALL ON internal.job_progress FROM anon, authenticated, public;
 
 -- ============================================================================
+-- Storage security (source of truth)
+-- ============================================================================
+-- Reports/exports are backend-only artifacts and must never become public.
+-- Avatars are intentionally public for the existing client contract, but
+-- authenticated clients may only write/delete their own <uid>/... objects.
+DO $$
+BEGIN
+  INSERT INTO storage.buckets (id, name, public)
+  VALUES ('avatars', 'avatars', true)
+  ON CONFLICT (id) DO UPDATE SET public = true;
+
+  INSERT INTO storage.buckets (id, name, public)
+  VALUES ('reports', 'reports', false)
+  ON CONFLICT (id) DO UPDATE SET public = false;
+
+  INSERT INTO storage.buckets (id, name, public)
+  VALUES ('exports', 'exports', false)
+  ON CONFLICT (id) DO UPDATE SET public = false;
+END $$;
+
+DROP POLICY IF EXISTS avatars_insert_own_folder ON storage.objects;
+CREATE POLICY avatars_insert_own_folder
+  ON storage.objects
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    bucket_id = 'avatars'
+    AND split_part(name, '/', 1) = auth.uid()::text
+  );
+
+DROP POLICY IF EXISTS avatars_update_own_folder ON storage.objects;
+CREATE POLICY avatars_update_own_folder
+  ON storage.objects
+  FOR UPDATE
+  TO authenticated
+  USING (
+    bucket_id = 'avatars'
+    AND split_part(name, '/', 1) = auth.uid()::text
+  )
+  WITH CHECK (
+    bucket_id = 'avatars'
+    AND split_part(name, '/', 1) = auth.uid()::text
+  );
+
+DROP POLICY IF EXISTS avatars_delete_own_folder ON storage.objects;
+CREATE POLICY avatars_delete_own_folder
+  ON storage.objects
+  FOR DELETE
+  TO authenticated
+  USING (
+    bucket_id = 'avatars'
+    AND split_part(name, '/', 1) = auth.uid()::text
+  );
+
+-- No anon/authenticated object DML policies are defined for reports/exports.
+-- Their service-role-only workflow is intentional; the bucket-level privacy
+-- assertion above prevents accidental public objects.
+
+-- ============================================================================
 -- Function Permissions - Consolidated
 -- ============================================================================
 

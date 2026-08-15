@@ -801,6 +801,58 @@ BEGIN
 END $$;
 
 
+-- Check 20: Storage buckets and client write boundaries are explicit.
+DO $$
+DECLARE
+  v_bad_buckets text[];
+  v_avatar_policies int;
+  v_non_avatar_client_policies int;
+BEGIN
+  SELECT array_agg(id ORDER BY id)
+    INTO v_bad_buckets
+  FROM storage.buckets
+  WHERE (id IN ('reports', 'exports') AND public IS DISTINCT FROM false)
+     OR (id = 'avatars' AND public IS DISTINCT FROM true);
+
+  SELECT COUNT(*)
+    INTO v_avatar_policies
+  FROM pg_policies
+  WHERE schemaname = 'storage'
+    AND tablename = 'objects'
+    AND policyname IN (
+      'avatars_insert_own_folder',
+      'avatars_update_own_folder',
+      'avatars_delete_own_folder'
+    );
+
+  SELECT COUNT(*)
+    INTO v_non_avatar_client_policies
+  FROM pg_policies
+  WHERE schemaname = 'storage'
+    AND tablename = 'objects'
+    AND policyname NOT LIKE 'avatars_%'
+    AND (
+      policyname ILIKE '%report%'
+      OR policyname ILIKE '%export%'
+    );
+
+  INSERT INTO validation_results VALUES (
+    'Storage Buckets And Client Write Boundaries',
+    CASE
+      WHEN v_bad_buckets IS NULL
+       AND v_avatar_policies = 3
+       AND v_non_avatar_client_policies = 0
+      THEN 'PASS' ELSE 'FAIL' END,
+    CASE
+      WHEN v_bad_buckets IS NULL
+       AND v_avatar_policies = 3
+       AND v_non_avatar_client_policies = 0
+      THEN 'avatars is intentionally public with owner-only writes; reports/exports are private and have no report/export client policies'
+      ELSE 'CRITICAL: storage bucket visibility or client policy boundaries are not in the expected hardened state'
+    END
+  );
+END $$;
+
 -- Display Results
 SELECT * FROM validation_results ORDER BY check_name;
 

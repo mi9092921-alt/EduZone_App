@@ -125,7 +125,8 @@ serve(async (req) => {
       }
     );
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error("get-lesson-content unexpected failure", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
