@@ -1,7 +1,10 @@
 name: CI
 on:
+  push:
+    branches: [ "develop", "main" ]
   pull_request:
     branches: [ "develop", "main" ]
+  workflow_dispatch:
 
 jobs:
   quality:
@@ -148,7 +151,7 @@ jobs:
         with:
           api-level: 35
           arch: x86_64
-          profile: Pixel_2
+          profile: pixel_2
           target: google_apis
           force-avd-creation: true
           disable-animations: true

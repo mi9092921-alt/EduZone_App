@@ -99,14 +99,11 @@ android {
     buildTypes {
         release {
             // REL-001: a release artifact is never allowed to fall back to the debug keystore.
-            // Missing or invalid production signing configuration is a hard build failure.
-            if (!hasRealReleaseSigning) {
-                throw GradleException(
-                    "Production release builds require android/key.properties with a valid " +
-                    "release keystore. Refusing to sign a release artifact with the debug key."
-                )
+            // Missing or invalid production signing configuration must fail the actual release
+            // task, but must not prevent Gradle configuration or debug/smoke builds.
+            if (hasRealReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
             }
-            signingConfig = signingConfigs.getByName("release")
 
             // Enables R8 code shrinking + obfuscation and resource shrinking.
             // Meaningfully reduces APK/AAB size given the size of pubspec.yaml's
@@ -125,6 +122,26 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// Enforce production signing only when a release artifact is actually built.
+// Keeping the check on release tasks avoids breaking debug/smoke builds during Gradle
+// configuration while preserving the fail-closed release boundary.
+val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
+    doLast {
+        if (!hasRealReleaseSigning) {
+            throw GradleException(
+                "Production release builds require android/key.properties with a valid " +
+                    "release keystore. Refusing to sign a release artifact with the debug key."
+            )
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name in setOf("assembleRelease", "bundleRelease", "packageRelease")) {
+        dependsOn(verifyReleaseSigning)
+    }
 }
 
 dependencies {
