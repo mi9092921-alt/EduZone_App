@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.203.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const SUPABASE_SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE") || "";
 const EXTERNAL_API_URL = Deno.env.get("VIDEO_API_URL") || "";
 const EXTERNAL_API_KEY = Deno.env.get("VIDEO_API_KEY") || "";
@@ -174,6 +176,38 @@ serve(async (req) => {
   const startMs = Date.now();
 
   try {
+    // ── Auth gate ──────────────────────────────────────────────────────────
+    // Previously this function had NO authentication check at all: with
+    // CORS wide open ('*'), any anonymous caller on the internet could
+    // invoke it with an arbitrary YouTube URL and have it resolved through
+    // the paid external extraction API (EXTERNAL_API_URL/EXTERNAL_API_KEY)
+    // at EduZone's expense, with no rate limiting. Require a valid Supabase
+    // session — same pattern as get-lesson-content/index.ts — to close the
+    // fully-anonymous abuse vector. This does not yet verify the caller is
+    // entitled to *this specific* video (the request body only carries a
+    // raw URL, not a lesson_id), so a logged-in user could still resolve a
+    // URL for a lesson they don't have access to if they already know that
+    // URL by other means; closing that fully would need an API contract
+    // change (passing lesson_id here too) on both this function and its
+    // Flutter callers.
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Missing Authorization header" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data: authData, error: authError } = await authClient.auth.getUser(
+      authHeader.replace("Bearer ", ""),
+    );
+    if (authError || !authData.user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // Parse body
     const contentType = req.headers.get("content-type") || "";
     let body: any = {};

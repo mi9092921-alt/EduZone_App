@@ -40,11 +40,18 @@ serve(async (req) => {
 
     // lesson_id path: check published + preview, then resolve course
     if (lesson_id) {
+      // Tenant scoping is enforced by RLS (lessons_select policy uses the
+      // DB-authoritative public.get_current_tenant_id(), not a client-
+      // supplied value) — do not also filter on user.user_metadata.tenant_id
+      // here. That field is never populated in this system (the tenant_id
+      // JWT claim is injected at the top level by the custom_access_token
+      // Auth Hook, not into user_metadata), so this filter always evaluated
+      // to `.eq('tenant_id', undefined)` and silently denied every real,
+      // legitimately-enrolled user instead of granting access.
       const { data: lesson, error: lessonError } = await supabaseClient
         .from('lessons')
         .select('id, course_id, is_published, is_preview')
         .eq('id', lesson_id)
-        .eq('tenant_id', user.user_metadata.tenant_id)
         .single()
 
       if (lessonError || !lesson || !lesson.is_published) {
@@ -67,12 +74,14 @@ serve(async (req) => {
 
     // Enrollment check — correct .or() syntax for Supabase JS v2
     const now = new Date().toISOString()
+    // See the note above the lessons query: tenant scoping is enforced by
+    // RLS (enrollments_select_policy → get_current_tenant_id()), not by a
+    // client-supplied tenant_id filter, which is never populated here.
     const { data: enrollments, error: enrollmentError } = await supabaseClient
       .from('enrollments')
       .select('id, expires_at')
       .eq('user_id', user.id)
       .eq('course_id', resolvedCourseId)
-      .eq('tenant_id', user.user_metadata.tenant_id)
       .eq('status', 'active')
       .or(`expires_at.is.null,expires_at.gte.${now}`)
       .order('expires_at', { ascending: false, nullsFirst: false })

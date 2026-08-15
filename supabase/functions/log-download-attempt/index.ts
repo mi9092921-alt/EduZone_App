@@ -39,12 +39,18 @@ serve(async (req) => {
       )
     }
 
-    // Resolve course_id from lesson
+    // Resolve course_id from lesson.
+    // Tenant scoping is enforced by RLS (lessons_select policy, DB-
+    // authoritative get_current_tenant_id()), not by a client-supplied
+    // tenant_id filter — see the matching note in validate-course-access.
+    // user.user_metadata.tenant_id is never populated in this system, so
+    // filtering on it here always evaluated to `.eq('tenant_id', undefined)`
+    // and would break this lookup for every real download instead of
+    // narrowing it safely.
     const { data: lesson, error: lessonError } = await supabaseClient
       .from('lessons')
       .select('id, course_id')
       .eq('id', lesson_id)
-      .eq('tenant_id', user.user_metadata.tenant_id)
       .single()
 
     if (lessonError || !lesson) {
