@@ -1,0 +1,3 @@
+tags:
+  golden:
+    description: Strict platform-matched golden image regression tests.
