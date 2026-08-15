@@ -59,7 +59,7 @@ class SecurityService with WidgetsBindingObserver {
     // Fast native call with an immediate UX requirement (screenshots must
     // be blocked from the very first frame) → stays on the critical path.
     await _runStartupStep(
-      name: 'Screenshot protection',
+      name: 'Screenshot & recording protection',
       action: ScreenshotGuard.protect,
     );
 

@@ -123,6 +123,14 @@ class AuthRemoteDataSource {
       // source of truth for auth-error mapping, and the diagnostic
       // debugPrint below always fires for it.
       throw _mapAuthException(e);
+    } on PostgrestException catch (e) {
+      // Thrown when fetching the user profile row from the `users` table
+      // fails after a successful Supabase Auth sign-in (e.g. RLS rejection,
+      // network hiccup on the DB query, or a missing profile row). Without
+      // this catch, a raw PostgrestException escapes to auth_provider's
+      // generic catch block, which maps it to 'errorGeneric' ("An error
+      // occurred") because AuthErrorPolicy doesn't handle PostgrestException.
+      throw _mapRpcException(e);
     }
   }
 

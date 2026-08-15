@@ -45,7 +45,7 @@ bool isFreeraspConfigured() {
 TalsecConfig _getTalsecConfig() {
   const String kWatcherMail = String.fromEnvironment(
     'SECURITY_WATCHER_MAIL',
-    defaultValue: 'security@eduzone.com',
+    defaultValue: 'mi9092921@gmail.com',
   );
 
   // Android signing certificate SHA-256 hash (Base64), e.g. output of:

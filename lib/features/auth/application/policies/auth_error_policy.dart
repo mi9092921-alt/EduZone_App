@@ -56,6 +56,13 @@ abstract final class AuthErrorPolicy {
     if (e is MaxDevicesReachedException) return 'errorMaxDevices';
     if (e is DeviceAlreadyBoundException) return 'errorDeviceBound';
 
+    // ServerException is a known, typed exception (e.g. user profile not
+    // found, DB unreachable, RLS rejection). It always maps to the generic
+    // error message — the message itself is an internal diagnostic string
+    // and is never shown to the user. Handled explicitly here so it does
+    // NOT trigger the "Unmapped exception type" warning below.
+    if (e is ServerException) return 'errorGeneric';
+
     // Never log exception messages here: SDK/backend errors may contain
     // request details or other sensitive diagnostic data. Keep only the
     // runtime type, which is sufficient to classify and monitor the gap.
