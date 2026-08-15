@@ -332,14 +332,43 @@ class StorageService {
   }
 
   /// Gets a download by lesson ID.
-  Future<Map<String, dynamic>?> getDownloadByLessonId(String lessonId) async {
+  ///
+  /// SECTION-12 FIX: this previously matched on `lesson_id` alone with no
+  /// account scoping, unlike every other lookup in this class
+  /// (`getDownloadedLessons`, `getDownloadsOwnedByOthers`). Its only caller
+  /// (`DownloadRepositoryImpl.startDownload`'s "already downloaded" guard)
+  /// treats a non-null result as "this lesson is already downloaded, deny
+  /// starting a new download" without re-checking ownership afterward —
+  /// unlike `OfflinePolicyEngine.authorize`, which always re-verifies
+  /// ownership before allowing playback. `OfflineAccountGuard` purges a
+  /// previous account's downloads on next login, but that purge is
+  /// best-effort (P6.20 doc comment: "a missed purge on one login is
+  /// retried on the next one") — so a leftover row from a different
+  /// account signed in earlier on this device could still exist here at
+  /// the moment this guard runs, and would incorrectly block the *current*
+  /// account from downloading a lesson they are actually entitled to.
+  /// Scoping to [ownerUserId] the same way [getDownloadedLessons] already
+  /// does (excluding rows bound to a different account, but still matching
+  /// legacy `user_id IS NULL` rows so they're correctly adopted rather than
+  /// duplicated) closes that gap.
+  Future<Map<String, dynamic>?> getDownloadByLessonId(
+    String lessonId, {
+    String? ownerUserId,
+  }) async {
     final db = await database;
-    final results = await db.query(
-      _tableDownloadedLessons,
-      where: 'lesson_id = ?',
-      whereArgs: [lessonId],
-      limit: 1,
-    );
+    final results = ownerUserId == null
+        ? await db.query(
+            _tableDownloadedLessons,
+            where: 'lesson_id = ?',
+            whereArgs: [lessonId],
+            limit: 1,
+          )
+        : await db.query(
+            _tableDownloadedLessons,
+            where: 'lesson_id = ? AND (user_id IS NULL OR user_id = ?)',
+            whereArgs: [lessonId, ownerUserId],
+            limit: 1,
+          );
     return results.isNotEmpty ? results.first : null;
   }
 

@@ -160,8 +160,20 @@ class DownloadLocalDataSource {
   }
 
   /// Gets a download by lesson ID.
-  Future<Map<String, dynamic>?> getDownloadByLessonId(String lessonId) async {
-    return await _storageService.getDownloadByLessonId(lessonId);
+  ///
+  /// Scoped to the current account by default (see `getDownloads` above and
+  /// `StorageService.getDownloadByLessonId`'s doc comment for why) so the
+  /// "already downloaded" check in `DownloadRepositoryImpl.startDownload`
+  /// can't be tripped by a leftover row belonging to a previously
+  /// signed-in account on this device.
+  Future<Map<String, dynamic>?> getDownloadByLessonId(
+    String lessonId, {
+    bool scopeToCurrentUser = true,
+  }) async {
+    return await _storageService.getDownloadByLessonId(
+      lessonId,
+      ownerUserId: scopeToCurrentUser ? _currentUserId() : null,
+    );
   }
 
   /// Gets a download by its ID.

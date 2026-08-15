@@ -262,6 +262,36 @@ P6.3/P6.4), and no anti-replay protection (P6.25). See the offline-security
 architecture doc for the full threat model this is explicitly scoped
 against (and not against).
 
+### Server-side entitlement surface for offline content
+
+`validate-course-access` (Edge Function) is the server-authoritative
+source for `expires_at`: it re-derives it from the caller's own active
+`enrollments` row (RLS-scoped to `auth.uid()`), and `startDownload` caps
+local retention at `min(30 days, that value)` — never a client-chosen
+duration. `log-download-attempt` independently re-derives the same value
+server-side for its `download_logs` audit row rather than trusting the
+`access_expires_at` the client reports, so that table (used only for
+analytics — it has no bearing on `OfflinePolicyEngine`'s playback decision)
+can't be seeded with falsified entitlement data.
+
+`video_cache` (resolved, directly-playable video/audio URLs for every
+lesson, keyed only by a hash of the source URL — no lesson/course/user
+association at all) is reachable **only** by the `video-info` Edge
+Function via the service-role key. It carries no `GRANT`/RLS policy for
+`anon`/`authenticated` (`09_rls.sql`/`10_permissions.sql`) — a direct
+PostgREST call to it from the Flutter client is rejected before RLS is
+even evaluated. This was not always true: it previously granted
+`authenticated` a `SELECT` with only an expiry check, which would have let
+any signed-in user read any other lesson's cached video URL directly,
+bypassing `get_lesson_content()`'s enrollment check entirely.
+
+The "already downloaded" guard in `DownloadRepositoryImpl.startDownload`
+(`StorageService.getDownloadByLessonId`) is scoped to the current account
+the same way `getDownloadedLessons` already was, so a leftover row from a
+previous account on a shared device (if `OfflineAccountGuard`'s
+best-effort purge hasn't run yet) can't block a different, legitimately
+entitled account from starting its own download.
+
 ## What's verified — by the developer, not by this document's author
 
 This document was originally written entirely by static source inspection
