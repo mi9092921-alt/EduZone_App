@@ -1,3 +1,17 @@
+> ⚠️ **STALE / REJECTED — do not follow.** This proposal was never carried
+> out and directly conflicts with the project's canonical-schema rule: all
+> schema lives only in the numbered files under `supabase/schema/`
+> (`01_extensions.sql` … `11_seed_reference.sql`), with no per-feature
+> subfolders, no new files, and no migrations. `video_cache` and
+> `download_logs` already live in `03_tables.sql`/`09_rls.sql`/
+> `10_permissions.sql` today — the `supabase/schema/downloads/` layout and
+> the `12_downloads_functions.sql` / `13_downloads_tables.sql` /
+> `14_video_cache_and_rate_limit.sql` files referenced below never existed
+> in this repository. Left in place only for historical context; kept
+> un-executed and un-deleted per the project's archive-don't-delete rule
+> for stray planning docs. See Section 12 of the Agent Instructions for the
+> actual, current schema layout rule.
+
 # Reorganize Supabase files for Downloads feature
 
 Goal: reduce clutter and group all downloads-related Supabase artifacts (Edge Functions, SQL, migrations, docs) under a single `downloads/` area while keeping changes non-destructive until reviewed.

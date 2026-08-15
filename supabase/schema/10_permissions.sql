@@ -605,7 +605,26 @@ GRANT EXECUTE ON FUNCTION private.current_jwt_token_version() TO service_role;
 -- ─────────────────────────────────────────────────────────────────────────────
 -- video_cache & download_logs Permissions
 -- ─────────────────────────────────────────────────────────────────────────────
-GRANT SELECT ON public.video_cache TO authenticated;
+-- SECTION-12 CRITICAL FIX: video_cache is a purely internal cache written
+-- and read exclusively by the `video-info` Edge Function using the
+-- service_role key (which bypasses RLS/GRANTs entirely) -- no Flutter code
+-- ever queries this table directly (confirmed: no `video_cache` reference
+-- anywhere under lib/). It previously also carried `GRANT SELECT ... TO
+-- authenticated` paired with a RLS policy of `USING (expires_at > now())`
+-- with no lesson/course/enrollment scoping at all. Since this table stores
+-- resolved, directly-playable video/audio URLs (`data` jsonb -> formats[].
+-- video_url/audio_url) for every lesson ever opened by any student on the
+-- platform, that combination let ANY authenticated user call
+-- `GET /rest/v1/video_cache?select=*` directly via PostgREST and retrieve
+-- every other student's cached lesson video URLs -- including lessons/
+-- courses they were never enrolled in -- completely bypassing
+-- get_lesson_content()'s enrollment/tenant/preview checks. This is exactly
+-- the "client requests arbitrary media URL bypassing entitlement
+-- enforcement" case the offline/download-security instructions explicitly
+-- forbid. Revoking the grant closes it at the PostgREST layer (query is
+-- rejected before RLS is even evaluated); the matching policy is also
+-- removed in 09_rls.sql for defense in depth.
+REVOKE ALL ON public.video_cache FROM PUBLIC, anon, authenticated;
 GRANT ALL ON public.video_cache TO service_role;
 
 GRANT SELECT, INSERT ON public.download_logs TO authenticated;

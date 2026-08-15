@@ -2430,10 +2430,20 @@ $$;
 ALTER TABLE public.video_cache ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.download_logs ENABLE ROW LEVEL SECURITY;
 
+-- SECTION-12 CRITICAL FIX: no policy is defined for `authenticated`/`anon`
+-- here on purpose. video_cache is an internal cache of resolved video/audio
+-- URLs for every lesson on the platform, populated and read only by the
+-- `video-info` Edge Function via the service_role key (which bypasses RLS
+-- entirely, so service_role needs no policy to keep working). The previous
+-- `video_cache_select` policy (`USING (expires_at > now())`, granted to
+-- `authenticated`) had no lesson/course/enrollment scoping whatsoever, so
+-- any signed-in user could read *every* cached lesson's direct video URL
+-- via PostgREST -- a full bypass of get_lesson_content()'s entitlement
+-- check. RLS with zero matching policies for a role means that role gets
+-- zero rows by default; combined with the matching REVOKE in
+-- 10_permissions.sql (which rejects the query before RLS even runs), this
+-- table is now unreachable by anything except service_role.
 DROP POLICY IF EXISTS video_cache_select ON public.video_cache;
-CREATE POLICY video_cache_select ON public.video_cache
-  FOR SELECT TO authenticated
-  USING (expires_at > now());
 
 DROP POLICY IF EXISTS download_logs_select_own ON public.download_logs;
 CREATE POLICY download_logs_select_own ON public.download_logs

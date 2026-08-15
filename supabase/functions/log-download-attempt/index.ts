@@ -1,9 +1,13 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// Called by Flutter after a download completes successfully.
-// access_expires_at is copied from validate-course-access response.
-// Flutter stores it locally and validates offline playback without a server call.
+// Called by Flutter after a download completes successfully, purely to
+// write an analytics/audit record. Offline playback itself is authorized
+// entirely client-side by OfflinePolicyEngine against locally HMAC-signed
+// metadata — this function and download_logs have no bearing on that
+// decision. The access_expires_at written here is re-derived from the
+// caller's real active enrollment (see below), not trusted from the
+// request body, so this audit trail can't be falsified by the client.
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -22,7 +26,19 @@ serve(async (req) => {
       { global: { headers: { Authorization: req.headers.get('Authorization')! } } },
     )
 
-    const { lesson_id, quality, access_expires_at } = await req.json()
+    // SECTION-12 FIX: `access_expires_at` used to be taken verbatim from the
+    // request body and written straight into download_logs -- an
+    // authenticated caller could send any value here (e.g. a far-future
+    // date) and it would land in the audit trail unchecked. This table
+    // carries no authorization power today (offline playback is gated
+    // entirely by OfflinePolicyEngine against locally-signed metadata, not
+    // by download_logs), but it exists specifically to be a trustworthy
+    // audit/observability record (project instructions require honest,
+    // unspoofable audit data, per §12/§15 and P6.23 "Metadata Authenticity").
+    // The client-supplied value is no longer trusted; it is only read as a
+    // hint for logging when the real server-side lookup below can't
+    // resolve one (e.g. a legitimately preview/free lesson has none).
+    const { lesson_id, quality, access_expires_at: clientReportedExpiresAt } = await req.json()
 
     if (!lesson_id || !quality) {
       return new Response(
@@ -60,6 +76,39 @@ serve(async (req) => {
       )
     }
 
+    // Re-derive the real entitlement expiry server-side instead of trusting
+    // the client-supplied value -- same active-enrollment lookup
+    // validate-course-access uses (RLS-scoped to this user/tenant, so this
+    // can only ever see the caller's own enrollment). A missing/expired
+    // enrollment here (e.g. a preview lesson, or entitlement revoked
+    // between the earlier validate-course-access call and this one) simply
+    // logs a null expiry rather than the caller's claimed one.
+    const now = new Date().toISOString()
+    const { data: enrollments } = await supabaseClient
+      .from('enrollments')
+      .select('expires_at')
+      .eq('user_id', user.id)
+      .eq('course_id', lesson.course_id)
+      .eq('status', 'active')
+      .or(`expires_at.is.null,expires_at.gte.${now}`)
+      .order('expires_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+
+    const serverVerifiedExpiresAt = enrollments && enrollments.length > 0
+      ? (enrollments[0].expires_at ?? null)
+      : null
+
+    if (
+      clientReportedExpiresAt &&
+      serverVerifiedExpiresAt !== clientReportedExpiresAt
+    ) {
+      console.warn(
+        'log-download-attempt: client-reported access_expires_at did not ' +
+        'match server-verified enrollment expiry; using server value',
+        { lesson_id, user_id: user.id },
+      )
+    }
+
     // Insert download log
     const { error: logError } = await supabaseClient
       .from('download_logs')
@@ -69,7 +118,7 @@ serve(async (req) => {
         course_id:         lesson.course_id,
         quality,
         downloaded_at:     new Date().toISOString(),
-        access_expires_at: access_expires_at ?? null,
+        access_expires_at: serverVerifiedExpiresAt,
       })
 
     if (logError) {
