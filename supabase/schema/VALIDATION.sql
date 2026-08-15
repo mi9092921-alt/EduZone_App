@@ -811,7 +811,7 @@ BEGIN
   SELECT array_agg(id ORDER BY id)
     INTO v_bad_buckets
   FROM storage.buckets
-  WHERE (id IN ('reports', 'exports') AND public IS DISTINCT FROM false)
+  WHERE (id IN ('reports', 'exports', 'videos') AND public IS DISTINCT FROM false)
      OR (id = 'avatars' AND public IS DISTINCT FROM true);
 
   SELECT COUNT(*)

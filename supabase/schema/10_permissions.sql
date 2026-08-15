@@ -149,7 +149,27 @@ BEGIN
   INSERT INTO storage.buckets (id, name, public)
   VALUES ('exports', 'exports', false)
   ON CONFLICT (id) DO UPDATE SET public = false;
+
+  -- SECTION-09 FIX: the 'videos' bucket holds paid/enrollment-gated course
+  -- content and is read exclusively via get-lesson-content/index.ts, which
+  -- validates access through public.get_lesson_content() and only then
+  -- mints a 180-second signed URL with the service-role client. That
+  -- authorization path is meaningless if the bucket itself is public --
+  -- anyone who learns or enumerates a storage path could stream the file
+  -- directly, with no enrollment check and no expiry. Unlike avatars/
+  -- reports/exports, this bucket had no committed privacy assertion at
+  -- all, so a dashboard toggle (accidental or otherwise) could silently
+  -- undo the access-control fix above with no code-level signal.
+  INSERT INTO storage.buckets (id, name, public)
+  VALUES ('videos', 'videos', false)
+  ON CONFLICT (id) DO UPDATE SET public = false;
 END $$;
+
+-- No anon/authenticated object DML or SELECT policies are defined for
+-- 'videos' objects, intentionally: all reads happen through service-role
+-- signed URLs issued by get-lesson-content after get_lesson_content()
+-- authorization, never through a direct authenticated/anon storage.objects
+-- query. This matches the existing reports/exports pattern above.
 
 DROP POLICY IF EXISTS avatars_insert_own_folder ON storage.objects;
 CREATE POLICY avatars_insert_own_folder
