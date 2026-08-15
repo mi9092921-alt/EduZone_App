@@ -2470,4 +2470,45 @@ BEGIN
 END
 $$;
 
-
+-- SECTION-09: Direct access to partition children must never bypass the
+-- parent table's tenant RLS. PostgreSQL applies parent policies to inherited
+-- queries, but direct queries against a child table ignore parent policies.
+-- Existing and future child partitions are therefore explicitly RLS-protected.
+DO $$
+DECLARE
+  v_partition record;
+BEGIN
+  FOR v_partition IN
+    SELECT child_ns.nspname AS schema_name,
+           child.relname    AS partition_name
+    FROM pg_inherits i
+    JOIN pg_class parent      ON parent.oid = i.inhparent
+    JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+    JOIN pg_class child       ON child.oid = i.inhrelid
+    JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+    WHERE parent_ns.nspname IN ('public', 'audit')
+      AND parent.relname IN (
+        'sessions',
+        'session_snapshots',
+        'video_views',
+        'user_location_logs',
+        'activity_logs',
+        'lesson_access_log',
+        'alert_log'
+      )
+  LOOP
+    EXECUTE format(
+      'ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY',
+      v_partition.schema_name,
+      v_partition.partition_name
+    );
+    -- No direct authenticated/anonymous policy is created intentionally:
+    -- RLS default-deny protects direct child access. Parent policies remain
+    -- authoritative for normal queries through the partitioned parent.
+    EXECUTE format(
+      'REVOKE ALL ON TABLE %I.%I FROM PUBLIC, anon, authenticated',
+      v_partition.schema_name,
+      v_partition.partition_name
+    );
+  END LOOP;
+END $$;

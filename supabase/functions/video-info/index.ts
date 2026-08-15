@@ -199,12 +199,49 @@ serve(async (req) => {
     }
     const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const { data: authData, error: authError } = await authClient.auth.getUser(
-      authHeader.replace("Bearer ", ""),
+      authHeader.replace(/^Bearer\s+/i, ""),
     );
     if (authError || !authData.user) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const { data: sessionValid, error: sessionError } = await authClient.rpc(
+      "validate_user_session",
+    );
+    if (sessionError || sessionValid !== true) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const { data: rateLimit, error: rateLimitError } = await authClient.rpc(
+      "check_rate_limit",
+      { p_action: "api_call", p_user_id: authData.user.id },
+    );
+    if (rateLimitError) {
+      console.error("video-info rate-limit check failed", rateLimitError);
+      return new Response(
+        JSON.stringify({ error: "Service unavailable" }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    if (rateLimit?.allowed === false) {
+      return new Response(
+        JSON.stringify({ error: "Too many requests" }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+            "Retry-After": rateLimit.retryAfter
+              ? Math.max(1, Math.ceil((new Date(rateLimit.retryAfter).getTime() - Date.now()) / 1000)).toString()
+              : "60",
+          },
+        },
       );
     }
 
@@ -311,7 +348,7 @@ serve(async (req) => {
   } catch (err: any) {
     console.error("Unhandled error in video-info:", err);
     return new Response(
-      JSON.stringify({ error: err?.message || String(err) }),
+      JSON.stringify({ error: "Internal server error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }

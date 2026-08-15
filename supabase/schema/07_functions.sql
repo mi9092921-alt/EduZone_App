@@ -3880,6 +3880,11 @@ BEGIN
   END IF;
 
   EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', p_schema, v_partition_name);
+  EXECUTE format(
+    'REVOKE ALL ON TABLE %I.%I FROM PUBLIC, anon, authenticated',
+    p_schema,
+    v_partition_name
+  );
 END;
 $$;
 

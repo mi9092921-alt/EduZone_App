@@ -166,7 +166,33 @@ Deno.serve(async (req: Request) => {
       .is("deleted_at", null);
 
     // Apply filters (same pattern as users.service.ts)
-    const f = body.filters;
+    const f = { ...body.filters };
+
+    if (f.search !== undefined) {
+      if (typeof f.search !== "string" || f.search.length > 100 || /[,()]/.test(f.search)) {
+        return errorResponse("INVALID_FILTERS", "Invalid search filter");
+      }
+    }
+    if (f.user_ids !== undefined &&
+        (!Array.isArray(f.user_ids) || f.user_ids.length > MAX_BULK_SIZE ||
+         f.user_ids.some((id) => typeof id !== "string"))) {
+      return errorResponse("INVALID_FILTERS", "Invalid user_ids filter");
+    }
+
+    // Tenant scope is derived from the authenticated database profile. A
+    // caller may only override it when the server-side primary role is the
+    // explicit cross-tenant super_admin role.
+    if (f.tenant_id !== undefined && typeof f.tenant_id !== "string") {
+      return errorResponse("INVALID_FILTERS", "Invalid tenant_id filter");
+    }
+    if (f.tenant_id !== undefined &&
+        f.tenant_id !== user.tenant_id && user.role !== "super_admin") {
+      return errorResponse("PERMISSION_DENIED", "Cross-tenant bulk actions are not permitted", 403);
+    }
+    if (user.role !== "super_admin") {
+      f.tenant_id = user.tenant_id;
+    }
+
     if (f.search) {
       query = query.or(
         `email.ilike.%${f.search}%,first_name.ilike.%${f.search}%,last_name.ilike.%${f.search}%`,
@@ -182,7 +208,8 @@ Deno.serve(async (req: Request) => {
 
     const { count: estimatedCount, error: countErr } = await query;
     if (countErr) {
-      return errorResponse("INVALID_FILTERS", countErr.message, 400, { count: 0 });
+      console.error("bulk-action count query failed", countErr);
+      return errorResponse("INVALID_FILTERS", "Unable to evaluate filters", 400, { count: 0 });
     }
 
     const count = estimatedCount ?? 0;
@@ -217,7 +244,7 @@ Deno.serve(async (req: Request) => {
         p_job_type: jobType,
         p_payload: {
           action: body.action,
-          filters: body.filters,
+          filters: f,
           params: body.params ?? {},
           initiator_id: user.id,
           estimated_count: count,
@@ -232,7 +259,8 @@ Deno.serve(async (req: Request) => {
       if (insertErr.message?.includes("uq_job_dedupe")) {
         return errorResponse("DUPLICATE_JOB", "An identical bulk action is already processing. Please wait for it to finish.", 409);
       }
-      return errorResponse("QUEUE_ERROR", insertErr.message, 500);
+      console.error("bulk-action queue insert failed", insertErr);
+      return errorResponse("QUEUE_ERROR", "Unable to queue bulk action", 500);
     }
 
     // ── Log the activity ─────────────────────────────────────
@@ -243,7 +271,7 @@ Deno.serve(async (req: Request) => {
         action: body.action,
         estimated_count: count,
         job_id: job.id,
-        filters: body.filters,
+        filters: f,
       },
       p_risk_level: "medium",
       p_tenant_id: user.tenant_id,

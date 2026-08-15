@@ -101,8 +101,21 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json();
     const reportType = body.report_type as ReportType;
-    const tenantId = body.tenant_id as string | undefined;
+    const requestedTenantId = body.tenant_id as string | undefined;
+    if (requestedTenantId !== undefined && typeof requestedTenantId !== "string") {
+      return errorResponse("INVALID_TENANT", "Invalid tenant identifier", 400);
+    }
+    const tenantId =
+      user.role === "super_admin"
+        ? requestedTenantId ?? user.tenant_id
+        : user.tenant_id;
+    if (requestedTenantId && requestedTenantId !== tenantId) {
+      return errorResponse("PERMISSION_DENIED", "Cross-tenant reports are not permitted", 403);
+    }
     const format = (body.format as string) ?? "csv";
+    if (format !== "csv") {
+      return errorResponse("INVALID_FORMAT", "Only CSV reports are supported", 400);
+    }
 
     if (!reportType || !VALID_REPORT_TYPES.includes(reportType)) {
       return errorResponse(
@@ -117,7 +130,9 @@ Deno.serve(async (req: Request) => {
 
     switch (reportType) {
       case "user_stats": {
-        const { data, error } = await admin.from("mv_user_stats").select("*");
+        let q = admin.from("mv_user_stats").select("*");
+        if (tenantId) q = q.eq("tenant_id", tenantId);
+        const { data, error } = await q;
         if (error) throw error;
         csvContent = toCsv(data ?? []);
         filename = `user-stats-${Date.now()}`;
@@ -212,10 +227,10 @@ Deno.serve(async (req: Request) => {
   } catch (err) {
     if (err && typeof err === "object" && "status" in err) {
       const authErr = err as { status: number; code: string; message: string };
-      return errorResponse(authErr.code, authErr.message, authErr.status);
+      return errorResponse(authErr.code, authErr.status === 401 ? "Unauthorized" : authErr.status === 403 ? "Permission denied" : "Request failed", authErr.status);
     }
     console.error("export-report error:", err);
-    return errorResponse("EXPORT_ERROR", String(err), 500);
+    return errorResponse("EXPORT_ERROR", "Report export failed", 500);
   }
 });
 

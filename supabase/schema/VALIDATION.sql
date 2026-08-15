@@ -712,6 +712,95 @@ BEGIN
   );
 END $$;
 
+
+-- Check 18: Directly addressed sensitive partitions must be RLS-protected.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(
+           child_ns.nspname || '.' || child.relname
+           ORDER BY child_ns.nspname, child.relname
+         )
+    INTO v_bad
+  FROM pg_inherits i
+  JOIN pg_class parent ON parent.oid = i.inhparent
+  JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+  JOIN pg_class child ON child.oid = i.inhrelid
+  JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+  WHERE parent_ns.nspname IN ('public', 'audit')
+    AND parent.relname IN (
+      'sessions',
+      'session_snapshots',
+      'video_views',
+      'user_location_logs',
+      'activity_logs',
+      'lesson_access_log',
+      'alert_log'
+    )
+    AND NOT child.relrowsecurity;
+
+  INSERT INTO validation_results VALUES (
+    'Sensitive Partition Children Require RLS',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: direct partition access remains without RLS: '
+        || array_to_string(v_bad, ', '),
+      'All sensitive partition children have RLS enabled'
+    )
+  );
+END $$;
+
+-- Check 19: Sensitive partition children must not be directly granted to
+-- PostgREST client roles. Normal access is through the parent table policies.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(
+           c.relname
+           ORDER BY c.relname
+         )
+    INTO v_bad
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  JOIN pg_inherits i ON i.inhrelid = c.oid
+  JOIN pg_class parent ON parent.oid = i.inhparent
+  JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+  WHERE n.nspname IN ('public', 'audit')
+    AND parent_ns.nspname IN ('public', 'audit')
+    AND parent.relname IN (
+      'sessions',
+      'session_snapshots',
+      'video_views',
+      'user_location_logs',
+      'activity_logs',
+      'lesson_access_log',
+      'alert_log'
+    )
+    AND (
+      has_table_privilege('anon', c.oid, 'SELECT')
+      OR has_table_privilege('anon', c.oid, 'INSERT')
+      OR has_table_privilege('anon', c.oid, 'UPDATE')
+      OR has_table_privilege('anon', c.oid, 'DELETE')
+      OR has_table_privilege('authenticated', c.oid, 'SELECT')
+      OR has_table_privilege('authenticated', c.oid, 'INSERT')
+      OR has_table_privilege('authenticated', c.oid, 'UPDATE')
+      OR has_table_privilege('authenticated', c.oid, 'DELETE')
+    );
+
+  INSERT INTO validation_results VALUES (
+    'Sensitive Partition Children Have No Client Grants',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: client grants remain on sensitive partitions: '
+        || array_to_string(v_bad, ', '),
+      'anon/authenticated have no direct DML privileges on sensitive partition children'
+    )
+  );
+END $$;
+
+
 -- Display Results
 SELECT * FROM validation_results ORDER BY check_name;
 
