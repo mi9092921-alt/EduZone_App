@@ -12,12 +12,45 @@
 ///
 /// Renamed from `_buildPlayerHtml` (public now that it lives in its own
 /// file) — no change to its implementation.
+/// Strict shape of a real YouTube video id — the only thing safe to
+/// interpolate unescaped into the JS string literal below.
+final RegExp _safeVideoIdShape = RegExp(r'^[A-Za-z0-9_-]{11}$');
+
+/// SECURITY (AUTH/WEBVIEW-01): [videoId] is interpolated directly into a
+/// JS string literal (`videoId: "$videoId"`) with no escaping. The
+/// primary defense is that callers are expected to have already run the
+/// value through `extractModernPlayerVideoId`, which only ever returns
+/// `null` or a strictly-shaped 11-character id. This function adds a
+/// real (non-`assert`-based, so it also applies in release builds)
+/// last-resort check: if [videoId] doesn't match that shape, it is
+/// substituted with a harmless placeholder instead of being interpolated
+/// unescaped, so a future caller skipping validation upstream (e.g. a
+/// refactor that passes `content.videoUrl` straight through) fails safe
+/// — an inert/invalid player — instead of executing injected JS inside
+/// the WebView.
 String buildModernPlayerHtml({
   required String videoId,
   required String platform,
   required String playerVars,
   String pointerEvents = 'inherit',
   String host = 'https://www.youtube-nocookie.com',
+}) {
+  final safeVideoId = _safeVideoIdShape.hasMatch(videoId) ? videoId : '';
+  return _renderPlayerHtml(
+    videoId: safeVideoId,
+    platform: platform,
+    playerVars: playerVars,
+    pointerEvents: pointerEvents,
+    host: host,
+  );
+}
+
+String _renderPlayerHtml({
+  required String videoId,
+  required String platform,
+  required String playerVars,
+  required String pointerEvents,
+  required String host,
 }) => '''
 
 <!DOCTYPE html>

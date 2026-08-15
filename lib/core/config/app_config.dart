@@ -20,8 +20,14 @@ class AppConfig {
   );
 
   /// بناء رابط الـ Proxy لمعرّف الفيديو المُعطى
+  ///
+  /// SECURITY: [videoId] is percent-encoded via [Uri.encodeQueryComponent]
+  /// before being placed in the query string. Without this, a videoId
+  /// containing `&`, `#`, or other URL-structural characters could
+  /// inject additional query parameters or alter the URL the WebView
+  /// navigates to instead of being treated as an opaque value.
   static String buildVideoUrl(String videoId) =>
-      '$proxyBase/api/video?videoId=$videoId';
+      '$proxyBase/api/video?videoId=${Uri.encodeQueryComponent(videoId)}';
 
   //https://youtube-proxy-roan.vercel.app/api/video?videoId=2-nQ1zKx_o4
   //https://your-admin-domain.com/api/video?videoId=2-nQ1zKx_o4

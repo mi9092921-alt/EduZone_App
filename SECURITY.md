@@ -127,9 +127,13 @@ redirects immediately, regardless of the transient-error path above.
 
 ## Network security
 
-- Android: `usesCleartextTraffic="false"` in `AndroidManifest.xml`, with
-  `network_security_config.xml` allowing cleartext **only** for
-  `127.0.0.1` / `localhost` (local dev tooling), nothing else.
+- Android: `usesCleartextTraffic="false"` in `AndroidManifest.xml`, backed by
+  `network_security_config.xml`'s `<base-config cleartextTrafficPermitted="false" />`
+  with no domain-level exception — cleartext is blocked for every host,
+  including `127.0.0.1`/`localhost`. (Corrected from an earlier version of
+  this doc that described a `127.0.0.1`/`localhost` cleartext exception —
+  no such `<domain-config>` exists in the file; the actual policy is
+  strictly stricter than what was previously documented here.)
 - iOS: no `NSAllowsArbitraryLoads` or other ATS exceptions in
   `Info.plist` — default (secure) App Transport Security applies.
 - Certificate pinning: `lib/core/network/certificate_pinning.dart` pins

@@ -8,6 +8,37 @@
 ## [Unreleased]
 
 ### Added / Fixed
+- **Security (WebView/JS injection)**: `extractModernPlayerVideoId` (Modern
+  Player, `youtube-nocookie.com` WebView) previously fell through to
+  returning the raw, unrecognized `content.videoUrl` value unchanged when it
+  didn't match a known YouTube URL shape. That value is interpolated
+  unescaped into an executing JS context (`buildModernPlayerHtml`'s
+  `videoId: "$videoId"`, and `ModernPlayerWrapper._switchVideo`'s
+  `evaluateJavascript("loadVideo('$videoId')")`) — a value containing `'`,
+  `"`, or `</script>` could break out of the string literal and execute
+  arbitrary JS inside the player's WebView. Extraction now returns `null`
+  for anything that doesn't strictly match YouTube's id shape
+  (`^[A-Za-z0-9_-]{11}$` or a recognized URL pattern), and two additional
+  fail-safe layers were added at the actual interpolation sites
+  (`buildModernPlayerHtml`, `_switchVideo`) so a future call site that
+  skips this validation degrades to an inert player instead of executing
+  injected script. `shouldOverrideUrlLoading` was also changed from
+  allow-by-default to deny-by-default — the WebView may now only navigate
+  within its own `youtube-nocookie.com` origin; everything else is
+  canceled. Regression tests added covering explicit string-literal
+  breakout payloads. Not yet independently re-verified with
+  `flutter analyze`/`flutter test` in this session (no Flutter/Dart
+  toolchain available) — statically inspected only.
+- **Security (URL handling)**: `AppConfig.buildVideoUrl` (proxy video
+  player) now percent-encodes `videoId` via `Uri.encodeQueryComponent`
+  before placing it in the query string, preventing a value containing
+  `&`/`#`/other URL-structural characters from injecting additional query
+  parameters or altering the target URL.
+- **Docs**: corrected a `SECURITY.md` claim that `network_security_config.xml`
+  allows cleartext traffic for `127.0.0.1`/`localhost` — the actual file has
+  no such domain exception; cleartext is blocked unconditionally. The
+  documented policy was less strict than the real one; no code change
+  required, doc corrected to match implementation.
 - **Security**: ربط `SecurityService.killAppHandler` بمسار الشاشة المقفلة (`AppRoutes.locked`) عند اكتشاف تهديد أمني.
 - **L10n**: إضافة الترجمة العربية لمفتاح `searchCourses` ("ابحث عن الكورسات") في `app_ar.arb`.
 - **Logging**: تقييد طباعة أحداث التنقل في `AppNavigatorObserver` على وضع التطوير فقط (`kDebugMode`).

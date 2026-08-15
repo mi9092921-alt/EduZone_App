@@ -59,9 +59,35 @@ void main() {
       );
     });
 
-    test('passes through an unrecognized URL shape unchanged', () {
+    test('returns null for an unrecognized URL shape', () {
+      // SECURITY (AUTH/WEBVIEW-01): this used to pass the raw string
+      // through unchanged, which flowed straight into an unescaped JS
+      // string literal inside the WebView. Anything that isn't a real
+      // YouTube id must resolve to null so the caller shows the
+      // "invalid video URL" state instead of building a WebView.
       const url = 'https://example.com/video/123';
-      expect(extractModernPlayerVideoId(url), url);
+      expect(extractModernPlayerVideoId(url), isNull);
+    });
+
+    test('returns null for a bare 11-char string with JS-breaking characters', () {
+      // Same length as a real id, but not shaped like one (contains a
+      // quote) -- must not be treated as safe just because the length
+      // matches.
+      expect(extractModernPlayerVideoId('a"</scrpt>1'), isNull);
+    });
+
+    test('returns null for a string that attempts JS string-literal breakout', () {
+      const malicious = 'x"); alert(document.cookie); //';
+      expect(extractModernPlayerVideoId(malicious), isNull);
+    });
+
+    test('returns null for a string with a single-quote breakout attempt', () {
+      const malicious = "x'); alert(1); //";
+      expect(extractModernPlayerVideoId(malicious), isNull);
+    });
+
+    test('rejects a video id containing whitespace', () {
+      expect(extractModernPlayerVideoId('dQw4w9WgX Q'), isNull);
     });
   });
 }

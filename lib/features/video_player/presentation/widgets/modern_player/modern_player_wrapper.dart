@@ -17,6 +17,10 @@ import 'modern_player_fullscreen_exit_button.dart';
 import 'modern_player_html.dart';
 import 'modern_player_youtube_id.dart';
 
+/// Strict shape of a real YouTube video id -- see the SECURITY
+/// (AUTH/WEBVIEW-01) note on [_ModernPlayerWrapperState._switchVideo].
+final RegExp _safeVideoIdPattern = RegExp(r'^[A-Za-z0-9_-]{11}$');
+
 /// Modern WebView-based YouTube video player with cleanup loops to remove
 /// branding.
 ///
@@ -147,6 +151,18 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
 
   void _switchVideo(String videoId) {
     if (_lastVideoId == videoId) return;
+
+    // SECURITY (AUTH/WEBVIEW-01): videoId is interpolated unescaped into
+    // JS evaluated inside the WebView (`loadVideo('$videoId')`). It is
+    // expected to already be validated by extractModernPlayerVideoId
+    // upstream (in build()), which only ever hands this method null or a
+    // strictly-shaped 11-char id. This is a last-resort guard in case a
+    // future call site skips that validation -- fail safe by ignoring
+    // the switch instead of executing an unvalidated string as JS.
+    if (!_safeVideoIdPattern.hasMatch(videoId)) {
+      return;
+    }
+
     _lastVideoId = videoId;
 
     if (_webViewController != null) {
@@ -348,11 +364,28 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
         debugPrint('🔴 [WebView Error] ${error.description} (Code: ${error.type})');
       },
       shouldOverrideUrlLoading: (controller, action) async {
+        // SECURITY (AUTH/WEBVIEW-02): deny-by-default instead of
+        // allow-by-default. This player only ever needs to stay on its
+        // own origin (youtube-nocookie.com, set as initialData's
+        // baseUrl) to render the IFrame player; it never needs to
+        // navigate anywhere else. The previous policy explicitly
+        // canceled navigation to the main youtube.com/youtu.be domains
+        // (to stop the "watch on YouTube" chrome from escaping the
+        // embed) but silently ALLOWed navigation to any other host --
+        // meaning JS running inside this WebView (e.g. via any future
+        // injection, or a compromised/malicious ad slot the IFrame API
+        // itself may load) could navigate the WebView to an arbitrary
+        // phishing/exfiltration URL and this widget would follow it.
+        // Only the player's own origin, and the initial about:blank/
+        // data-URL load, are allowed; everything else is canceled.
         final url = action.request.url?.toString() ?? '';
-        if (url.startsWith('https://www.youtube') || url.startsWith('https://youtu.be') || url.startsWith('https://m.youtube')) {
-          return NavigationActionPolicy.CANCEL;
+        if (url.isEmpty || url.startsWith('about:') || url.startsWith('data:')) {
+          return NavigationActionPolicy.ALLOW;
         }
-        return NavigationActionPolicy.ALLOW;
+        if (url.startsWith('https://www.youtube-nocookie.com')) {
+          return NavigationActionPolicy.ALLOW;
+        }
+        return NavigationActionPolicy.CANCEL;
       },
     );
   }
