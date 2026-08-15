@@ -6,6 +6,8 @@ import 'package:app/app/router/app_router.dart';
 import 'package:app/app/router/main_shell.dart';
 import 'package:app/core/constants/app_constants.dart';
 import 'package:app/core/l10n/arb/app_localizations_en.dart';
+import 'package:app/core/logging/infrastructure/event_dispatcher.dart' as logging;
+import 'package:app/core/logging/logging_providers.dart';
 import 'package:app/features/auth/application/providers/auth_provider.dart';
 import 'package:app/features/auth/domain/entities/app_user.dart';
 import 'package:app/features/auth/domain/entities/auth_state.dart';
@@ -114,6 +116,9 @@ ProviderContainer _containerFor(
       recentTodosProvider.overrideWith((ref) async => const []),
       profileProvider.overrideWith((ref) async => _profile),
       notificationsProvider.overrideWith((ref) async => const []),
+      eventDispatcherProvider.overrideWithValue(
+        logging.EventDispatcher(const []),
+      ),
     ],
   );
 }
