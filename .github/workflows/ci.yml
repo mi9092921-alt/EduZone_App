@@ -149,11 +149,14 @@ jobs:
       - name: Run integration tests on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 34
           arch: x86_64
           profile: pixel_2
           target: google_apis
           force-avd-creation: true
+          ram-size: 4096M
+          disk-size: 8192M
+          disable-spellchecker: true
           # The emulator already boots on the hosted Linux runner, but the
           # action's post-boot animation settings can race the ADB transport
           # and terminate an otherwise healthy emulator with a broken pipe.
@@ -161,8 +164,9 @@ jobs:
           disable-animations: false
           emulator-boot-timeout: 1200
           emulator-options: >-
-            -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
-            -no-boot-anim -no-metrics
+            -no-window -gpu swiftshader_indirect -no-snapshot-load
+            -no-snapshot-save -noaudio -no-boot-anim -no-metrics
+            -camera-back none -camera-front none
           script: |
             adb wait-for-device
             adb shell getprop sys.boot_completed
