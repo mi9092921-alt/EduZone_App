@@ -105,7 +105,6 @@ test/get_path_test.dart
 test/inspect_db_test.dart
 test/instructor_query_test.dart
 test/scratch_test.dart
-test/widget_test.dart
 
 Secure Offline Video System/
 The_requirement/

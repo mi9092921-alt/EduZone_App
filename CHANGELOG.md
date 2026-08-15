@@ -13,8 +13,27 @@
 - **Logging**: تقييد طباعة أحداث التنقل في `AppNavigatorObserver` على وضع التطوير فقط (`kDebugMode`).
 - **Chore**: إضافة ملفات المخرجات المؤقتة لـ `.gitignore` واستبعادها من تتبع Git.
 
-### Security
-- ربط معالج إنهاء التطبيق `killAppHandler` لضمان التفاعل الصحيح مع التهديدات الأمنية على iOS وأندرويد.
+ ### Security
+ - ربط معالج إنهاء التطبيق `killAppHandler` لضمان التفاعل الصحيح مع التهديدات الأمنية على iOS وأندرويد.
+- **`create-user` (Edge Function)**: إصلاح ثغرة orphaned-account — إنشاء `auth.users`
+  و`public.users` كانا خطوتين منفصلتين بدون rollback؛ فشل الخطوة الثانية كان
+  يترك حساب auth صالح بلا profile (`ServerException('User profile not found')`
+  عند تسجيل الدخول لاحقًا، بلا أي مسار تعافي). أُضيف retry محدود (3 محاولات)
+  + compensating rollback (`auth.admin.deleteUser`) عند الفشل النهائي، بحيث
+  تصبح العملية all-or-nothing. منشور: v18.
+- **`validate-course-access` + `log-download-attempt` (Edge Functions)**: إصلاح
+  فلتر `tenant_id` معطّل — كان يعتمد على `user.user_metadata.tenant_id`، وهو
+  حقل غير مُعبّأ إطلاقًا في هذا النظام (الـ Auth Hook `custom_access_token`
+  يحقن `tenant_id` كـ top-level JWT claim، ليس داخل `user_metadata`)، مما كان
+  يرفض وصول كل مستخدم مسجّل ومشترك فعلًا لبوابة الـ download authorization.
+  أُزيل الفلتر المكسور والاعتماد كليًا على عزل RLS الموثوق
+  (`public.get_current_tenant_id()`)، بلا أي إضعاف أمني. منشور: v17.
+- **`video-info` (Edge Function)**: كانت الدالة بلا أي مصادقة إطلاقًا (CORS
+  مفتوح للجميع)، فيستطيع أي مستخدم غير مسجّل على الإنترنت استدعاءها بأي رابط
+  يوتيوب واستهلاك الـ Replit API الخارجي المدفوع بلا حدود. أُضيفت بوابة
+  مصادقة (`auth.getUser()`) بنفس نمط `get-lesson-content`. **لم تُغلق بعد**:
+  التحقق من كون المستخدم المسجّل يملك حق فعلي على الفيديو المحدد تحديدًا
+  (الدالة لا تستقبل `lesson_id`) — يحتاج تغيير API contract مستقبلًا. منشور: v20.
 
 ### Automation
 - **Chore**: إضافة سير عمل GitHub Actions جديد `update-goldens.yml` لتسهيل تحديث الـ Goldens.
