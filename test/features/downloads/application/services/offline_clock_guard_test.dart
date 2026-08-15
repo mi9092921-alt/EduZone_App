@@ -19,8 +19,8 @@ void main() {
   group('OfflineClockGuard — no secure storage (degraded mode)', () {
     test('never throws and is a no-op when no backend is supplied', () async {
       final guard = OfflineClockGuard();
-      await guard.checkAndRecord(now: DateTime(2020, 1, 1));
-      await guard.checkAndRecord(now: DateTime(2010, 1, 1)); // "rollback"
+      await guard.checkAndRecord(now: DateTime(2020));
+      await guard.checkAndRecord(now: DateTime(2010)); // "rollback"
       // No exception — degraded mode cannot detect anything.
     });
   });
@@ -35,7 +35,7 @@ void main() {
           )).thenAnswer((_) async {});
 
       final guard = OfflineClockGuard(secureStorage: secureStorage);
-      final now = DateTime(2026, 1, 1);
+      final now = DateTime(2026);
       await guard.checkAndRecord(now: now);
 
       verify(() => secureStorage.write(
@@ -48,7 +48,7 @@ void main() {
   group('OfflineClockGuard — forward progress', () {
     test('advances the watermark and does not throw when time moves forward',
         () async {
-      final anchor = DateTime(2026, 1, 1);
+      final anchor = DateTime(2026);
       when(() => secureStorage.read(key: any(named: 'key'))).thenAnswer(
         (_) async => anchor.millisecondsSinceEpoch.toString(),
       );
@@ -87,7 +87,7 @@ void main() {
 
   group('OfflineClockGuard — rollback detection (P6.16)', () {
     test('throws when the clock is rolled back beyond tolerance', () async {
-      final anchor = DateTime(2026, 6, 1);
+      final anchor = DateTime(2026, 6);
       when(() => secureStorage.read(key: any(named: 'key'))).thenAnswer(
         (_) async => anchor.millisecondsSinceEpoch.toString(),
       );
@@ -114,7 +114,7 @@ void main() {
           .thenThrow(Exception('platform error'));
 
       final guard = OfflineClockGuard(secureStorage: secureStorage);
-      await guard.checkAndRecord(now: DateTime(2026, 1, 1));
+      await guard.checkAndRecord(now: DateTime(2026));
     });
 
     test('degrades silently (no throw) when write fails', () async {
@@ -126,7 +126,7 @@ void main() {
           )).thenThrow(Exception('platform error'));
 
       final guard = OfflineClockGuard(secureStorage: secureStorage);
-      await guard.checkAndRecord(now: DateTime(2026, 1, 1));
+      await guard.checkAndRecord(now: DateTime(2026));
     });
   });
 }
