@@ -73,6 +73,24 @@ void main() {
     ).called(1);
   });
 
+  test('ignores new progress after disposal', () async {
+    await engine.dispose();
+
+    engine.enqueue(
+      const LessonProgressSyncItem(
+        courseId: 'c1',
+        lessonId: 'l1',
+        completed: false,
+        progressPct: 90,
+      ),
+    );
+
+    await Future<void>.delayed(Duration.zero);
+
+    expect(engine.pendingCount, 0);
+    verifyNever(() => repository.syncProgressBatch(any()));
+  });
+
   test('requeues the batch when sync fails', () async {
     when(
       () => repository.syncProgressBatch(any()),
