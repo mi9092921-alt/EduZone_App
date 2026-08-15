@@ -128,16 +128,11 @@ jobs:
             scan --lockfile=pubspec.lock
 
   integration_test:
-    # NOTE: this job (and the harness test it runs) is UNVERIFIED — written
-    # in an environment without a Flutter SDK or emulator/device to confirm
-    # `flutter test integration_test/` actually passes here as written. The
-    # `integration_test` package documents this command as supported for
-    # tests that don't need real platform channels (which the current
-    # harness-only test doesn't), but if this job fails on its first real
-    # run, the likely fix is switching to a device-backed runner (e.g.
-    # reactivecircus/android-emulator-runner) rather than the test itself
-    # being wrong. Do not remove or paper over a failure here without
-    # checking which of the two it actually is.
+    # These tests exercise the real EduZoneApp widget tree, Riverpod state,
+    # and GoRouter redirects while replacing only external backend/platform
+    # boundaries with deterministic test doubles. This is an integration
+    # gate, not a production-backend E2E test. A failure must fail the job;
+    # do not weaken assertions or bypass the command to obtain green CI.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
