@@ -58,7 +58,7 @@ class FcmService {
       
     } catch (e) {
       // Firebase might not be configured yet during dev, ignore gracefully
-      debugPrint('FCM Init Error: $e');
+      debugPrint('FCM Init Error: ${e.runtimeType}');
     }
   }
 
@@ -70,7 +70,7 @@ class FcmService {
         await _saveToken(token);
       }
     } catch (e) {
-      debugPrint('Error getting FCM token on register: $e');
+      debugPrint('Error getting FCM token on register: ${e.runtimeType}');
     }
   }
 
@@ -97,7 +97,7 @@ class FcmService {
         'updated_at': DateTime.now().toIso8601String(),
       }, onConflict: 'token');
     } catch (e) {
-      debugPrint('Error saving FCM token: $e');
+      debugPrint('Error saving FCM token: ${e.runtimeType}');
     }
   }
 
@@ -111,7 +111,7 @@ class FcmService {
           .update({'is_active': false})
           .eq('user_id', uid);
     } catch (e) {
-      debugPrint('Error deactivating FCM token: $e');
+      debugPrint('Error deactivating FCM token: ${e.runtimeType}');
     }
   }
 
@@ -128,7 +128,7 @@ class FcmService {
         },
       );
     } catch (e) {
-      debugPrint('Local Notifications Init Error: $e');
+      debugPrint('Local Notifications Init Error: ${e.runtimeType}');
     }
   }
 

@@ -253,7 +253,7 @@ class LocationService {
     } on TimeoutException {
       rethrow; // handled by caller
     } catch (e) {
-      debugPrint('[Location] _fetchPosition error: $e');
+      debugPrint('[Location] _fetchPosition error: ${e.runtimeType}');
       return null;
     }
   }

@@ -45,7 +45,7 @@ class Player4RemoteDataSource {
         'Edge Function error ${e.status}: ${e.details ?? e.reasonPhrase ?? "unknown"}', // check-ignore
       );
     } catch (e, st) {
-      debugPrint('🔴 [Player4DS] Unexpected exception: $e');
+      debugPrint('🔴 [Player4DS] Unexpected exception: ${e.runtimeType}');
       debugPrint('🔴 [Player4DS] StackTrace:\n$st');
       throw ServerException(e.toString());
     }

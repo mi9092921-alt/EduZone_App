@@ -28,7 +28,9 @@ class DownloadNotificationHelper {
       );
       _initialized = true;
     } catch (e) {
-      debugPrint('DownloadNotificationHelper Init Error: $e');
+      debugPrint(
+        'DownloadNotificationHelper Init Error: ${e.runtimeType}',
+      );
     }
   }
 

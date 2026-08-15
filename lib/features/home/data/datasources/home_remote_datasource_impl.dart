@@ -62,7 +62,7 @@ class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
       
       return ResumeLesson.fromJson(json);
     } catch (e, stack) {
-      debugPrint('[HomeRemoteDataSource] getResumeLesson Error: $e');
+      debugPrint('[HomeRemoteDataSource] getResumeLesson Error: ${e.runtimeType}');
       debugPrint('Stack: $stack');
       return null;
     }
@@ -113,7 +113,7 @@ class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
       debugPrint('[HomeRemoteDataSource] PostgrestError: ${e.message}');
       throw Exception(e.message);
     } catch (e) {
-      debugPrint('[HomeRemoteDataSource] Mapping Error: $e');
+      debugPrint('[HomeRemoteDataSource] Mapping Error: ${e.runtimeType}');
       rethrow;
     }
   }

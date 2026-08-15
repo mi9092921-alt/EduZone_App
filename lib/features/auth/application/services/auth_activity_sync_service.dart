@@ -69,7 +69,9 @@ class AuthActivitySyncService {
         );
       }
     } catch (e) {
-      debugPrint('[AuthActivitySyncService] Background sync error: $e');
+      debugPrint(
+        '[AuthActivitySyncService] Background sync error: ${e.runtimeType}',
+      );
     }
   }
 }

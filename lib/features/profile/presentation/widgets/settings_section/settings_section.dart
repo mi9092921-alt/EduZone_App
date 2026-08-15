@@ -143,7 +143,10 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
         }
       } catch (e) {
         if (mounted) {
-          debugPrint('[SettingsSection] Failed to open app settings: $e');
+          debugPrint(
+            '[SettingsSection] Failed to open app settings: '
+            '${e.runtimeType}',
+          );
           AppSnackbar.showError(
             context: context,
             message: l10n.permOpenSettingsError,

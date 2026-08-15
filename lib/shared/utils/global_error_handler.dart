@@ -26,7 +26,7 @@ class GlobalErrorHandler {
   /// Logs errors to the console and forwards to Sentry.
   static void logError(Object error, StackTrace? stack) {
     debugPrint('--- [EduZone Error Log] ---');
-    debugPrint('Error: $error');
+    debugPrint('Error type: ${error.runtimeType}');
     if (stack != null) {
       debugPrint('StackTrace: \n$stack');
     }

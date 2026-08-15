@@ -2,15 +2,15 @@ part of '../security_service.dart';
 
 class ScreenShareGuard {
   static const List<String> _kScreenShareBlacklist = [
-    'com.teamviewer1.teamviewer.market.mobile',
-    'com.anydesk1.anydeskandroid',
-    'us.zoom1.videomeetings',
-    'com.microsoft.teams1',
-    'com.discord1',
-    'com.skype.raider1',
-    'com.google.android.apps.meetings1',       // Google Meet
-    'com.bandicam.android1',                    // Bandicam recorder
-    'com.nll.stf1',                             // Screen Stream Mirroring
+    'com.teamviewer.teamviewer.market.mobile',
+    'com.anydesk.anydeskandroid',
+    'us.zoom.videomeetings',
+    'com.microsoft.teams',
+    'com.discord',
+    'com.skype.raider',
+    'com.google.android.apps.meetings',        // Google Meet
+    'com.bandicam.android',                     // Bandicam recorder
+    'com.nll.stf',                               // Screen Stream Mirroring
   ];
 
   /// Scans Android devices for known blacklisted screen sharing/casting packages.

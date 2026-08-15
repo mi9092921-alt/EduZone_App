@@ -211,7 +211,6 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
       await _playFormat(format, seekToCurrent: seekToCurrent);
     } catch (e, st) {
       debugPrint('🔴 [_refreshAndPlay] Exception type: ${e.runtimeType}');
-      debugPrint('🔴 [_refreshAndPlay] Exception: $e');
       debugPrint('🔴 [_refreshAndPlay] StackTrace:\n$st');
       if (!mounted || _loadedVideoId != videoId) return;
       setState(() {
@@ -299,7 +298,9 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
         }),
       );
     } catch (e, st) {
-      debugPrint('[_playFormat] quality=${format.quality} failed: $e');
+      debugPrint(
+        '[_playFormat] quality=${format.quality} failed: ${e.runtimeType}',
+      );
       debugPrint('[_playFormat] StackTrace:\n$st');
       if (mounted && requestId == _playRequestId) {
         setState(() {
@@ -315,7 +316,7 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
   }
 
   void _handlePlayerError(dynamic error) {
-    debugPrint('🎥 Player4 error occurred: $error');
+    debugPrint('🎥 Player4 error occurred: ${error.runtimeType}');
     if (!mounted) return;
 
     final videoId = _loadedVideoId;

@@ -370,13 +370,13 @@ class DownloadRepositoryImpl implements DownloadRepository {
       try {
         await _downloadManager.cancelDownload(managerDownloadId);
       } catch (e) {
-        debugPrint('⚠️ Error cancelling download in manager: $e');
+        debugPrint('⚠️ Error cancelling download in manager: ${e.runtimeType}');
       }
 
       try {
         await _localDataSource.updateDownloadStatus(downloadId, 'failed');
       } catch (e) {
-        debugPrint('⚠️ Error updating download status: $e');
+        debugPrint('⚠️ Error updating download status: ${e.runtimeType}');
       }
 
       final downloadData = await _localDataSource.getDownloadById(downloadId);
@@ -389,7 +389,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       try {
         await _encryptionService.deleteKey(downloadId);
       } catch (e) {
-        debugPrint('⚠️ Error deleting key: $e');
+        debugPrint('⚠️ Error deleting key: ${e.runtimeType}');
       }
 
       await _localDataSource.deleteDownload(downloadId);
@@ -398,13 +398,13 @@ class DownloadRepositoryImpl implements DownloadRepository {
       try {
         await _executionService.closeProgressController(downloadId);
       } catch (e) {
-        debugPrint('⚠️ Error closing progress controller: $e');
+        debugPrint('⚠️ Error closing progress controller: ${e.runtimeType}');
       }
 
       try {
         await DownloadNotificationHelper.cancel(downloadId: downloadId);
       } catch (e) {
-        debugPrint('⚠️ Error cancelling notification: $e');
+        debugPrint('⚠️ Error cancelling notification: ${e.runtimeType}');
       }
 
       return const Right(null);
@@ -421,13 +421,13 @@ class DownloadRepositoryImpl implements DownloadRepository {
       try {
         await _localDataSource.deleteEncryptedFile(encryptedPath);
       } catch (e) {
-        debugPrint('⚠️ Error deleting encrypted file: $e');
+        debugPrint('⚠️ Error deleting encrypted file: ${e.runtimeType}');
       }
 
       try {
         await _localDataSource.deleteEncryptedFile('$encryptedPath.tmp');
       } catch (e) {
-        debugPrint('⚠️ Error deleting temp file: $e');
+        debugPrint('⚠️ Error deleting temp file: ${e.runtimeType}');
       }
 
       // The chunked-container sidecar index (see ChunkIndex/loadOrBuildIndex
@@ -437,7 +437,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       try {
         await _localDataSource.deleteEncryptedFile('$encryptedPath.idx');
       } catch (e) {
-        debugPrint('⚠️ Error deleting index sidecar: $e');
+        debugPrint('⚠️ Error deleting index sidecar: ${e.runtimeType}');
       }
     }
 
@@ -445,19 +445,19 @@ class DownloadRepositoryImpl implements DownloadRepository {
       try {
         await _localDataSource.deleteEncryptedFile(audioPath);
       } catch (e) {
-        debugPrint('⚠️ Error deleting audio file: $e');
+        debugPrint('⚠️ Error deleting audio file: ${e.runtimeType}');
       }
 
       try {
         await _localDataSource.deleteEncryptedFile('$audioPath.tmp');
       } catch (e) {
-        debugPrint('⚠️ Error deleting audio temp file: $e');
+        debugPrint('⚠️ Error deleting audio temp file: ${e.runtimeType}');
       }
 
       try {
         await _localDataSource.deleteEncryptedFile('$audioPath.idx');
       } catch (e) {
-        debugPrint('⚠️ Error deleting audio index sidecar: $e');
+        debugPrint('⚠️ Error deleting audio index sidecar: ${e.runtimeType}');
       }
     }
   }
@@ -478,7 +478,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       try {
         await _encryptionService.deleteKey(downloadId);
       } catch (e) {
-        debugPrint('⚠️ Error deleting encryption key: $e');
+        debugPrint('⚠️ Error deleting encryption key: ${e.runtimeType}');
       }
 
       await _localDataSource.deleteDownload(downloadId);
@@ -487,13 +487,13 @@ class DownloadRepositoryImpl implements DownloadRepository {
       try {
         await _executionService.closeProgressController(downloadId);
       } catch (e) {
-        debugPrint('⚠️ Error closing progress controller: $e');
+        debugPrint('⚠️ Error closing progress controller: ${e.runtimeType}');
       }
 
       try {
         await DownloadNotificationHelper.cancel(downloadId: downloadId);
       } catch (e) {
-        debugPrint('⚠️ Error cancelling notification: $e');
+        debugPrint('⚠️ Error cancelling notification: ${e.runtimeType}');
       }
 
       return const Right(null);

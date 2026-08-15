@@ -1,6 +1,20 @@
 -- AUTO-GENERATED FROM CANONICAL SOURCE
 -- Source of truth: ../../Eduzone_schema_v13.sql
 -- Normalization pass #3 ownership rules applied.
+
+ALTER TABLE public.security_incidents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_incidents FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS security_incidents_insert ON public.security_incidents;
+CREATE POLICY security_incidents_insert ON public.security_incidents
+  FOR INSERT TO authenticated
+  WITH CHECK (user_id = (select auth.uid()));
+
+DROP POLICY IF EXISTS security_incidents_admin_select ON public.security_incidents;
+CREATE POLICY security_incidents_admin_select ON public.security_incidents
+  FOR SELECT TO authenticated
+  USING (public.is_admin_with_session_validation());
+
 ALTER TABLE public.setting_definitions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS setting_definitions_admin_all ON public.setting_definitions;

@@ -82,12 +82,12 @@ class AppInitializer {
         CleanupScheduler.initialize()
             .then((_) => CleanupScheduler.scheduleCleanup())
             .catchError((Object e) {
-          debugPrint('⚠️ CleanupScheduler init failed: $e');
+          debugPrint('⚠️ CleanupScheduler init failed: ${e.runtimeType}');
         }),
       );
       unawaited(
         FileDownloader().start().catchError((Object e) {
-          debugPrint('⚠️ FileDownloader start failed: $e');
+          debugPrint('⚠️ FileDownloader start failed: ${e.runtimeType}');
         }),
       );
 
@@ -104,13 +104,16 @@ class AppInitializer {
             StorageService(secureStorage: const FlutterSecureStorage()),
           ),
         ).reconcileInterruptedDownloads().catchError((Object e) {
-          debugPrint('⚠️ Offline crash-recovery reconciliation failed: $e');
+          debugPrint(
+            '⚠️ Offline crash-recovery reconciliation failed: '
+            '${e.runtimeType}',
+          );
           return 0;
         }),
       );
 
     } catch (e) {
-      debugPrint('CRITICAL INITIALIZATION ERROR: $e');
+      debugPrint('CRITICAL INITIALIZATION ERROR: ${e.runtimeType}');
       // Re-throw to be caught by runZonedGuarded
       rethrow;
     }

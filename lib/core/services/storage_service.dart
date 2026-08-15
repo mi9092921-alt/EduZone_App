@@ -442,7 +442,10 @@ class StorageService {
       _cachedHmacKey = key;
       return key;
     } catch (e) {
-      debugPrint('[StorageService] HMAC key unavailable, signing skipped: $e');
+      debugPrint(
+        '[StorageService] HMAC key unavailable, signing skipped: '
+        '${e.runtimeType}',
+      );
       return null;
     }
   }

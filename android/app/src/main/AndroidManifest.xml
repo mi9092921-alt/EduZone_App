@@ -20,6 +20,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:allowBackup="false"
         android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
@@ -52,6 +53,7 @@
         <!-- Background Downloader Foreground Service (required on Android 14+ / API 34) -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:exported="false"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
 

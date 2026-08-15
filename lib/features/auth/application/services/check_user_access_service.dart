@@ -193,7 +193,7 @@ class CheckUserAccessService {
       // failure here directly affects whether revocation/version-mismatch
       // detection is actually running.
       GlobalErrorHandler.logError(e, st);
-      debugPrint('[Security] Check error: $e');
+      debugPrint('[Security] Check error: ${e.runtimeType}');
     }
   }
 

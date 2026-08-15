@@ -1,6 +1,26 @@
 -- AUTO-GENERATED FROM CANONICAL SOURCE
 -- Source of truth: ../../Eduzone_schema_v13.sql
 -- Normalization pass #3 ownership rules applied.
+
+-- Security telemetry written by the authenticated client when a local
+-- integrity/RASP control (SecurityService, freeRASP) detects a threat.
+-- This is telemetry only and is never an authorization boundary — no
+-- client-facing authorization decision may depend on rows in this table.
+-- No UPDATE/DELETE policy exists for authenticated users; rows are
+-- append-only from the client's perspective.
+CREATE TABLE IF NOT EXISTS public.security_incidents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT auth.uid(),
+  threat text NOT NULL CHECK (length(btrim(threat)) BETWEEN 1 AND 128),
+  platform text NOT NULL CHECK (platform IN ('android', 'ios', 'linux', 'macos', 'windows', 'fuchsia')),
+  platform_version text,
+  detected_at timestamptz NOT NULL DEFAULT now(),
+  is_release_build boolean NOT NULL DEFAULT false,
+  device_fingerprint text,
+  app_version text,
+  app_build_number text
+);
+
 -- ============================================================================
 -- 000_core_settings.sql
 -- ============================================================================

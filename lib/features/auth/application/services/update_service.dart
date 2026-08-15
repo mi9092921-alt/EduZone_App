@@ -48,7 +48,10 @@ class UpdateService {
       return _toUpdateInfo(result);
     } catch (e) {
       // Fail-safe: network/parse errors should never block the user.
-      debugPrint('[UpdateService] Update check failed (non-critical): $e');
+      debugPrint(
+        '[UpdateService] Update check failed (non-critical): '
+        '${e.runtimeType}',
+      );
       return const UpdateInfo.upToDate(latestVersion: '0.0.0');
     }
   }

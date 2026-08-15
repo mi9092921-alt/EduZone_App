@@ -400,7 +400,9 @@ class Auth extends _$Auth {
             localDataSource: ref.read(downloadLocalDataSourceProvider),
             encryptionService: ref.read(encryptionServiceProvider),
           ).purgeDownloadsForOtherAccounts(appUser.id).catchError((e) {
-            debugPrint('[Auth] Offline downloads purge failed: $e');
+            debugPrint(
+              '[Auth] Offline downloads purge failed: ${e.runtimeType}',
+            );
             return 0;
           }),
         );

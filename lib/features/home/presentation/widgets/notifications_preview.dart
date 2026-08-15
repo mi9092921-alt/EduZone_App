@@ -64,7 +64,7 @@ class NotificationsPreview extends ConsumerWidget {
       loading: () =>
           const SizedBox.shrink(), // Silent loading for dash consistency
       error: (e, s) {
-        debugPrint('[NotificationsPreview] Error: $e');
+        debugPrint('[NotificationsPreview] Error: ${e.runtimeType}');
         return const SizedBox.shrink();
       },
     );

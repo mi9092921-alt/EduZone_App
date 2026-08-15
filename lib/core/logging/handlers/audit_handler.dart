@@ -54,7 +54,10 @@ class AuditHandler extends EventHandler {
       _syncEngine.onEntryAdded();
     } catch (e) {
       // Fallback: write unencrypted if encryption fails
-      debugPrint('[AuditHandler] Encryption failed, writing unencrypted: $e');
+      debugPrint(
+        '[AuditHandler] Encryption failed, writing unencrypted: '
+        '${e.runtimeType}',
+      );
       final entry = LogEntry.fromEvent(event);
       _queue.add(entry);
       _syncEngine.onEntryAdded();

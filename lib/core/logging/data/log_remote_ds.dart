@@ -29,7 +29,7 @@ class LogRemoteDataSource {
       debugPrint('[LogRemoteDS] Supabase insert failed: ${e.message}');
       return false;
     } catch (e) {
-      debugPrint('[LogRemoteDS] Unexpected error: $e');
+      debugPrint('[LogRemoteDS] Unexpected error: ${e.runtimeType}');
       return false;
     }
   }

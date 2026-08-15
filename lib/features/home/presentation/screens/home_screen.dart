@@ -91,7 +91,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
             loading: () => const ResumeCard(isLoading: true),
             error: (err, stack) {
-              debugPrint('[HomeScreen] Error loading resume lesson: $err');
+              debugPrint('[HomeScreen] Error loading resume lesson: ${err.runtimeType}');
               return const SizedBox.shrink();
             },
           ),

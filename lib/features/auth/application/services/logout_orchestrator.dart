@@ -61,7 +61,9 @@ class LogoutOrchestrator {
       // session/token_version isn't revoked server-side either — worth
       // knowing the frequency of, not just swallowing.
       GlobalErrorHandler.logError(e, st);
-      debugPrint('[LogoutOrchestrator] server_revocation failed: $e');
+      debugPrint(
+        '[LogoutOrchestrator] server_revocation failed: ${e.runtimeType}',
+      );
       failedSteps.add('server_revocation');
     }
 
@@ -133,7 +135,10 @@ class LogoutOrchestrator {
       // come back up still "logged in" after a restart despite the user
       // having explicitly logged out. High value to know about.
       GlobalErrorHandler.logError(e, st);
-      debugPrint('[LogoutOrchestrator] Supabase local signOut failed: $e');
+      debugPrint(
+        '[LogoutOrchestrator] Supabase local signOut failed: '
+        '${e.runtimeType}',
+      );
       // Even if this fails, continue wiping everything else.
     }
 
@@ -156,7 +161,9 @@ class LogoutOrchestrator {
       // to wipe on logout is a real security-relevant event, not just an
       // engineering curiosity — worth surfacing, not only printing.
       GlobalErrorHandler.logError(e, st);
-      debugPrint('[LogoutOrchestrator] Secure storage wipe failed: $e');
+      debugPrint(
+        '[LogoutOrchestrator] Secure storage wipe failed: ${e.runtimeType}',
+      );
     }
 
     // ── Step 4: Wipe SharedPreferences (preserve user prefs) ────────────────
@@ -169,7 +176,9 @@ class LogoutOrchestrator {
       }
     } catch (e, st) {
       GlobalErrorHandler.logError(e, st);
-      debugPrint('[LogoutOrchestrator] SharedPreferences wipe failed: $e');
+      debugPrint(
+        '[LogoutOrchestrator] SharedPreferences wipe failed: ${e.runtimeType}',
+      );
     }
   }
 }

@@ -99,7 +99,7 @@ class SecurityService with WidgetsBindingObserver {
     _logThreatToSupabase(threatName);
 
     if (!_enforceThreatTermination) {
-      debugPrint('[SECURITY][THREAT DETECTED]: $threatName');
+      debugPrint('[SECURITY] threat detected; enforcement disabled for this build.');
       return;
     }
 
@@ -113,7 +113,7 @@ class SecurityService with WidgetsBindingObserver {
     try {
       await action();
     } catch (e, stack) {
-      debugPrint('[SECURITY] $name failed during startup: $e');
+      debugPrint('[SECURITY] $name failed during startup: ${e.runtimeType}');
       debugPrintStack(stackTrace: stack);
       _logThreatToSupabase('Security Startup Step Failed: $name');
     }
@@ -167,8 +167,8 @@ class SecurityService with WidgetsBindingObserver {
       // Supabase not initialized yet; keep locally instead of dropping it.
       debugPrint('[SECURITY] Supabase not ready for logging.');
       _bufferThreatLocally(payload, status: 'supabase_not_ready');
-    } catch (e) {
-      _bufferThreatLocally(payload, status: 'unknown_error', error: e.toString());
+    } catch (_) {
+      _bufferThreatLocally(payload, status: 'unknown_error');
     }
   }
 
@@ -180,8 +180,8 @@ class SecurityService with WidgetsBindingObserver {
         .from('security_incidents')
         .insert(payload)
         .then((_) {})
-        .catchError((e) {
-          _bufferThreatLocally(payload, status: 'insert_failed', error: e.toString());
+        .catchError((_) {
+          _bufferThreatLocally(payload, status: 'insert_failed');
         });
   }
 
@@ -197,14 +197,13 @@ class SecurityService with WidgetsBindingObserver {
   static void _bufferThreatLocally(
     Map<String, dynamic> payload, {
     required String status,
-    String? error,
   }) {
-    final entry = {...payload, 'log_status': status, 'log_error': ?error};
+    final entry = {...payload, 'log_status': status};
     _localThreatBuffer.add(entry);
     if (_localThreatBuffer.length > _localThreatBufferMax) {
       _localThreatBuffer.removeAt(0);
     }
-    debugPrint('[SECURITY][UNSYNCED THREAT] $entry');
+    debugPrint('[SECURITY] threat event buffered locally: $status');
   }
 
   /// Unsynced threat events kept in memory for this app session — useful
