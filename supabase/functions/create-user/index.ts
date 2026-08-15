@@ -90,21 +90,74 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "User creation failed silently" }), { status: 200, headers: corsHeaders });
     }
 
-    // 5. Update or Insert the public.users record
-    const { error: updateError } = await supabaseAdmin
-      .from("users")
-      .upsert({
-        id: authData.user.id,
-        email,
-        first_name,
-        last_name,
-        phone,
-        primary_role,
-        tenant_id: adminProfile.tenant_id,
-      });
+    // 5. Update or Insert the public.users record.
+    //
+    // auth.users (step 4, above) and public.users (here) are two separate
+    // API calls against two different systems (GoTrue admin API vs. a plain
+    // Postgres upsert) — there is no cross-system transaction that can make
+    // them atomic. Without a rollback path, a failure here (transient DB
+    // error, connection blip, constraint violation) leaves a permanently
+    // orphaned auth user behind: valid login credentials with no profile
+    // row. That orphan is exactly what surfaces client-side in the Flutter
+    // app's login() as `ServerException('User profile not found')`, with no
+    // recovery path for the affected account (re-running create-user for
+    // the same email then fails too, since the auth user already exists).
+    //
+    // Mitigate with a bounded retry for transient failures, and — if the
+    // upsert still fails — a compensating rollback that deletes the just
+    // -created auth user, so create-user is all-or-nothing from the
+    // caller's perspective instead of silently leaving a broken account.
+    const maxProfileUpsertAttempts = 3;
+    let updateError: { message: string } | null = null;
+    for (let attempt = 1; attempt <= maxProfileUpsertAttempts; attempt++) {
+      const { error } = await supabaseAdmin
+        .from("users")
+        .upsert({
+          id: authData.user.id,
+          email,
+          first_name,
+          last_name,
+          phone,
+          primary_role,
+          tenant_id: adminProfile.tenant_id,
+        });
+      updateError = error;
+      if (!updateError) break;
+      if (attempt < maxProfileUpsertAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+      }
+    }
 
     if (updateError) {
-      return new Response(JSON.stringify({ error: "User profile sync error: " + updateError.message }), { status: 200, headers: corsHeaders });
+      // Compensating rollback: do not leave an orphaned auth-only account
+      // behind. Best-effort — if this itself fails, the orphan does still
+      // exist and needs manual admin cleanup, but we surface that clearly
+      // instead of silently returning "success: false" with no signal.
+      const { error: rollbackError } = await supabaseAdmin.auth.admin.deleteUser(
+        authData.user.id,
+      );
+
+      if (rollbackError) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "User profile sync error: " + updateError.message +
+              ". Rollback of the auth account ALSO failed (" + rollbackError.message +
+              "): userId=" + authData.user.id + " is an ORPHANED auth account " +
+              "(valid login, no profile) and requires manual admin cleanup " +
+              "before this email can be reused.",
+          }),
+          { status: 200, headers: corsHeaders },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          error: "User profile sync error: " + updateError.message +
+            ". The account was rolled back — safe to retry create-user with the same email.",
+        }),
+        { status: 200, headers: corsHeaders },
+      );
     }
 
     return new Response(JSON.stringify({ success: true, userId: authData.user.id }), {

@@ -40,7 +40,15 @@
 
 ### Known Issues (وقت كتابة هذا السجل)
 - فحص freeRASP يتطلب تزويد المفاتيح (`SECURITY_ANDROID_SIGNING_HASH`, `SECURITY_IOS_TEAM_ID`) عبر `--dart-define-from-file=.env.security` في بناء الإنتاج.
-- بناء الإصدار (Release) لأندرويد موقّع بمفتاح Debug مؤقتًا بانتظار keystore إنتاج.
+- ~~بناء الإصدار (Release) لأندرويد موقّع بمفتاح Debug مؤقتًا بانتظار keystore إنتاج.~~
++  **محدّث (تدقيق الإنتاج):** لم يعد هذا صحيحًا. `android/app/build.gradle.kts`
++  يرفض الآن بناء أي `release` بدون `android/key.properties` صالح
++  (`GradleException: "Production release builds require android/key.properties..."`),
++  أي أن fallback إلى مفتاح Debug لم يعد ممكنًا فعليًا — تحقّق ثابت `verified`
++  من قراءة الكود، وليس افتراضًا (`assumed`). ما لم يُتحقق منه بعد فعليًا هو
++  تنفيذ بناء `release` كامل موقّع بـ keystore إنتاج حقيقي على بيئة CI/CD
++  (`blocked by environment`: لا يوجد keystore إنتاج/رنر متاح في جلسة هذا التدقيق).
+
 - **CI — خطوة "Build APK (Staging)"**: هذه الخطوة في `.github/workflows/ci.yml` تُتخطّى عمدًا (`exit 0`) إذا لم يكن ملف `.env.staging` متوفرًا في بيئة الـ Runner، وذلك بشكل مقصود لتفادي فشل الـ CI للمساهمين الذين لا يملكون صلاحية الوصول لأسرار المشروع (Fork/Contributor PRs). **الأثر**: نجاح job الـ `quality` في CI **لا يعني** أن بناء الـ APK الفعلي (Staging) قد تم التحقق منه؛ فقط يعني نجاح `flutter analyze` و`flutter test`. للتحقق الفعلي من قابلية البناء، يجب تفعيل GitHub Secret باسم `ENV_STAGING` (محتوى ملف `.env.staging`) في إعدادات المستودع (`Settings → Secrets and variables → Actions`)، ثم تعديل الخطوة لإعادة توليد الملف من السر قبل خطوة البناء.
 
 ---
