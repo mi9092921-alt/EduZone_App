@@ -53,12 +53,19 @@ REVOKE ALL ON ALL TABLES IN SCHEMA audit FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ALL TABLES IN SCHEMA internal FROM PUBLIC, anon, authenticated;
 
 -- Core read access
-GRANT SELECT ON public.regions                  TO authenticated, anon;
-GRANT SELECT ON public.tenants                  TO authenticated, anon;
+GRANT SELECT ON public.regions                  TO authenticated;
+-- anon intentionally excluded: RLS policy regions_select is scoped `TO authenticated`
+-- only, so anon never sees rows anyway; the grant was dead/misleading privilege
+-- surface on a table an anonymous user should never be able to query at all.
+GRANT SELECT ON public.tenants                  TO authenticated;
+-- anon intentionally excluded: tenants_anon_deny explicitly denies anon, and
+-- tenants_select_merged is scoped `TO authenticated` only; the grant was dead.
 GRANT SELECT ON public.users                    TO authenticated;
 GRANT SELECT ON public.roles, public.permissions, public.role_permissions, public.user_roles TO authenticated;
 GRANT SELECT ON public.settings_kv, public.settings_cache, public.security_settings TO authenticated, service_role;
-GRANT SELECT ON public.feature_flags, public.feature_flag_roles, public.feature_flag_users TO authenticated, anon;
+GRANT SELECT ON public.feature_flags, public.feature_flag_roles, public.feature_flag_users TO authenticated;
+-- anon intentionally excluded: feature_flags_select / feature_flag_roles_select /
+-- feature_flag_users_select are all scoped `TO authenticated` only; the grant was dead.
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.tenant_feature_flags TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.courses, public.course_prerequisites, public.course_learning_objectives, public.sections, public.lessons TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.lesson_contents TO authenticated;
@@ -76,7 +83,11 @@ GRANT SELECT, INSERT, UPDATE ON public.user_last_location TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.activity_logs, public.audit_chain_state TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.notifications, public.notification_targets TO authenticated;
 GRANT SELECT, UPDATE ON public.user_notifications TO authenticated;
-GRANT SELECT ON public.user_permission_cache    TO authenticated, anon, service_role;
+GRANT SELECT ON public.user_permission_cache    TO authenticated, service_role;
+-- anon intentionally excluded: user_permission_cache_select_own is scoped
+-- `TO authenticated` only and this table holds per-user role/permission data;
+-- the grant was dead but unnecessarily widened the blast radius of any future
+-- RLS policy mistake on a sensitive table.
 GRANT SELECT ON public.constants TO authenticated;
 GRANT SELECT ON public.user_validity_cache TO authenticated, service_role;
 GRANT SELECT ON public.mv_course_stats TO authenticated, service_role, anon;
@@ -256,12 +267,19 @@ GRANT EXECUTE ON FUNCTION public.encrypt_pii(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.worker_control_user_account(uuid, uuid, text, text, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.worker_terminate_user_sessions(uuid, uuid, text) TO service_role;
 -- Core read access
-GRANT SELECT ON public.regions                  TO authenticated, anon;
-GRANT SELECT ON public.tenants                  TO authenticated, anon;
+GRANT SELECT ON public.regions                  TO authenticated;
+-- anon intentionally excluded: RLS policy regions_select is scoped `TO authenticated`
+-- only, so anon never sees rows anyway; the grant was dead/misleading privilege
+-- surface on a table an anonymous user should never be able to query at all.
+GRANT SELECT ON public.tenants                  TO authenticated;
+-- anon intentionally excluded: tenants_anon_deny explicitly denies anon, and
+-- tenants_select_merged is scoped `TO authenticated` only; the grant was dead.
 GRANT SELECT ON public.users                    TO authenticated;
 GRANT SELECT ON public.roles, public.permissions, public.role_permissions, public.user_roles TO authenticated;
 GRANT SELECT ON public.settings_kv, public.settings_cache, public.security_settings TO authenticated, service_role;
-GRANT SELECT ON public.feature_flags, public.feature_flag_roles, public.feature_flag_users TO authenticated, anon;
+GRANT SELECT ON public.feature_flags, public.feature_flag_roles, public.feature_flag_users TO authenticated;
+-- anon intentionally excluded: feature_flags_select / feature_flag_roles_select /
+-- feature_flag_users_select are all scoped `TO authenticated` only; the grant was dead.
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.tenant_feature_flags TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.courses, public.course_prerequisites, public.course_learning_objectives, public.sections, public.lessons TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.lesson_contents TO authenticated;
@@ -279,7 +297,11 @@ GRANT SELECT, INSERT, UPDATE ON public.user_last_location TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.activity_logs, public.audit_chain_state TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.notifications, public.notification_targets TO authenticated;
 GRANT SELECT, UPDATE ON public.user_notifications TO authenticated;
-GRANT SELECT ON public.user_permission_cache    TO authenticated, anon, service_role;
+GRANT SELECT ON public.user_permission_cache    TO authenticated, service_role;
+-- anon intentionally excluded: user_permission_cache_select_own is scoped
+-- `TO authenticated` only and this table holds per-user role/permission data;
+-- the grant was dead but unnecessarily widened the blast radius of any future
+-- RLS policy mistake on a sensitive table.
 GRANT SELECT ON public.constants TO authenticated;
 GRANT SELECT ON public.user_validity_cache TO authenticated, service_role;
 GRANT SELECT ON public.mv_course_stats TO authenticated, service_role, anon;
