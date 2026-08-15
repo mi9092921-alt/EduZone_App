@@ -7,7 +7,7 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version-file: pubspec.yaml
@@ -105,7 +105,7 @@ jobs:
   secret_scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Secret scan (Gitleaks)
@@ -116,7 +116,7 @@ jobs:
   dependency_check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version-file: pubspec.yaml
@@ -135,7 +135,7 @@ jobs:
     # attempting to run the suite with no supported device.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version-file: pubspec.yaml
@@ -160,7 +160,7 @@ jobs:
     # comparator to accommodate Linux rasterization differences.
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version-file: pubspec.yaml
