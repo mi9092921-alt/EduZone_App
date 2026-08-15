@@ -154,8 +154,19 @@ jobs:
           profile: pixel_2
           target: google_apis
           force-avd-creation: true
-          disable-animations: true
-          script: flutter test integration_test/app_test.dart -d emulator-5554
+          # The emulator already boots on the hosted Linux runner, but the
+          # action's post-boot animation settings can race the ADB transport
+          # and terminate an otherwise healthy emulator with a broken pipe.
+          # These integration tests do not require animations to be disabled.
+          disable-animations: false
+          emulator-boot-timeout: 1200
+          emulator-options: >-
+            -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
+            -no-boot-anim -no-metrics
+          script: |
+            adb wait-for-device
+            adb shell getprop sys.boot_completed
+            flutter test integration_test/app_test.dart -d emulator-5554
 
   golden_test:
     # Golden images are strict regression evidence. They run on the Windows
