@@ -853,6 +853,44 @@ BEGIN
   );
 END $$;
 
+-- Check 21: Rate-limit RPC has explicit least-privilege grants.
+DO $$
+DECLARE
+  v_auth boolean;
+  v_anon boolean;
+  v_deprecated_auth boolean;
+BEGIN
+  SELECT has_function_privilege(
+    'authenticated',
+    'public.check_rate_limit(text, uuid, inet, uuid)',
+    'EXECUTE'
+  ) INTO v_auth;
+
+  SELECT has_function_privilege(
+    'anon',
+    'public.check_rate_limit(text, uuid, inet, uuid)',
+    'EXECUTE'
+  ) INTO v_anon;
+
+  SELECT has_function_privilege(
+    'authenticated',
+    'public.check_rate_limit(text, integer, integer)',
+    'EXECUTE'
+  ) INTO v_deprecated_auth;
+
+  INSERT INTO validation_results VALUES (
+    'Rate-Limit RPC Least Privilege',
+    CASE
+      WHEN v_auth AND NOT v_anon AND NOT v_deprecated_auth
+        THEN 'PASS'
+      ELSE 'FAIL'
+    END,
+    'check_rate_limit(authenticated)= ' || v_auth
+      || ', anon= ' || v_anon
+      || ', deprecated overload authenticated= ' || v_deprecated_auth
+  );
+END $$;
+
 -- Display Results
 SELECT * FROM validation_results ORDER BY check_name;
 

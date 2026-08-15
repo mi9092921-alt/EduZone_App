@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
-const SUPABASE_SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE") || "";
+const SUPABASE_SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const EXTERNAL_API_URL = Deno.env.get("VIDEO_API_URL") || "";
 const EXTERNAL_API_KEY = Deno.env.get("VIDEO_API_KEY") || "";
 const REPLIT_TIMEOUT_MS = Number(Deno.env.get("VIDEO_REPLIT_TIMEOUT_MS") || 8000);
@@ -197,9 +197,20 @@ serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
-    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const bearerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (!bearerToken) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${bearerToken}` } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
     const { data: authData, error: authError } = await authClient.auth.getUser(
-      authHeader.replace(/^Bearer\s+/i, ""),
+      bearerToken,
     );
     if (authError || !authData.user) {
       return new Response(

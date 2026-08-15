@@ -251,6 +251,9 @@ GRANT EXECUTE ON FUNCTION public.assert_valid_session() TO authenticated, servic
 
 REVOKE EXECUTE ON FUNCTION public.current_user_session() FROM anon;
 GRANT EXECUTE ON FUNCTION public.current_user_session() TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.check_rate_limit(text, uuid, inet, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.check_rate_limit(text, uuid, inet, uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.check_rate_limit(text, integer, integer) FROM PUBLIC, anon, authenticated;
 
 -- 3. ADMIN ONLY - Revoked from anon AND authenticated; granted to service_role only
 REVOKE EXECUTE ON FUNCTION public.is_current_user_super_admin() FROM anon;

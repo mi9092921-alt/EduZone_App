@@ -100,6 +100,7 @@ scratch/
 scripts/
 CourseVideoPage  media_kit.txt
 supabase/deploy_functions.ps1
+supabase/deploy_schema.js
 test/datasource_instructor_test.dart
 test/get_path_test.dart
 test/inspect_db_test.dart
