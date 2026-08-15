@@ -52,6 +52,19 @@ android/key.properties
 google-services.json
 GoogleService-Info.plist
 supabase/db_url.txt
+# Play Console service-account key — written locally by
+# .github/workflows/deploy.yml's deploy_android job from the
+# PLAY_STORE_JSON_KEY secret. As sensitive as a service-role credential;
+# must never be one `git add -A` away from being committed.
+android/play-store-key.json
+# iOS signing material (App Store Connect API key, distribution
+# certificates, provisioning profiles). Not currently produced by any
+# workflow in this repo (iOS deploy is fail-closed — see deploy.yml), but
+# these are exactly what a local fastlane match / manual signing setup
+# drops on disk, and Section 10 requires they never be committable.
+*.p8
+*.p12
+*.mobileprovision
 # Auto-generated entries
 # Dependencies
 node_modules/

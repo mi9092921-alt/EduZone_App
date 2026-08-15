@@ -90,6 +90,8 @@ jobs:
         run: make check-localizations
       - name: Auth Security Guard
         run: make check-auth-security
+      - name: Config/Secrets Security Guard
+        run: make check-config-security
       - name: Run tests with coverage
         run: flutter test --coverage --exclude-tags golden
       - name: Upload coverage to Codecov

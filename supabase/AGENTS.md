@@ -1,5 +1,16 @@
 # EduZone — Supabase Project Guide for AI Agents
 
+> **⚠️ STALE — commands below reference `seed/00_system_seed_helper.sql`,
+> `seed/01_qa.sql`, and `Eduzone_seed_qa.sql` as separate live files.**
+> None of those paths exist in this repository; system + QA seed data is
+> consolidated into `supabase/schema/11_seed_reference.sql`, which is
+> applied automatically as part of `supabase db push` (see
+> `supabase/config.toml`'s `db.migrations.schema_paths` and
+> `supabase/schema/README.md` for the actual canonical layout). Also: this
+> project is **not** "Production Ready" in the sense the status line below
+> claims — see `SECURITY.md` and `IMPLEMENTATION.md` at the repo root for
+> the real, evidence-based status.
+
 > **Version:** 13.9.0 | **Last Updated:** 2026-06-01 | **Status:** ✅ Production Ready
 
 ---

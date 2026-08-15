@@ -1,4 +1,4 @@
-.PHONY: run-dev run-staging build-prod gen-l10n gen-code analyze check-a11y check-architecture check-rtl check-design-tokens check-performance check-memory-hygiene check-localizations check-auth-security check-all test clean
+.PHONY: run-dev run-staging build-prod gen-l10n gen-code analyze check-a11y check-architecture check-rtl check-design-tokens check-performance check-memory-hygiene check-localizations check-auth-security check-config-security check-all test clean
 
 ## ─── Development ───────────────────────────────────────────────────────
 
@@ -62,7 +62,10 @@ check-localizations:
 check-auth-security:
 	@python3 tool/check_auth_security.py --strict
 
-check-all: check-a11y check-architecture check-provider-cycles check-rtl check-design-tokens check-performance check-memory-hygiene check-localizations check-auth-security
+check-config-security:
+	@python3 tool/check_config_security.py --strict
+
+check-all: check-a11y check-architecture check-provider-cycles check-rtl check-design-tokens check-performance check-memory-hygiene check-localizations check-auth-security check-config-security
 
 test:
 	flutter test --coverage

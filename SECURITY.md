@@ -30,9 +30,22 @@ inline comments (`android/app/build.gradle.kts`, `.env.security.example`).
   `.env.example` intentionally does **not** include
   `SUPABASE_SERVICE_ROLE_KEY` — that key belongs only in trusted
   backend/Edge Function environments, never in code shipped to a device.
-- `.env*`, `*.keystore`, `*.jks`, and `android/key.properties` are
-  git-ignored. `.env.example` and `.env.security.example` are templates
-  only — see `.gitignore` for the exact rules.
+- `.env*`, `*.keystore`, `*.jks`, `android/key.properties`,
+  `android/play-store-key.json` (the Play Console service-account key
+  `deploy.yml` writes locally from the `PLAY_STORE_JSON_KEY` secret), and
+  `*.p8`/`*.p12`/`*.mobileprovision` (iOS signing material, not currently
+  produced by any workflow but git-ignored defensively) are git-ignored.
+  `.env.example` and `.env.security.example` are templates only — see
+  `.gitignore` for the exact rules.
+- `tool/check_config_security.py` (wired into CI as the `Config/Secrets
+  Security Guard` step, and into `make check-all`) statically enforces
+  this: it fails if any of the patterns above lose `.gitignore` coverage,
+  if a real `.env*` file other than the two templates is ever tracked in
+  git, if a `String.fromEnvironment(...)` call gives a non-empty default
+  to a secret-shaped variable name, or if a `supabase/` deploy script
+  references a `.sql` file that doesn't actually exist in the repo. This
+  is a heuristic static check, not a replacement for the `secret_scan`
+  (gitleaks) CI job, which is the authoritative full-history secret scan.
 - Session tokens (`access_token`, `refresh_token`) are stored via
   `flutter_secure_storage` (Android Keystore / iOS Keychain-backed), not
   `SharedPreferences`. See `lib/features/auth/application/services/logout_orchestrator.dart`

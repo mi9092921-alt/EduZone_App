@@ -1,5 +1,12 @@
 # Supabase Directory Structure & File Guide
 
+> **⚠️ STALE — this file describes a `seed/00_system_seed_helper.sql` and
+> a root-level `Eduzone_seed_qa.sql` as live files.** Neither exists in
+> this repository. The current, accurate directory guide is
+> `supabase/schema/README.md`; all active SQL lives under
+> `supabase/schema/`, with legacy/superseded files preserved for reference
+> under `supabase/_archived_patches/`.
+
 ## 📂 Complete File Organization
 
 ```

@@ -1,5 +1,13 @@
 # Supabase Setup Guide - EduZone v13
 
+> **⚠️ STALE — commands below reference `Eduzone_schema_v13.sql` /
+> `Eduzone_seed_qa.sql`, which do not exist in this repository.** The
+> canonical schema is `supabase/schema/*.sql` (apply order + seed data are
+> defined in `supabase/config.toml`'s `db.migrations.schema_paths` and in
+> `supabase/schema/README.md`). For an actually up-to-date deploy flow, use
+> `supabase/deploy.ps1` or `supabase db push` directly instead of the
+> step-by-step commands below.
+
 > **Last Updated:** June 2026  
 > **Status:** Production Ready with Modular Schema Structure
 

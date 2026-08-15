@@ -1,5 +1,11 @@
 # Supabase Schema Quick Start Checklist
 
+> **⚠️ STALE — commands below reference `seed/00_system_seed_helper.sql`
+> and `Eduzone_seed_qa.sql`, which do not exist in this repository.** Use
+> `supabase/deploy.ps1` or `supabase db push` (applies
+> `supabase/schema/*.sql`, including seed data in
+> `11_seed_reference.sql`, in one step) instead of the commands below.
+
 ## ✅ One-Time Setup (Development)
 
 ### Step 1: Start Supabase
