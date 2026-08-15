@@ -263,7 +263,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   CONSTRAINT chk_users_first_name_len CHECK (length(first_name) <= 255),
   CONSTRAINT chk_users_last_name_len  CHECK (length(last_name)  <= 255),
   CONSTRAINT chk_users_email_hash_consistency CHECK (
-    email_hash IS NULL OR email_hash = encode(digest(lower(btrim(email)), 'sha256'), 'hex')
+    email_hash IS NULL OR email_hash = encode(extensions.digest(lower(btrim(email)), 'sha256'), 'hex')
   ),
   CONSTRAINT uq_users_email_tenant UNIQUE (tenant_id, email), -- HIGH-08: Tenant-scoped uniqueness
   CONSTRAINT uq_users_email_hash_tenant UNIQUE (tenant_id, email_hash) -- CRIT-03: Hash uniqueness

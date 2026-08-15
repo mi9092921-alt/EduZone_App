@@ -33,7 +33,7 @@ Each SQL object type has exactly one home. Cross-file duplication is invalid.
 
 ```
 01_extensions → 02_types → 03_tables → 04_constraints → 05_indexes
-→ 06_views → 07_functions → 08_triggers → 09_rls → 10_permissions
+→ 07_functions → 06_views → 08_triggers → 09_rls → 10_permissions
 ```
 
 ## Security & Performance Hardening (June 2026)

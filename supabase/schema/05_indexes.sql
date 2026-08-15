@@ -87,7 +87,6 @@ CREATE INDEX IF NOT EXISTS idx_user_access_cache_active
   WHERE status = 'active';
 
 -- Single-Active Session Fix
--- Single-Active Session Fix
 -- NOTE: A UNIQUE index on (user_id) WHERE is_active cannot be enforced across partitions.
 -- authoritative rule: active_sessions table acts as the enforcer via its user_id PRIMARY KEY.
 DROP INDEX IF EXISTS uq_sessions_active_per_user;
@@ -366,7 +365,6 @@ BEGIN
       ON public.user_notifications (user_id, created_at DESC)
       WHERE is_read = false;
   END IF;
-
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_lesson_access_tenant_time
@@ -432,20 +430,6 @@ CREATE INDEX IF NOT EXISTS idx_enrollments_covering
 -- HIGH-08: Email hash index
 CREATE INDEX IF NOT EXISTS idx_users_email_hash ON public.users(email_hash);
 
--- public.vw_course_stats is a VIEW; tenant filtering uses private.mv_course_stats indexes below.
-
-CREATE INDEX IF NOT EXISTS idx_vw_student_progress_tenant ON public.vw_student_progress_timeline(tenant_id);
-
-CREATE INDEX IF NOT EXISTS idx_vw_daily_revenue_date ON public.vw_daily_revenue(enrollment_date DESC, tenant_id);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_private_vw_course_stats_pk ON private.vw_course_stats(id);
-
-CREATE INDEX IF NOT EXISTS idx_private_vw_course_stats_tenant ON private.vw_course_stats(tenant_id);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_private_vw_student_progress_pk ON private.vw_student_progress_timeline(student_id);
-
-CREATE INDEX IF NOT EXISTS idx_private_vw_student_progress_tenant ON private.vw_student_progress_timeline(tenant_id);
-
 -- MED-07 FIX: Partition-level indexes for sessions and activity logs.
 DO $$
 DECLARE
@@ -459,32 +443,6 @@ BEGIN
   END LOOP;
 END $$;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_user_stats_tenant ON private.mv_user_stats (tenant_id);
-
--- PERF-2A: Composite unique index on mv_course_stats (course_id, tenant_id).
--- This is the strict prerequisite for REFRESH MATERIALIZED VIEW CONCURRENTLY:
--- PostgreSQL requires a unique index that covers every column in the GROUP BY
--- clause (c.id, c.tenant_id). The single-column (course_id) index alone is
--- insufficient when tenant_id is part of the projection.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_course_stats_course_tenant
-  ON private.mv_course_stats (course_id, tenant_id);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_course_stats_course ON private.mv_course_stats (course_id);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_course_stats_tenant ON private.mv_course_stats_tenant (tenant_id);
-
-CREATE INDEX IF NOT EXISTS idx_mv_hourly_activity_48h ON private.mv_hourly_activity_48h (hour_bucket DESC, tenant_id);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_hourly_activity_48h_unique
-  ON private.mv_hourly_activity_48h (hour_bucket, tenant_id, activity_type, risk_level);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_daily_activity_30d ON private.mv_daily_activity_30d (tenant_id, activity_date);
-
--- ############################################################################
--- 3. MINOR IMPROVEMENTS
--- ############################################################################
-
-
 -- 3.1 Add missing indexes for performance
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON public.users (created_at DESC) WHERE deleted_at IS NULL;
 
@@ -496,10 +454,6 @@ CREATE INDEX IF NOT EXISTS idx_enrollments_course_id ON public.enrollments(cours
 
 CREATE INDEX IF NOT EXISTS idx_enrollments_tenant_status ON public.enrollments(tenant_id, status) WHERE deleted_at IS NULL;
 
--- Index removed per MED-PERF-007: redundant over PRIMARY KEY.
--- CREATE INDEX IF NOT EXISTS idx_course_prereqs_lookup ON public.course_prerequisites(course_id, prerequisite_course_id);
-
--- HIGH-01/04: Missing FK and performance indexes
 CREATE INDEX IF NOT EXISTS idx_user_progress_course_id ON public.user_progress(course_id) WHERE deleted_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_devices_user_id ON public.devices(user_id);
@@ -517,7 +471,7 @@ CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id ON public.role_per
 
 CREATE INDEX IF NOT EXISTS idx_user_roles_user_tenant_role ON public.user_roles(user_id, tenant_id, role_id) WHERE is_active = true;
 
--- Partial indexes for highÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Ëœfrequency queries
+-- Partial indexes for high-frequency queries
 CREATE INDEX IF NOT EXISTS idx_users_active_tenant ON public.users (tenant_id, account_status) WHERE deleted_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_enrollments_active_tenant ON public.enrollments (tenant_id, status) WHERE status = 'active';
