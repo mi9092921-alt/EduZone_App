@@ -10,6 +10,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
 import '../../../../core/config/app_config.dart';
+import '../../../../core/error/exceptions.dart';
 import '../../../../core/logging/domain/app_event.dart';
 import '../../../../core/logging/logging_providers.dart';
 import '../../../../core/network/request_cancellation_manager.dart';
@@ -445,7 +446,7 @@ class Auth extends _$Auth {
         }
         _safeSetState(AuthRestricted(status: access.status, access: access));
       }
-    } catch (e) {
+    } catch (e, st) {
       if (!_isCurrentAuthOperation(generation)) return;
 
       // Unlike _initializeSession/verifyAccess, login() has no prior
@@ -453,10 +454,31 @@ class Auth extends _$Auth {
       // to establish a session. Transient vs. non-transient only affects
       // logging clarity here; the outcome is always a mapped error on the
       // login screen.
+      //
+      // AUTH-BUG-01: this used to be `catch (e)` with no stack trace and
+      // no GlobalErrorHandler.logError call at all (unlike every other
+      // catch block in this file), so Sentry only ever received the
+      // string "Login failed: errorGeneric" via the ErrorOccurredEvent
+      // below -- never the real exception type, message/code, or stack
+      // trace. That made a real post-authentication failure (a wrong
+      // RPC contract, a missing grant, an RLS rejection) indistinguishable
+      // from any other unmapped error after the fact. `InvalidCredentialsException`
+      // (and its authless siblings below) are the one case that's an
+      // expected, high-volume, user-caused outcome -- not a system
+      // defect -- so those are deliberately kept out of Sentry to avoid
+      // turning normal typo/forgotten-password attempts into alert noise.
+      // Everything else reaching this catch happened *after*
+      // signInWithPassword() already succeeded, so it is always worth a
+      // full diagnostic record.
       if (AuthErrorPolicy.isTransient(e)) {
         debugPrint('[Auth] Login failed due to transient error: ${e.runtimeType}');
-      } else {
+      } else if (e is InvalidCredentialsException ||
+          e is EmailNotConfirmedException ||
+          e is RateLimitedException) {
         debugPrint('[Auth] Login failed with ${e.runtimeType}');
+      } else {
+        GlobalErrorHandler.logError(e, st);
+        debugPrint('[Auth] Login failed post-authentication with ${e.runtimeType}');
       }
 
       // Sign out from Supabase if we got an exception after successfully logging in.

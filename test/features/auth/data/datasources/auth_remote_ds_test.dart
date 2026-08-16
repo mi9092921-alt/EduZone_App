@@ -154,6 +154,201 @@ void main() {
         throwsA(isA<MaxDevicesReachedException>()),
       );
     });
+
+    // AUTH-BUG-01 regression: before this fix, every post-auth RPC error
+    // that wasn't MAX_DEVICES_REACHED / DEVICE_ALREADY_BOUND / RATE_LIMIT
+    // collapsed into a single indistinguishable
+    // `ServerException('Authentication backend request failed')`, which is
+    // exactly why a missing GRANT (surfacing as 404/permission-denied) and
+    // the users/user_roles RLS recursion (42P17) were both invisible in
+    // logs -- they looked identical to any other failure. These tests
+    // pin the specific `code` each known failure mode must carry so a
+    // future regression is caught by the exception type/code, not just
+    // "some ServerException got thrown".
+    test(
+      'throws ServerException with code AUTH_REQUIRED when RPC rejects '
+      'with AUTH_REQUIRED (validate_user_session() failing server-side)',
+      () async {
+        stubRpcThrows(
+          'bind_device_for_current_user',
+          const PostgrestException(message: 'AUTH_REQUIRED'),
+          withParams: true,
+        );
+
+        await expectLater(
+          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+          throwsA(
+            isA<ServerException>().having(
+              (e) => e.code,
+              'code',
+              'AUTH_REQUIRED',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'throws ServerException with code RPC_NOT_FOUND when PostgREST '
+      'cannot find the function in its schema cache (the exact AUTH-BUG-01 '
+      'symptom: missing EXECUTE grant / stale schema cache surfacing as 404)',
+      () async {
+        stubRpcThrows(
+          'bind_device_for_current_user',
+          const PostgrestException(message: 'function not found', code: 'PGRST202'),
+          withParams: true,
+        );
+
+        await expectLater(
+          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+          throwsA(
+            isA<ServerException>().having(
+              (e) => e.code,
+              'code',
+              'RPC_NOT_FOUND',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'throws ServerException with code RPC_PERMISSION_DENIED on a '
+      'Postgres 42501 permission-denied error (missing EXECUTE grant)',
+      () async {
+        stubRpcThrows(
+          'bind_device_for_current_user',
+          const PostgrestException(message: 'permission denied for function bind_device_for_current_user', code: '42501'),
+          withParams: true,
+        );
+
+        await expectLater(
+          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+          throwsA(
+            isA<ServerException>().having(
+              (e) => e.code,
+              'code',
+              'RPC_PERMISSION_DENIED',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'throws ServerException with code RPC_RLS_RECURSION on a Postgres '
+      '42P17 infinite-recursion error (the exact users/user_roles '
+      'FORCE ROW LEVEL SECURITY symptom from AUTH-BUG-01)',
+      () async {
+        stubRpcThrows(
+          'bind_device_for_current_user',
+          const PostgrestException(
+            message: 'infinite recursion detected in policy for relation "users"',
+            code: '42P17',
+          ),
+          withParams: true,
+        );
+
+        await expectLater(
+          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+          throwsA(
+            isA<ServerException>().having(
+              (e) => e.code,
+              'code',
+              'RPC_RLS_RECURSION',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'throws ServerException with code TENANT_MISMATCH when RPC rejects '
+      'with TENANT_MISMATCH',
+      () async {
+        stubRpcThrows(
+          'bind_device_for_current_user',
+          const PostgrestException(message: 'TENANT_MISMATCH'),
+          withParams: true,
+        );
+
+        await expectLater(
+          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+          throwsA(
+            isA<ServerException>().having(
+              (e) => e.code,
+              'code',
+              'TENANT_MISMATCH',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'throws ServerException with code INVALID_DEVICE_ID when RPC rejects '
+      'with INVALID_DEVICE_ID',
+      () async {
+        stubRpcThrows(
+          'bind_device_for_current_user',
+          const PostgrestException(message: 'INVALID_DEVICE_ID'),
+          withParams: true,
+        );
+
+        await expectLater(
+          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+          throwsA(
+            isA<ServerException>().having(
+              (e) => e.code,
+              'code',
+              'INVALID_DEVICE_ID',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'throws ServerException with code INVALID_FINGERPRINT_VERSION when '
+      'RPC rejects with INVALID_FINGERPRINT_VERSION',
+      () async {
+        stubRpcThrows(
+          'bind_device_for_current_user',
+          const PostgrestException(message: 'INVALID_FINGERPRINT_VERSION'),
+          withParams: true,
+        );
+
+        await expectLater(
+          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+          throwsA(
+            isA<ServerException>().having(
+              (e) => e.code,
+              'code',
+              'INVALID_FINGERPRINT_VERSION',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'falls back to the raw PostgREST error code for anything else, '
+      'never silently losing it',
+      () async {
+        stubRpcThrows(
+          'bind_device_for_current_user',
+          const PostgrestException(message: 'some unmapped failure', code: '99999'),
+          withParams: true,
+        );
+
+        await expectLater(
+          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+          throwsA(
+            isA<ServerException>().having((e) => e.code, 'code', '99999'),
+          ),
+        );
+      },
+    );
   });
 
   group('login', () {

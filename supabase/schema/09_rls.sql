@@ -83,8 +83,25 @@ CREATE POLICY tenants_anon_deny ON public.tenants
 -- CRIT-01 FIX: Integrated RLS policies for users
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE public.users FORCE ROW LEVEL SECURITY;
-
+-- AUTH-BUG-01 FIX: do NOT FORCE row level security on public.users.
+-- RLS is still fully ENABLEd and enforced for every real client role
+-- (`anon`/`authenticated` via PostgREST are never exempt from RLS
+-- regardless of FORCE -- only the table owner/superuser is ever
+-- affected by FORCE). This table is queried internally, as the table
+-- owner, by SECURITY DEFINER helper functions that are themselves
+-- called BY this table's own policies (validate_user_session(),
+-- is_admin_with_session_validation(), get_auth_user_id(),
+-- get_current_tenant_id(), is_user_valid_cached(), etc. all run
+-- `SELECT ... FROM public.users`, and users_select_merged below calls
+-- is_admin_with_session_validation()/get_auth_user_id()). FORCE ROW
+-- LEVEL SECURITY strips the owner-bypass those helpers depend on to
+-- avoid recursion, so the helper's own query re-enters the same
+-- policy that called it -> infinite recursion ("42P17 infinite
+-- recursion detected in policy for relation users"), which broke
+-- every post-authentication step of login (bind_device_for_current_user,
+-- the users profile PATCH, etc.). See also public.user_roles below,
+-- which has the identical pattern and must stay un-forced for the
+-- same reason.
 DROP POLICY IF EXISTS users_select_policy ON public.users;
 
 CREATE POLICY users_select_policy ON public.users
@@ -125,8 +142,17 @@ DROP POLICY IF EXISTS users_delete_policy ON public.users;
 
 ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE public.user_roles FORCE ROW LEVEL SECURITY;
-
+-- AUTH-BUG-01 FIX: same reasoning as public.users above -- do NOT
+-- FORCE row level security here. is_admin_with_session_validation()
+-- (SECURITY DEFINER) queries public.user_roles internally, and
+-- user_roles_select_merged below calls is_admin_with_session_validation()
+-- itself. FORCE would make that internal query re-enter the same
+-- policy -> infinite recursion on public.user_roles, exactly like the
+-- public.users case, and would resurface as soon as anything
+-- (devices_admin_all, sessions_admin_all, etc.) calls
+-- is_admin_with_session_validation() -- which includes the
+-- bind_device_for_current_user() login step. RLS remains fully
+-- ENABLEd and enforced for anon/authenticated either way.
 DROP POLICY IF EXISTS user_roles_select_policy ON public.user_roles;
 
 CREATE POLICY user_roles_select_policy ON public.user_roles
@@ -2420,14 +2446,32 @@ CREATE POLICY admin_only_all ON public.cache_invalidation_queue
   WITH CHECK (false);
 
 -- -- D. FORCE ROW LEVEL SECURITY (patch 14) ------------------------------------
+-- AUTH-BUG-01 FIX: 'users' and 'user_roles' were removed from this list.
+-- Both are queried internally (as the table owner) by SECURITY DEFINER
+-- session/authorization helper functions -- validate_user_session(),
+-- is_admin_with_session_validation(), get_auth_user_id(),
+-- get_current_tenant_id(), is_user_valid_cached(), etc. -- that are
+-- themselves invoked BY policies on these same two tables (and, for
+-- user_roles via is_admin_with_session_validation(), by policies on
+-- many other tables such as devices_admin_all/sessions_admin_all).
+-- FORCE ROW LEVEL SECURITY strips the table-owner bypass those helpers
+-- rely on to avoid recursion, so forcing either table causes
+-- "infinite recursion detected in policy" (42P17) the moment such a
+-- helper is called -- which happens on every login (bind_device /
+-- users profile update / access check). See the ALTER TABLE
+-- statements for public.users and public.user_roles above for the
+-- full explanation. Do not re-add either table to this array without
+-- first verifying every SECURITY DEFINER helper that queries it is no
+-- longer called from that table's own RLS policies (directly or
+-- transitively).
 DO $$
 DECLARE
   _tables text[] := ARRAY[
     'sections', 'lessons', 'lesson_contents',
-    'users', 'sessions', 'devices',
+    'sessions', 'devices',
     'roles', 'permissions', 'role_permissions',
     'settings_kv',
-    'courses', 'enrollments', 'user_roles', 'user_progress',
+    'courses', 'enrollments', 'user_progress',
     'notifications', 'user_notifications',
     'constants', 'user_validity_cache'
   ];
@@ -2442,6 +2486,26 @@ BEGIN
       EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', _t);
     END IF;
   END LOOP;
+
+  -- Defensively un-force in case a prior deploy already applied FORCE
+  -- to these two tables (ALTER DEFAULT/FORCE settings persist across
+  -- deploys; simply omitting them from the array above does not undo
+  -- a FORCE that a previous run of this script already set).
+  IF EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'users' AND c.relkind = 'r'
+  ) THEN
+    EXECUTE 'ALTER TABLE public.users NO FORCE ROW LEVEL SECURITY';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'user_roles' AND c.relkind = 'r'
+  ) THEN
+    EXECUTE 'ALTER TABLE public.user_roles NO FORCE ROW LEVEL SECURITY';
+  END IF;
 END;
 $$;
 

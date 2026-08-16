@@ -295,6 +295,20 @@ GRANT EXECUTE ON FUNCTION public.check_lesson_access(uuid) TO authenticated, ser
 REVOKE EXECUTE ON FUNCTION public.logout_current_user() FROM anon;
 GRANT EXECUTE ON FUNCTION public.logout_current_user() TO authenticated, service_role;
 
+-- AUTH-BUG-01 FIX: bind_device_for_current_user() is called on every
+-- successful login (see AuthRemoteDataSource.bindDevice()) but, like
+-- get_lesson_content/check_lesson_access above before their fix, was
+-- defined with SECURITY DEFINER and never explicitly GRANTed. Because
+-- 10_permissions.sql's default-privilege REVOKE (above) strips the
+-- implicit PUBLIC EXECUTE that PostgreSQL would otherwise grant new
+-- functions, every call landed on PostgREST as "function not found in
+-- schema cache" / permission-denied rather than a real business-rule
+-- rejection. Explicit least-privilege grant, matching the pattern used
+-- for every other user-callable auth RPC in this file: authenticated
+-- can call it, anon and PUBLIC cannot.
+REVOKE ALL ON FUNCTION public.bind_device_for_current_user(text, jsonb, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.bind_device_for_current_user(text, jsonb, text, text) TO authenticated, service_role;
+
 REVOKE EXECUTE ON FUNCTION public.validate_user_session() FROM anon;
 GRANT EXECUTE ON FUNCTION public.validate_user_session() TO authenticated, service_role;
 
@@ -524,6 +538,20 @@ GRANT EXECUTE ON FUNCTION public.check_lesson_access(uuid) TO authenticated, ser
 
 REVOKE EXECUTE ON FUNCTION public.logout_current_user() FROM anon;
 GRANT EXECUTE ON FUNCTION public.logout_current_user() TO authenticated, service_role;
+
+-- AUTH-BUG-01 FIX: bind_device_for_current_user() is called on every
+-- successful login (see AuthRemoteDataSource.bindDevice()) but, like
+-- get_lesson_content/check_lesson_access above before their fix, was
+-- defined with SECURITY DEFINER and never explicitly GRANTed. Because
+-- 10_permissions.sql's default-privilege REVOKE (above) strips the
+-- implicit PUBLIC EXECUTE that PostgreSQL would otherwise grant new
+-- functions, every call landed on PostgREST as "function not found in
+-- schema cache" / permission-denied rather than a real business-rule
+-- rejection. Explicit least-privilege grant, matching the pattern used
+-- for every other user-callable auth RPC in this file: authenticated
+-- can call it, anon and PUBLIC cannot.
+REVOKE ALL ON FUNCTION public.bind_device_for_current_user(text, jsonb, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.bind_device_for_current_user(text, jsonb, text, text) TO authenticated, service_role;
 
 REVOKE EXECUTE ON FUNCTION public.validate_user_session() FROM anon;
 GRANT EXECUTE ON FUNCTION public.validate_user_session() TO authenticated, service_role;

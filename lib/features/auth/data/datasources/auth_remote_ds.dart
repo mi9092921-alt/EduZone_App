@@ -8,6 +8,7 @@ import '../../domain/entities/bind_device_result.dart';
 import '../../domain/entities/user_access.dart';
 import '../../domain/enums/account_status.dart';
 import '../../domain/enums/user_role.dart';
+import '../../../../shared/utils/global_error_handler.dart';
 
 /// Remote data source for all auth-related Supabase operations.
 ///
@@ -104,7 +105,16 @@ class AuthRemoteDataSource {
         throw const ServerException('User profile not found'); // check-ignore
       }
 
-      // Update last_login in the background
+      // Update last_login. This is non-critical bookkeeping/telemetry
+      // (phase E, not phase C security-critical device binding) -- per
+      // project policy it must never be able to fail login. However
+      // AUTH-BUG-01 found this PATCH silently swallowing its error
+      // entirely (`catchError((_) {})`), which hid real failures (e.g.
+      // the same RLS-recursion 42P17 that was breaking
+      // users_update_policy) with no trace anywhere, including Sentry.
+      // Keep the exact same "never throw into login()" contract, but
+      // stop discarding the failure: log it so a real backend problem
+      // here is still visible.
       await _client
           .from('users')
           .update({
@@ -113,7 +123,10 @@ class AuthRemoteDataSource {
           })
           .eq('id', response.user!.id)
           .then((_) {})
-          .catchError((_) {});
+          .catchError((Object e, StackTrace st) {
+            GlobalErrorHandler.logError(e, st);
+            debugPrint('[Auth] last_login update failed: ${e.runtimeType}');
+          });
 
       return _mapUserData(userData);
     } on AuthException catch (e) {
@@ -403,6 +416,73 @@ class AuthRemoteDataSource {
     if (msg.contains('RATE_LIMIT')) {
       return const RateLimitedException();
     }
-    return const ServerException('Authentication backend request failed'); // check-ignore
+
+    // AUTH-BUG-01: the RPCs called on the post-authentication path
+    // (bind_device_for_current_user, check_user_access) can raise several
+    // more server-side conditions beyond the three business-rule cases
+    // above. All of these still map to the same safe, generic UI message
+    // via AuthErrorPolicy (ServerException -> 'errorGeneric') -- none of
+    // them are business outcomes worth surfacing verbatim to the user --
+    // but each carries a distinct `code` so the *real* cause survives in
+    // logs/Sentry instead of collapsing into one indistinguishable
+    // "Authentication backend request failed" for every case. Previously
+    // any of these (including AUTH_REQUIRED, which is raised by
+    // validate_user_session() failing inside bind_device_for_current_user)
+    // fell through to the last line below with no way to tell them apart
+    // after the fact.
+    if (msg.contains('AUTH_REQUIRED')) {
+      return const ServerException(
+        'Post-auth RPC rejected: session failed server-side validation (AUTH_REQUIRED)', // check-ignore
+        'AUTH_REQUIRED', // check-ignore
+      );
+    }
+    if (msg.contains('TENANT_MISMATCH')) {
+      return const ServerException(
+        'Post-auth RPC rejected: tenant mismatch', // check-ignore
+        'TENANT_MISMATCH', // check-ignore
+      );
+    }
+    if (msg.contains('INVALID_FINGERPRINT_VERSION')) {
+      return const ServerException(
+        'Post-auth device binding rejected: invalid fingerprint version', // check-ignore
+        'INVALID_FINGERPRINT_VERSION', // check-ignore
+      );
+    }
+    if (msg.contains('INVALID_DEVICE_ID')) {
+      return const ServerException(
+        'Post-auth device binding rejected: invalid device id', // check-ignore
+        'INVALID_DEVICE_ID', // check-ignore
+      );
+    }
+
+    // PostgREST/PostgreSQL-level failures indicating an RPC contract or
+    // deployment problem (missing function, stale schema cache, missing
+    // EXECUTE grant) rather than a business-rule rejection -- e.g. the
+    // exact 404/42501 class of failure that caused AUTH-BUG-01. These
+    // must never be confused with InvalidCredentialsException, which is
+    // only ever thrown from the signInWithPassword() catch above.
+    if (e.code == 'PGRST202' || e.code == '404') {
+      return ServerException(
+        'RPC contract/deployment failure: function not found in schema cache', // check-ignore
+        'RPC_NOT_FOUND', // check-ignore
+      );
+    }
+    if (e.code == '42501') {
+      return ServerException(
+        'RPC rejected: permission denied (missing EXECUTE grant)', // check-ignore
+        'RPC_PERMISSION_DENIED', // check-ignore
+      );
+    }
+    if (e.code == '42P17') {
+      return ServerException(
+        'RPC rejected: infinite recursion detected in an RLS policy', // check-ignore
+        'RPC_RLS_RECURSION', // check-ignore
+      );
+    }
+
+    return ServerException(
+      'Authentication backend request failed', // check-ignore
+      e.code,
+    );
   }
 }

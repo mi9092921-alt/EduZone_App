@@ -1293,7 +1293,97 @@ BEGIN
   );
 END $$;
 
--- Display Results (includes Check 24 above)
+-- Check 25: bind_device_for_current_user() has explicit least-privilege
+-- EXECUTE grants (AUTH-BUG-01). This RPC is called on every successful
+-- login (AuthRemoteDataSource.bindDevice()); a missing grant surfaces to
+-- the client as a 404/permission error at exactly the point authentication
+-- otherwise succeeded, which is easy to silently regress since the
+-- function itself has no compile-time dependency on its own grants.
+DO $$
+DECLARE
+  v_authenticated_grant boolean;
+  v_anon_grant boolean;
+  v_exists boolean;
+BEGIN
+  SELECT EXISTS(
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'bind_device_for_current_user'
+  ) INTO v_exists;
+
+  SELECT EXISTS(
+    SELECT 1 FROM information_schema.role_routine_grants
+    WHERE routine_name = 'bind_device_for_current_user'
+      AND routine_schema = 'public'
+      AND grantee = 'authenticated'
+      AND privilege_type = 'EXECUTE'
+  ) INTO v_authenticated_grant;
+
+  SELECT EXISTS(
+    SELECT 1 FROM information_schema.role_routine_grants
+    WHERE routine_name = 'bind_device_for_current_user'
+      AND routine_schema = 'public'
+      AND grantee = 'anon'
+      AND privilege_type = 'EXECUTE'
+  ) INTO v_anon_grant;
+
+  INSERT INTO validation_results VALUES (
+    'bind_device_for_current_user Permissions',
+    CASE
+      WHEN NOT v_exists THEN 'FAIL'
+      WHEN v_authenticated_grant AND NOT v_anon_grant THEN 'PASS'
+      ELSE 'FAIL'
+    END,
+    CASE
+      WHEN NOT v_exists
+        THEN 'CRITICAL: public.bind_device_for_current_user does not exist'
+      WHEN v_authenticated_grant AND NOT v_anon_grant
+        THEN 'authenticated: GRANT, anon: REVOKE (correct)'
+      WHEN NOT v_authenticated_grant
+        THEN 'CRITICAL: authenticated cannot execute bind_device_for_current_user -- every login will fail after a successful sign-in (AUTH-BUG-01 regression)'
+      ELSE 'CRITICAL: anon has access to bind_device_for_current_user (should be revoked)'
+    END
+  );
+END $$;
+
+-- Check 26: public.users and public.user_roles must NOT have FORCE ROW
+-- LEVEL SECURITY (AUTH-BUG-01). Both tables are queried internally, as
+-- the table owner, by SECURITY DEFINER helper functions
+-- (validate_user_session(), is_admin_with_session_validation(),
+-- get_auth_user_id(), get_current_tenant_id(), is_user_valid_cached())
+-- that are themselves called BY policies on these same tables (and, via
+-- is_admin_with_session_validation(), by policies on other tables such
+-- as devices_admin_all/sessions_admin_all). FORCE strips the
+-- owner-bypass those helpers rely on to avoid recursion, causing
+-- "infinite recursion detected in policy" (42P17) on login. RLS is
+-- still fully ENABLEd and enforced for anon/authenticated regardless of
+-- this setting -- FORCE only ever affects the table owner/superuser.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(c.relname ORDER BY c.relname) INTO v_bad
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public'
+    AND c.relname IN ('users', 'user_roles')
+    AND c.relforcerowsecurity = true;
+
+  INSERT INTO validation_results VALUES (
+    'users/user_roles Do Not FORCE Row Level Security',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: FORCE ROW LEVEL SECURITY is set on: ' || array_to_string(v_bad, ', ')
+        || ' -- this will cause infinite recursion (42P17) the next time a '
+        || 'SECURITY DEFINER session/authorization helper is called from a '
+        || 'policy on that table, breaking login',
+      'Neither public.users nor public.user_roles forces RLS on the table owner (RLS remains enforced for anon/authenticated either way)'
+    )
+  );
+END $$;
+
+-- Display Results (includes Check 26 above)
 SELECT * FROM validation_results ORDER BY check_name;
 
 -- Summary
