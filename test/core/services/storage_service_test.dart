@@ -339,11 +339,9 @@ void main() {
       },
     );
 
-    test('a pre-v8 row with no stored signature verifies as intact (adopted, not denied)',
+    test(
+        'metadata tamper-evidence (P6.22/P6.23 security_signature) a pre-v8 row with no stored signature fails closed (denied, not adopted)',
         () async {
-      // Insert bypassing insertDownload entirely, exactly mirroring what a
-      // real pre-v8 row looks like after the v8 migration: every column
-      // present except security_signature, which is NULL.
       final db = await service.database;
       await db.insert('downloaded_lessons', {
         'id': 'dl_legacy',
@@ -363,16 +361,16 @@ void main() {
             .millisecondsSinceEpoch,
       });
 
-      expect(await service.verifyDownloadSignature('dl_legacy'), isTrue);
+      expect(await service.verifyDownloadSignature('dl_legacy'), isFalse);
     });
 
-    test('a nonexistent row verifies as intact (nothing to tamper with)',
+    test('a nonexistent row fails closed',
         () async {
-      expect(await service.verifyDownloadSignature('does_not_exist'), isTrue);
+      expect(await service.verifyDownloadSignature('does_not_exist'), isFalse);
     });
 
     test(
-      'without secure storage, signing is skipped and verification still passes (fails open, never crashes)',
+      'without secure storage, signing is skipped and verification fails closed',
       () async {
         final unsignedDir =
             Directory.systemTemp.createTempSync('eduzone_test_db_unsigned');
@@ -382,7 +380,7 @@ void main() {
         await insertRow(unsignedService);
         expect(
           await unsignedService.verifyDownloadSignature('dl_signed'),
-          isTrue,
+          isFalse,
         );
 
         final db = await unsignedService.database;

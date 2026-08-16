@@ -27,6 +27,7 @@ class GlobalErrorHandler {
   static void logError(Object error, StackTrace? stack) {
     debugPrint('--- [EduZone Error Log] ---');
     debugPrint('Error type: ${error.runtimeType}');
+    debugPrint('Error: $error');
     if (stack != null) {
       debugPrint('StackTrace: \n$stack');
     }

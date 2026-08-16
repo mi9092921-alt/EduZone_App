@@ -3,6 +3,7 @@ import 'package:app/features/auth/application/services/logout_orchestrator.dart'
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MockSupabaseClient extends Mock implements SupabaseClient {}
@@ -44,11 +45,14 @@ void main() {
     mockAuth = MockGoTrueClient();
     mockStorage = MockFlutterSecureStorage();
     mockCancellationManager = MockRequestCancellationManager();
+    SharedPreferences.setMockInitialValues({});
 
     when(() => mockClient.auth).thenReturn(mockAuth);
     when(() => mockCancellationManager.cancelAll()).thenReturn(null);
     when(() => mockClient.removeAllChannels())
         .thenAnswer((_) async => <String>[]);
+    when(() => mockStorage.delete(key: any(named: 'key')))
+        .thenAnswer((_) async {});
 
     orchestrator = LogoutOrchestrator(
       supabase: mockClient,

@@ -167,10 +167,21 @@ void main() {
         'expires_at': DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch,
         'checksum': null,
         'last_accessed_at': null,
+        'entitlement_id': 'ent-1',
+        'server_status': 'ACTIVE',
+        'server_expires_at': DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch,
       };
 
       when(() => localDataSource.getDownloadById('download-1'))
           .thenAnswer((_) async => existingDownload);
+      when(() => remoteDataSource.revalidateOfflineEntitlement(
+            entitlementId: any(named: 'entitlementId'),
+          )).thenAnswer(
+        (_) async => {
+          'status': 'ACTIVE',
+          'expires_at': DateTime.now().add(const Duration(days: 30)).toIso8601String(),
+        },
+      );
       when(() => localDataSource.updateDownloadStatus('download-1', 'downloading'))
           .thenAnswer((_) async {});
       when(() => localDataSource.updateDownloadStatus('download-1', 'failed'))
@@ -253,6 +264,17 @@ void main() {
 
       when(() => localDataSource.getDownloadByLessonId('lesson-1'))
           .thenAnswer((_) async => null);
+      when(() => remoteDataSource.authorizeOfflineDownload(
+            lessonId: any(named: 'lessonId'),
+            courseId: any(named: 'courseId'),
+            downloadId: any(named: 'downloadId'),
+          )).thenAnswer(
+        (_) async => {
+          'status': 'ACTIVE',
+          'entitlement_id': 'ent-1',
+          'expires_at': DateTime.now().add(const Duration(days: 30)).toIso8601String(),
+        },
+      );
       when(() => remoteDataSource.validateCourseAccess(
             lessonId: 'lesson-1',
             courseId: 'course-1',

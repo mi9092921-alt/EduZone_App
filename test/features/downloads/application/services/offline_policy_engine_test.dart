@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:app/core/services/encryption_service.dart';
@@ -6,11 +7,28 @@ import 'package:app/features/downloads/application/services/offline_policy_engin
 import 'package:app/features/downloads/data/datasources/download_local_ds.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MockDownloadLocalDataSource extends Mock
     implements DownloadLocalDataSource {}
 
 class MockEncryptionService extends Mock implements EncryptionService {}
+
+class MockSupabaseClient extends Mock implements SupabaseClient {}
+
+class FakePostgrestFilterBuilder<T> extends Fake
+    implements PostgrestFilterBuilder<T> {
+  FakePostgrestFilterBuilder(this._future);
+  final Future<T> _future;
+
+  @override
+  Future<S> then<S>(
+    FutureOr<S> Function(T value) onValue, {
+    Function? onError,
+  }) {
+    return _future.then(onValue, onError: onError);
+  }
+}
 
 /// Deterministic stand-in for [OfflineClockGuard] so tests don't depend on
 /// real secure storage — mirrors the real class's contract (throw =
@@ -35,6 +53,7 @@ class FakeClockGuard implements OfflineClockGuard {
 void main() {
   late MockDownloadLocalDataSource localDataSource;
   late MockEncryptionService encryptionService;
+  late MockSupabaseClient mockSupabaseClient;
   late Directory tempDir;
   late String encryptedPath;
 
@@ -44,11 +63,13 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(<String, dynamic>{});
+    registerFallbackValue(File('dummy'));
   });
 
   setUp(() async {
     localDataSource = MockDownloadLocalDataSource();
     encryptionService = MockEncryptionService();
+    mockSupabaseClient = MockSupabaseClient();
     tempDir = Directory.systemTemp.createTempSync('offline_policy_engine_test');
     encryptedPath = '${tempDir.path}/video.edz';
     File(encryptedPath).writeAsBytesSync([1, 2, 3]);
@@ -57,6 +78,19 @@ void main() {
         .thenAnswer((_) async {});
     when(() => localDataSource.verifyDownloadIntegrity(any()))
         .thenAnswer((_) async => true);
+    when(() => encryptionService.calculateChecksum(any()))
+        .thenAnswer((_) async => 'valid-checksum');
+    when(() => mockSupabaseClient.rpc(
+          'revalidate_offline_entitlement',
+          params: any(named: 'params'),
+        )).thenAnswer((_) => FakePostgrestFilterBuilder(
+          Future.value({
+            'status': 'ACTIVE',
+            'expires_at': DateTime.now()
+                .add(const Duration(days: 1))
+                .toIso8601String(),
+          }),
+        ));
   });
 
   tearDown(() {
@@ -67,10 +101,12 @@ void main() {
     String? userId = currentUserId,
     String device = currentDeviceId,
     OfflineClockGuard? clockGuard,
+    SupabaseClient? supabaseClient,
   }) {
     return OfflinePolicyEngine(
       localDataSource: localDataSource,
       encryptionService: encryptionService,
+      supabaseClient: supabaseClient ?? mockSupabaseClient,
       currentUserId: () => userId,
       deviceFingerprint: () => device,
       clockGuard: clockGuard,
@@ -83,6 +119,10 @@ void main() {
     String? userId = currentUserId,
     String? deviceId = currentDeviceId,
     String? path,
+    String entitlementId = 'ent_1',
+    String serverStatus = 'ACTIVE',
+    int? serverExpiresAt,
+    String checksum = 'valid-checksum',
   }) {
     return {
       'id': downloadId,
@@ -92,6 +132,11 @@ void main() {
       'user_id': userId,
       'device_id': deviceId,
       'encrypted_path': path ?? encryptedPath,
+      'entitlement_id': entitlementId,
+      'server_status': serverStatus,
+      'server_expires_at': serverExpiresAt ??
+          DateTime.now().add(const Duration(days: 1)).millisecondsSinceEpoch,
+      'checksum': checksum,
     };
   }
 
@@ -105,8 +150,6 @@ void main() {
       await buildEngine().authorize(downloadId);
 
       verify(() => localDataSource.getDownloadById(downloadId)).called(1);
-      // Not a legacy row, so no adoption write should happen.
-      verifyNever(() => localDataSource.updateDownload(any(), any()));
     });
   });
 
@@ -391,49 +434,87 @@ void main() {
     });
   });
 
-  group('OfflinePolicyEngine.authorize — legacy (pre-v7) rows', () {
+  group('OfflinePolicyEngine.authorize — entitlement and integrity invariants', () {
     test(
-      'adopts an unbound legacy row to the current account/device instead of denying it',
+      'denies an unbound legacy row without an active entitlement',
       () async {
         when(() => localDataSource.getDownloadById(downloadId)).thenAnswer(
-          (_) async => validRow(userId: null, deviceId: null),
+          (_) async => validRow(
+            entitlementId: '',
+          ),
         );
-        when(() => encryptionService.retrieveKey(downloadId))
-            .thenAnswer((_) async => 'a-key');
 
-        await buildEngine().authorize(downloadId);
-
-        // Note: a Map literal is not `==`-comparable to another Map literal
-        // in Dart, so this deliberately matches on content via `predicate`
-        // rather than `updateDownload(downloadId, {...})`, which would
-        // silently never match.
-        verify(
-          () => localDataSource.updateDownload(
-            downloadId,
-            any(
-              that: predicate<Map<String, dynamic>>(
-                (m) =>
-                    m['user_id'] == currentUserId &&
-                    m['device_id'] == currentDeviceId,
-              ),
+        await expectLater(
+          buildEngine().authorize(downloadId),
+          throwsA(
+            isA<OfflinePlaybackDeniedException>().having(
+              (e) => e.reason,
+              'reason',
+              OfflinePlaybackDenialReason.serverRevalidationDenied,
             ),
           ),
-        ).called(1);
+        );
       },
     );
 
-    test('a failed adoption write still allows this playback attempt',
-        () async {
+    test('denies when entitlement status is revoked on the server', () async {
       when(() => localDataSource.getDownloadById(downloadId)).thenAnswer(
-        (_) async => validRow(userId: null, deviceId: null),
+        (_) async => validRow(),
       );
-      when(() => localDataSource.updateDownload(any(), any()))
-          .thenThrow(Exception('disk full'));
+      when(() => mockSupabaseClient.rpc(
+            'revalidate_offline_entitlement',
+            params: any(named: 'params'),
+          )).thenAnswer((_) => FakePostgrestFilterBuilder(
+            Future.value({
+              'status': 'REVOKED',
+              'expires_at': DateTime.now().add(const Duration(days: 1)).toIso8601String(),
+            }),
+          ));
+
+      await expectLater(
+        buildEngine().authorize(downloadId),
+        throwsA(
+          isA<OfflinePlaybackDeniedException>().having(
+            (e) => e.reason,
+            'reason',
+            OfflinePlaybackDenialReason.serverRevalidationDenied,
+          ),
+        ),
+      );
+    });
+
+    test('allows playback when device is offline (SocketException) with valid local cached entitlement', () async {
+      when(() => localDataSource.getDownloadById(downloadId))
+          .thenAnswer((_) async => validRow());
       when(() => encryptionService.retrieveKey(downloadId))
           .thenAnswer((_) async => 'a-key');
+      when(() => mockSupabaseClient.rpc(
+            'revalidate_offline_entitlement',
+            params: any(named: 'params'),
+          )).thenAnswer((_) => FakePostgrestFilterBuilder(
+            Future.error(const SocketException('no network')),
+          ));
 
-      // Should not throw despite the adoption write failing.
       await buildEngine().authorize(downloadId);
+      verify(() => localDataSource.getDownloadById(downloadId)).called(1);
+    });
+
+    test('denies when video checksum does not match expected hash', () async {
+      when(() => localDataSource.getDownloadById(downloadId))
+          .thenAnswer((_) async => validRow(checksum: 'expected-hash'));
+      when(() => encryptionService.calculateChecksum(any()))
+          .thenAnswer((_) async => 'tampered-hash');
+
+      await expectLater(
+        buildEngine().authorize(downloadId),
+        throwsA(
+          isA<OfflinePlaybackDeniedException>().having(
+            (e) => e.reason,
+            'reason',
+            OfflinePlaybackDenialReason.tampered,
+          ),
+        ),
+      );
     });
   });
 

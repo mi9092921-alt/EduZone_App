@@ -118,12 +118,14 @@ class OfflinePolicyEngine {
   OfflinePolicyEngine({
     required DownloadLocalDataSource localDataSource,
     required EncryptionService encryptionService,
+    SupabaseClient? supabaseClient,
     String Function()? deviceFingerprint,
     String? Function()? currentUserId,
     OfflineClockGuard? clockGuard,
     EventBus? eventBus,
   })  : _localDataSource = localDataSource,
         _encryptionService = encryptionService,
+        _supabaseClient = supabaseClient,
         _deviceFingerprint = deviceFingerprint ?? _defaultDeviceFingerprint,
         _currentUserId = currentUserId ?? _defaultCurrentUserId,
         // Defaults to a no-secure-storage instance (degrades to "cannot
@@ -143,6 +145,7 @@ class OfflinePolicyEngine {
 
   final DownloadLocalDataSource _localDataSource;
   final EncryptionService _encryptionService;
+  final SupabaseClient? _supabaseClient;
   final String Function() _deviceFingerprint;
   final String? Function() _currentUserId;
   final OfflineClockGuard _clockGuard;
@@ -259,7 +262,8 @@ class OfflinePolicyEngine {
     // ACTIVE entitlement and its fixed expiry. Any server-side deny is a hard
     // deny and updates local state before playback can continue.
     try {
-      final serverData = await SupabaseService.client.rpc(
+      final client = _supabaseClient ?? SupabaseService.client;
+      final serverData = await client.rpc(
         'revalidate_offline_entitlement',
         params: {
           'p_entitlement_id': entitlementId,
