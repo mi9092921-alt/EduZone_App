@@ -38,6 +38,19 @@
   live Supabase instance in this session (no Flutter/Dart toolchain or
   network access available in this environment) — statically inspected
   only; see `SECURITY.md` "What's verified" section.
+- **Evidence Gate automation (Section 12, phase 20)**: added Check 24 to
+  `supabase/schema/VALIDATION.sql` — the first automated, re-runnable
+  assertion that the offline-entitlement boundary is actually wired, not
+  just present in source: RLS shape on `offline_download_entitlements`
+  (enabled+forced, authenticated gets SELECT-own only, no unexpected
+  policy), both P6.25 rate-limit rules seeded and active, the
+  `trg_offline_entitlement_transition` state-machine trigger fires
+  `BEFORE UPDATE`, and `private.get_kms_key()`'s live function body no
+  longer contains the removed hardcoded fallback key literal. Run this
+  file (`VALIDATION.sql`) after applying schema/seed to turn today's
+  static-inspection claims into a PASS/FAIL that regressions can't
+  silently slip past. No new file — added to the existing canonical
+  validation script.
 - **Security (Offline Download — P6.16 Offline Clock Security)**:
   `OfflinePolicyEngine.authorize` previously trusted `DateTime.now()`
   directly for its offline-expiry check, with no defense against a user

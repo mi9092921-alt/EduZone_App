@@ -952,7 +952,119 @@ BEGIN
   );
 END $$;
 
--- Display Results
+-- Check 24: Section 12 offline-entitlement boundary is intact end-to-end —
+-- RLS shape, RPC volume bounds (P6.25), state-machine trigger, and the
+-- KMS fail-closed fix all present at once. Written as evidence for the
+-- project's own "Evidence Gate" (Section 12, phase 20): each sub-item
+-- below must independently PASS, not just "no analyzer errors".
+DO $$
+DECLARE
+  v_bad_policies text[];
+  v_missing_rules text[];
+  v_trigger_ok boolean;
+  v_kms_def text;
+  v_kms_fails_closed boolean;
+BEGIN
+  -- (a) offline_download_entitlements: RLS enabled+forced, and the client
+  -- (authenticated) has SELECT-own only — no INSERT/UPDATE/DELETE policy
+  -- for authenticated. Writes must remain RPC-only (SECURITY DEFINER).
+  SELECT array_agg(DISTINCT x) INTO v_bad_policies
+  FROM (
+    SELECT 'RLS not enabled/forced' AS x
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'offline_download_entitlements'
+      AND NOT (c.relrowsecurity AND c.relforcerowsecurity)
+    UNION ALL
+    SELECT 'unexpected policy: ' || pol.polname
+    FROM pg_policy pol
+    JOIN pg_class c ON c.oid = pol.polrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'offline_download_entitlements'
+      AND pol.polname NOT IN ('offline_entitlements_select_own', 'offline_entitlements_service_all')
+    UNION ALL
+    SELECT 'authenticated has a non-SELECT policy: ' || pol.polname
+    FROM pg_policy pol
+    JOIN pg_class c ON c.oid = pol.polrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'offline_download_entitlements'
+      AND pol.polname = 'offline_entitlements_select_own'
+      AND pol.polcmd <> 'r'
+  ) s;
+
+  INSERT INTO validation_results VALUES (
+    'Section 12: offline_download_entitlements RLS shape',
+    CASE WHEN v_bad_policies IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE('CRITICAL: ' || array_to_string(v_bad_policies, '; '),
+      'RLS enabled+forced; authenticated has SELECT-own only; writes are RPC-only')
+  );
+
+  -- (b) P6.25 rate-limit rules for both offline-entitlement RPCs are
+  -- seeded and active.
+  SELECT array_agg(missing) INTO v_missing_rules
+  FROM unnest(ARRAY['offline_download_authorize', 'offline_entitlement_revalidate']) missing
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.rate_limit_rules r
+    WHERE r.action = missing AND r.is_active
+  );
+
+  INSERT INTO validation_results VALUES (
+    'Section 12: P6.25 rate-limit rules seeded',
+    CASE WHEN v_missing_rules IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE('CRITICAL: missing/inactive rate_limit_rules row(s): '
+        || array_to_string(v_missing_rules, ', '),
+      'offline_download_authorize and offline_entitlement_revalidate both active')
+  );
+
+  -- (c) The entitlement state-transition guard trigger exists and fires
+  -- BEFORE UPDATE — this is what stops any RPC (present or future) from
+  -- moving a row through an undocumented status sequence.
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_trigger t
+    JOIN pg_class c ON c.oid = t.tgrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'offline_download_entitlements'
+      AND t.tgname = 'trg_offline_entitlement_transition'
+      AND NOT t.tgisinternal
+      AND (t.tgtype & 2) = 2  -- BEFORE
+      AND (t.tgtype & 16) = 16 -- UPDATE
+  ) INTO v_trigger_ok;
+
+  INSERT INTO validation_results VALUES (
+    'Section 12: entitlement state-transition guard is wired',
+    CASE WHEN v_trigger_ok THEN 'PASS' ELSE 'FAIL' END,
+    CASE WHEN v_trigger_ok
+      THEN 'trg_offline_entitlement_transition fires BEFORE UPDATE'
+      ELSE 'CRITICAL: state-machine trigger missing or misconfigured — a row could move through an invalid status sequence'
+    END
+  );
+
+  -- (d) private.get_kms_key() no longer contains the removed hardcoded
+  -- fallback key literal. Guards against the fix being silently reverted
+  -- by a future edit — checked by inspecting the live function body, not
+  -- just trusting this file wasn't touched again.
+  SELECT pg_get_functiondef(p.oid) INTO v_kms_def
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'private' AND p.proname = 'get_kms_key';
+
+  v_kms_fails_closed := v_kms_def IS NOT NULL
+    AND v_kms_def NOT ILIKE '%eduzone-dev-kms-key%'
+    AND v_kms_def ILIKE '%RAISE EXCEPTION%';
+
+  INSERT INTO validation_results VALUES (
+    'Section 12: get_kms_key has no hardcoded fallback key',
+    CASE WHEN v_kms_fails_closed THEN 'PASS' ELSE 'FAIL' END,
+    CASE WHEN v_kms_def IS NULL THEN 'CRITICAL: private.get_kms_key() not found'
+      WHEN v_kms_fails_closed THEN 'fails closed with RAISE EXCEPTION when eduzone_kms_key is unprovisioned'
+      ELSE 'CRITICAL: hardcoded fallback key literal is back, or function no longer fails closed'
+    END
+  );
+END $$;
+
+-- Display Results (includes Check 24 above)
 SELECT * FROM validation_results ORDER BY check_name;
 
 -- Summary
