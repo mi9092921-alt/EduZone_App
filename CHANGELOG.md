@@ -8,6 +8,36 @@
 ## [Unreleased]
 
 ### Added / Fixed
+- **Security (Section 12 — Offline entitlement RPC volume / P6.25)**:
+  `authorize_offline_download` and `revalidate_offline_entitlement`
+  (`supabase/schema/07_functions.sql`) previously had no bound on how many
+  times an authenticated identity could invoke them. Both now call the
+  existing `public.check_rate_limit()` primitive (already used by
+  `video-info`) keyed on `auth.uid()`, with two new rules seeded in
+  `11_seed_reference.sql`: `offline_download_authorize` (100/hour) and
+  `offline_entitlement_revalidate` (60/5min — generous because
+  `OfflinePolicyEngine.authorize` calls it on every offline playback
+  attempt while online). This is a volume bound, not a cryptographic
+  replay guard — documented honestly in `SECURITY.md`: a bare re-POST of
+  an already-authorized request was already harmless before this change
+  (idempotent existing-row branch, state-transition trigger blocks
+  resurrecting a revoked/deleted row), so no new columns or client changes
+  were needed to close the actual risk. No new schema files; both edits
+  are in the existing canonical `07_functions.sql`/`11_seed_reference.sql`.
+- **Security (PII encryption key fallback)**: `private.get_kms_key()`
+  (`07_functions.sql`) previously fell back to a fixed string committed in
+  this repository (`eduzone-dev-kms-key-32bytes-secret!`) whenever the
+  `eduzone_kms_key` Supabase Vault secret wasn't provisioned — silently
+  encrypting `users.email_encrypted`/`phone_encrypted` with a
+  publicly-visible key in any unprovisioned environment, including a
+  misconfigured production one. Now fails closed (`RAISE EXCEPTION`) with
+  no fallback value in any environment. Local/CI test runs are
+  unaffected — they already provision a test-only Vault secret of the
+  same name via `supabase/_archived_patches/00_supabase_shim.sql`. Not
+  yet independently re-verified with `flutter analyze`/`flutter test`/a
+  live Supabase instance in this session (no Flutter/Dart toolchain or
+  network access available in this environment) — statically inspected
+  only; see `SECURITY.md` "What's verified" section.
 - **Security (Offline Download — P6.16 Offline Clock Security)**:
   `OfflinePolicyEngine.authorize` previously trusted `DateTime.now()`
   directly for its offline-expiry check, with no defense against a user

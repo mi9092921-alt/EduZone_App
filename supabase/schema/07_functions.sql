@@ -48,6 +48,21 @@ BEGIN
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'authentication required' USING ERRCODE = '42501';
   END IF;
+
+  -- P6.25: bound how often this authenticated identity may call this RPC.
+  -- Does not attempt cryptographic replay-detection (no nonce/idempotency
+  -- key — a bare re-POST of an already-authorized request is harmless: it
+  -- hits the existing-row branch below and returns the same entitlement
+  -- unchanged, it cannot re-extend expires_at or resurrect a revoked row).
+  -- What this closes is unbounded call volume from a captured/replayed
+  -- request — reusing rate_limit_rules/check_rate_limit exactly as
+  -- video-info already does, per project instructions ("no security
+  -- controls without a threat model"): the threat here is volume, not
+  -- state forgery, so volume is what gets bounded.
+  IF (public.check_rate_limit('offline_download_authorize', v_user_id) ->> 'allowed')::boolean IS FALSE THEN
+    RAISE EXCEPTION 'offline entitlement denied' USING ERRCODE = '42501';
+  END IF;
+
   -- Serialize concurrent claims for the same user/content/device so a
   -- double-tap or duplicate worker cannot race two active entitlements.
   PERFORM pg_catalog.pg_advisory_xact_lock(
@@ -167,6 +182,15 @@ BEGIN
     RAISE EXCEPTION 'authentication required' USING ERRCODE = '42501';
   END IF;
 
+  -- P6.25: same volume-bounding rationale as authorize_offline_download
+  -- above. This RPC is called at every offline playback attempt while
+  -- online (OfflinePolicyEngine.authorize), so the limit must stay
+  -- generous enough for normal play/seek/retry behavior — see the
+  -- seeded rule in 11_seed_reference.sql.
+  IF (public.check_rate_limit('offline_entitlement_revalidate', v_user_id) ->> 'allowed')::boolean IS FALSE THEN
+    RAISE EXCEPTION 'offline entitlement denied' USING ERRCODE = '42501';
+  END IF;
+
   SELECT * INTO v_entitlement
   FROM public.offline_download_entitlements e
   WHERE e.id = p_entitlement_id
@@ -264,9 +288,22 @@ BEGIN
      LIMIT 1;
   END IF;
 
+  -- Fail closed. There is no hardcoded fallback key: encrypt_pii/decrypt_pii
+  -- are the only callers (email_encrypted/phone_encrypted on public.users)
+  -- and both are service_role-only (10_permissions.sql) — a fallback here
+  -- would mean every unprovisioned environment, including an accidentally
+  -- misconfigured production one, silently encrypts real user PII with a
+  -- key value that sits in plaintext in this repository. Provisioning the
+  -- secret above is a one-time setup step in every environment, dev
+  -- included, and must happen before any row triggers encrypt_pii/
+  -- decrypt_pii (see the users email/phone triggers in this file).
   IF v_secret IS NULL THEN
-    -- Fallback for development/testing environments when vault secret has not yet been provisioned
-    v_secret := 'eduzone-dev-kms-key-32bytes-secret!';
+    RAISE EXCEPTION
+      USING ERRCODE = '55000',
+            MESSAGE = 'eduzone_kms_key not provisioned in Supabase Vault — run '
+              || 'SELECT vault.create_secret(''<32+ byte random key>'', '
+              || '''eduzone_kms_key''); before any PII encrypt/decrypt call. '
+              || 'No hardcoded fallback key exists.';
   END IF;
 
   RETURN v_secret;

@@ -179,7 +179,15 @@ INSERT INTO public.rate_limit_rules (action, window_seconds, max_hits, block_sec
   ('device_bind',    86400, 3,   3600, true),
   ('password_reset', 3600,  3,   7200, true),
   ('warning_issue',  3600,  20,  0,    true),
-  ('content_access', 3600,  200, 0,    true)
+  ('content_access', 3600,  200, 0,    true),
+  -- Section 12 / P6.25: volume bound for the offline-entitlement RPCs
+  -- (authorize_offline_download, revalidate_offline_entitlement in
+  -- 07_functions.sql). authorize is called once per lesson queued for
+  -- download (bulk course downloads can queue many lessons at once);
+  -- revalidate is called on every offline playback attempt while online,
+  -- so its limit stays generous enough for normal play/seek/retry use.
+  ('offline_download_authorize',    3600, 100, 600, true),
+  ('offline_entitlement_revalidate', 300,  60, 120, true)
 ON CONFLICT (action) DO NOTHING;
 
 INSERT INTO public.audit_chain_state (id, last_seq, last_hash)

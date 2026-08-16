@@ -50,6 +50,22 @@ inline comments (`android/app/build.gradle.kts`, `.env.security.example`).
   `flutter_secure_storage` (Android Keystore / iOS Keychain-backed), not
   `SharedPreferences`. See `lib/features/auth/application/services/logout_orchestrator.dart`
   for where they're wiped on logout.
+- `private.get_kms_key()` (`07_functions.sql`) — the key behind
+  `encrypt_pii`/`decrypt_pii`, used only for `users.email_encrypted`/
+  `phone_encrypted` — reads `eduzone_kms_key` from Supabase Vault and now
+  **fails closed** (`RAISE EXCEPTION`) if that secret isn't provisioned.
+  It previously fell back to a fixed string committed in this repo
+  (`eduzone-dev-kms-key-32bytes-secret!`) whenever the Vault secret was
+  missing, which meant any environment — including a production one
+  someone forgot to provision — would silently encrypt real user PII with
+  a key visible in source control. There is no fallback value anymore in
+  any environment; `SELECT vault.create_secret('<32+ byte random key>',
+  'eduzone_kms_key');` must run once per environment before any row can
+  trigger the `users` email/phone encryption triggers. Local/CI test runs
+  already do this correctly via `supabase/_archived_patches/00_supabase_shim.sql`
+  (a non-schema local Postgres shim, not part of the deployed schema),
+  which seeds a test-only secret with the same name — unaffected by this
+  change.
 
 ## Session revocation (server-side, DB-authoritative)
 
@@ -318,9 +334,22 @@ backend entitlement-issuance/revalidation boundary
 above — this closes what was previously documented here as a P6.3/P6.4
 gap), but it is a server-*authoritative* database record checked over the
 network, not a signed token the client verifies independently, and there
-is still no anti-replay protection on the RPC calls themselves (P6.25).
-See the offline-security architecture doc for the full threat model this
-is explicitly scoped against (and not against).
+is still no cryptographic (nonce/idempotency-key) replay protection on
+the RPC calls themselves (P6.25) — a bare re-POST of an already-authorized
+request is harmless on its own (it hits the existing-row branch in
+`authorize_offline_download` and returns the same entitlement unchanged;
+it can neither re-extend `expires_at` nor resurrect a row the transition
+trigger has already moved to `REVOKED`/`DELETED`), so the actual risk
+P6.25 names is unbounded call *volume* from a captured/replayed request,
+not state forgery. Both RPCs now call the existing
+`public.check_rate_limit()` (the same primitive `video-info` already
+uses) keyed on `auth.uid()`, with rules seeded in `11_seed_reference.sql`
+(`offline_download_authorize`: 100/hour; `offline_entitlement_revalidate`:
+60/5min, generous enough for normal play/seek/retry since it's called on
+every offline playback attempt while online). This bounds volume; it is
+still not a signed, single-use request token, and is not being documented
+as one. See the offline-security architecture doc for the full threat
+model this is explicitly scoped against (and not against).
 
 ### Server-side entitlement surface for offline content
 
