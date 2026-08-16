@@ -86,4 +86,64 @@ class OfflineCrashRecovery {
 
     return reconciled;
   }
+
+  /// Scans and deletes any leftover plaintext playback temp file from
+  /// [OfflinePlayerWrapper]'s decrypt-to-temp fallback (dual-track
+  /// downloads always use it; single-file downloads fall back to it when
+  /// the streaming proxy fails to start — see
+  /// `offline_player_wrapper.dart._initializePlayer`).
+  ///
+  /// Those files are named `<downloadId>_decrypted.<ext>`,
+  /// `<downloadId>_video_decrypted.<ext>`, and
+  /// `<downloadId>_audio_decrypted.<ext>` in [Directory.systemTemp], and
+  /// are normal *unencrypted, playable* video/audio content — the whole
+  /// point of the streaming-proxy path (`EdzLocalProxy`) is to avoid ever
+  /// writing this kind of file, per P6.13/P6.14 ("No Permanent Plaintext
+  /// Cache") of the offline-security architecture doc. The widget cleans
+  /// them up itself on normal dispose, but nothing previously handled the
+  /// case where the process is killed while one of these files exists on
+  /// disk (app/device crash, force-stop, OOM kill mid-playback) — no other
+  /// code in this codebase ever looks at [Directory.systemTemp], so a file
+  /// left behind that way would otherwise sit there, fully playable by
+  /// anything with filesystem access to this app's temp directory,
+  /// indefinitely. This closes that gap the same way
+  /// [reconcileInterruptedDownloads] closes the equivalent one for
+  /// half-written encrypted downloads.
+  ///
+  /// Best-effort and non-blocking, same reasoning as
+  /// [reconcileInterruptedDownloads]: a failure to delete one file must
+  /// never stop startup or block deletion of the others, and whatever
+  /// isn't cleaned this run is simply retried on the next app start.
+  ///
+  /// Returns the number of temp files deleted.
+  Future<int> reconcileOrphanedPlaintextPlaybackFiles() async {
+    final tempDir = Directory.systemTemp;
+    var deleted = 0;
+    try {
+      if (!await tempDir.exists()) return 0;
+      await for (final entity in tempDir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final name = entity.uri.pathSegments.isNotEmpty
+            ? entity.uri.pathSegments.last
+            : '';
+        final isOrphanedPlaybackTemp = name.contains('_decrypted.') &&
+            (name.contains('_video_decrypted.') ||
+                name.contains('_audio_decrypted.') ||
+                // Single-file fallback path: `<id>_decrypted.<ext>` has
+                // neither `_video_` nor `_audio_` before `_decrypted.`.
+                RegExp(r'_decrypted\.[^_/\\]+$').hasMatch(name));
+        if (!isOrphanedPlaybackTemp) continue;
+        try {
+          await entity.delete();
+          deleted++;
+        } catch (_) {
+          // Non-fatal — retried on the next app start.
+        }
+      }
+    } catch (_) {
+      // Non-fatal — listing the temp directory itself failed; retried on
+      // the next app start rather than blocking startup.
+    }
+    return deleted;
+  }
 }

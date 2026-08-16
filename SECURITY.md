@@ -202,7 +202,17 @@ these over time; they are not retroactively force-deleted on upgrade.
 stuck in `pending`/`downloading` status to `failed`, since nothing in this
 codebase auto-resumes a download across an app restart — a row in one of
 those statuses at cold start can only mean the process that was writing
-to it is gone.
+to it is gone. It also (`reconcileOrphanedPlaintextPlaybackFiles`) sweeps
+`Directory.systemTemp` at the same startup point for leftover plaintext
+video/audio playback temp files: `OfflinePlayerWrapper` cleans these up
+itself when playback ends normally or the widget disposes, but the app
+(or device) being killed mid-playback previously left a fully-decrypted,
+directly-playable copy of the video/audio sitting in the temp directory
+indefinitely — nothing else in this codebase ever looked at
+`Directory.systemTemp` to find and remove it. This is the same class of
+gap `reconcileInterruptedDownloads` above already closes for half-written
+*encrypted* downloads, applied to the separate on-disk location where
+*plaintext* playback temp files can be abandoned.
 
 Since schema v9, the security-critical fields `OfflinePolicyEngine`'s
 decision depends on — ownership/device binding, status, expiry,

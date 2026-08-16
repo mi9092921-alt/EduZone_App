@@ -112,6 +112,24 @@ class AppInitializer {
         }),
       );
 
+      // 7b. Same crash-recovery pass, but for leftover *plaintext* offline
+      // playback temp files (see the method's doc comment) rather than
+      // half-written encrypted downloads — a separate on-disk location and
+      // failure mode, so it gets its own best-effort, non-blocking sweep.
+      unawaited(
+        OfflineCrashRecovery(
+          localDataSource: DownloadLocalDataSource(
+            StorageService(secureStorage: const FlutterSecureStorage()),
+          ),
+        ).reconcileOrphanedPlaintextPlaybackFiles().catchError((Object e) {
+          debugPrint(
+            '⚠️ Orphaned plaintext playback file cleanup failed: '
+            '${e.runtimeType}',
+          );
+          return 0;
+        }),
+      );
+
     } catch (e) {
       debugPrint('CRITICAL INITIALIZATION ERROR: ${e.runtimeType}');
       // Re-throw to be caught by runZonedGuarded
