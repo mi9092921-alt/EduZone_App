@@ -52,6 +52,28 @@ class DownloadRepositoryImpl implements DownloadRepository {
   final Set<String> _cancelledDownloads = {};
   final StreamController<void> _changeController = StreamController<void>.broadcast();
 
+  // SECTION-12 FIX (P6.27/P6.28 — "two workers → same lesson → same file"
+  // must never happen): startDownload's "already downloaded?" check
+  // (`_localDataSource.getDownloadByLessonId`) is a normal `await`ed DB
+  // read followed later by an `insertDownload` write — a classic
+  // check-then-act race. Two overlapping calls for the *same* lessonId
+  // (the realistic trigger being a user double-tapping a "Download"
+  // button before the first tap's network round-trip to
+  // `authorize_offline_download` returns) could both pass the "not
+  // already downloaded" check before either had inserted its row, each
+  // claim a separate server entitlement, and each write a separate
+  // encrypted file for the same lesson — wasted storage and a duplicate,
+  // confusing "downloaded" tile, not a security bypass (both calls are
+  // independently, correctly authorized), but exactly the duplication
+  // P6.28 asks to prevent. Recording the lessonId here synchronously,
+  // *before* the first `await` in the method below, closes that window:
+  // Dart's single-threaded execution model means this synchronous prefix
+  // (URL validation + the `Set.add` check) always runs to completion
+  // before the event loop can interleave a second call, so the second
+  // concurrent call for the same lessonId sees it already present and is
+  // rejected outright instead of racing the first past the DB check.
+  final Set<String> _lessonIdsBeingStarted = {};
+
   DownloadRepositoryImpl({
     required DownloadRemoteDataSource remoteDataSource,
     required DownloadLocalDataSource localDataSource,
@@ -97,6 +119,12 @@ class DownloadRepositoryImpl implements DownloadRepository {
     required String videoUrl,
     required VideoQuality quality,
   }) async {
+    // Synchronous check-and-add — see `_lessonIdsBeingStarted`'s doc
+    // comment above for why this must stay before the method's first
+    // `await` to actually close the race it's meant to close.
+    if (!_lessonIdsBeingStarted.add(lessonId)) {
+      return const Left(AlreadyDownloadedFailure());
+    }
     try {
       // Validate URL
       final uri = Uri.tryParse(videoUrl);
@@ -245,6 +273,15 @@ class DownloadRepositoryImpl implements DownloadRepository {
       return Left(ServerFailure(e.message));
     } catch (e) {
       return Left(UnknownFailure(e.toString()));
+    } finally {
+      // Release as soon as the synchronous "claim this lessonId" purpose
+      // is served — once `insertDownload` above has actually run (success
+      // path) or any early-return/exception path is taken, the guard has
+      // done its job: either a real DB row now exists (so the ordinary
+      // `getDownloadByLessonId` check catches a further duplicate call the
+      // normal way), or nothing was ever claimed and a retry should be
+      // allowed immediately rather than staying blocked forever.
+      _lessonIdsBeingStarted.remove(lessonId);
     }
   }
 
