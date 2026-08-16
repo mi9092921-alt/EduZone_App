@@ -363,13 +363,13 @@ class OfflinePolicyEngine {
       );
     }
 
-    if (ownerUserId != null && ownerUserId != currentUserId) {
+    if (ownerUserId != currentUserId) {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.ownerMismatch,
         'downloadId=$downloadId owner=$ownerUserId current=$currentUserId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
       );
     }
-    if (ownerDeviceId != null && ownerDeviceId != currentDeviceId) {
+    if (ownerDeviceId != currentDeviceId) {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.deviceMismatch,
         'downloadId=$downloadId ownerDevice=$ownerDeviceId ' // check-ignore: dev-only debugDetail, never rendered — see userMessage

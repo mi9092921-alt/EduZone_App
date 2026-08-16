@@ -49,7 +49,7 @@ class DownloadRemoteDataSource {
     } on ServerException {
       rethrow;
     } catch (e) {
-      throw ServerException('Offline authorization failed'); // check-ignore
+      throw const ServerException('Offline authorization failed'); // check-ignore
     }
   }
 
