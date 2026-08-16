@@ -664,6 +664,27 @@ class StorageService {
   /// Previously this method only looked at [expires_at], so completed records
   /// expiring in the future were never cleaned up, and failed/pending orphans
   /// were never included at all — making the Cleanup button a no-op.
+  ///
+  /// SECTION-12 FIX: when [ownerUserId] was supplied, the generated SQL was
+  /// `WHERE expires_at < ? OR (... AND downloaded_at < ? AND user_id = ?)`.
+  /// SQL's `AND` binds tighter than `OR`, so `user_id = ?` was scoped only
+  /// to the failed/pending-orphan branch — the `expires_at < ?` branch (the
+  /// common case) ran completely unscoped and returned *every* account's
+  /// date-expired downloads on this device, not just the caller's own.
+  /// This is reachable from real user-facing code:
+  /// `DownloadLocalDataSource.getExpiredDownloads()` always passes the
+  /// current user's id here, and its caller
+  /// (`DownloadQueryService`/`DownloadRepositoryImpl.getExpiredDownloads`)
+  /// is what an "expired downloads" list/cleanup UI reads from — so a
+  /// second account on a shared device could see, and potentially trigger
+  /// deletion of, a previous account's expired download rows and files,
+  /// defeating the P6.20 account-isolation boundary this same class
+  /// enforces everywhere else. `CleanupScheduler`'s own background sweep
+  /// (which intentionally passes no [ownerUserId] — it must reclaim
+  /// storage for every account, not just whichever one is currently signed
+  /// in) was never affected by this. Parenthesizing the whole `OR` group
+  /// before applying `AND user_id = ?` fixes the scoped case without
+  /// changing the unscoped one.
   Future<List<Map<String, dynamic>>> getExpiredDownloads({
     String? ownerUserId,
   }) async {
@@ -675,9 +696,9 @@ class StorageService {
     return await db.rawQuery(
       '''
       SELECT * FROM $_tableDownloadedLessons
-      WHERE expires_at < ?
+      WHERE (expires_at < ?
          OR (download_status IN ('failed', 'pending')
-             AND downloaded_at < ?)
+             AND downloaded_at < ?))
         ${ownerUserId == null ? '' : 'AND user_id = ?'}
       ''',
       ownerUserId == null ? [now, orphanThreshold] : [now, orphanThreshold, ownerUserId],
