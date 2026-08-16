@@ -23,7 +23,12 @@ class ActivityHandler extends EventHandler {
     return event.category == EventCategory.course ||
         event.category == EventCategory.video ||
         event.category == EventCategory.todo ||
-        event.category == EventCategory.navigation;
+        event.category == EventCategory.navigation ||
+        // Low-risk offline-download events (e.g. successful playback
+        // authorization). High-risk ones (e.g. playback denied) are
+        // already routed to AuditHandler by risk level, not category —
+        // see AuditHandler.shouldHandle.
+        event.category == EventCategory.download;
   }
 
   @override

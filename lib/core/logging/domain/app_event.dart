@@ -5,7 +5,7 @@ import 'package:crypto/crypto.dart' show md5;
 
 enum EventRiskLevel { low, medium, high, critical }
 
-enum EventCategory { auth, course, video, todo, navigation, system }
+enum EventCategory { auth, course, video, todo, navigation, system, download }
 
 // ─── Base Event (Sealed) ─────────────────────────────────────────────────────
 
@@ -283,6 +283,68 @@ class VideoCompletedEvent extends AppEvent {
     'lesson_id': lessonId,
     'watch_time_sec': watchTimeSec,
   };
+}
+
+// ─── Offline Download / Playback Security Events ───────────────────────────
+//
+// P6.36/P6.37 of
+// EduZone_Offline_Download_Security_Trusted_Playback_Architecture.md
+// requires security telemetry for the offline entitlement/playback
+// lifecycle (download.authorized, download.failed, playback.denied, ...)
+// without ever logging keys, tokens, signed URLs, or file paths. These
+// events only carry a `downloadId`/`reason` — never the fields
+// [AppEvent.details] must not include, per project instructions §15.
+
+/// Emitted by [OfflinePolicyEngine.authorize] every time offline playback
+/// is denied, tagged with the machine-readable
+/// `OfflinePlaybackDenialReason`. Deliberately [EventRiskLevel.high] so it
+/// is always routed to the encrypted audit path (`AuditHandler`) rather
+/// than the plain activity log, since a denial can indicate tampering,
+/// device/account mismatch, or a revoked/expired entitlement.
+class OfflinePlaybackDeniedEvent extends AppEvent {
+  final String downloadId;
+  final String reason;
+
+  const OfflinePlaybackDeniedEvent({
+    required super.timestamp,
+    super.userId,
+    super.tenantId,
+    super.deviceId,
+    required this.downloadId,
+    required this.reason,
+  });
+
+  @override
+  String get activityType => 'offline_download.playback_denied';
+  @override
+  EventCategory get category => EventCategory.download;
+  @override
+  EventRiskLevel get riskLevel => EventRiskLevel.high;
+  @override
+  String get entityId => downloadId;
+  @override
+  Map<String, dynamic> get details => {'reason': reason};
+}
+
+/// Emitted once offline playback for [downloadId] has passed every check
+/// in [OfflinePolicyEngine.authorize] and is about to start.
+class OfflinePlaybackAuthorizedEvent extends AppEvent {
+  final String downloadId;
+
+  const OfflinePlaybackAuthorizedEvent({
+    required super.timestamp,
+    super.userId,
+    super.tenantId,
+    super.deviceId,
+    required this.downloadId,
+  });
+
+  @override
+  String get activityType => 'offline_download.playback_authorized';
+  @override
+  EventCategory get category => EventCategory.download;
+  @override
+  String get entityId => downloadId;
 }
 
 // ─── Todo Events ────────────────────────────────────────────────────────────

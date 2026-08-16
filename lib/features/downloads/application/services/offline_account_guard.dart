@@ -15,6 +15,15 @@ import '../../data/datasources/download_local_ds.dart';
 /// from `features/auth` right after a successful login (via
 /// `shared/cross_feature/downloads_shared.dart`, see `auth_provider.dart`).
 ///
+/// Rows with `user_id IS NULL` (pre-account-binding legacy downloads) are
+/// intentionally left alone by [purgeDownloadsForOtherAccounts] — see the
+/// method doc below. They are **not** "adopted" by [OfflinePolicyEngine]:
+/// that class has no code path that writes ownership onto a row, and its
+/// entitlement check independently denies every such row regardless. They
+/// simply stay visible and permanently un-playable until the user deletes
+/// or re-downloads them (see the v7/v9 migration notes in
+/// `StorageService._onUpgrade` for the full history of this behavior).
+///
 /// Best-effort and intentionally non-blocking: a failure here must never
 /// block login, and a missed purge on one login is retried on the next
 /// one (nothing here is a single point of failure for reclaiming storage
@@ -34,8 +43,11 @@ class OfflineAccountGuard {
   /// `user_id` is set and does not match [currentUserId].
   ///
   /// Downloads with no owner (legacy, pre-account-binding rows) are left
-  /// untouched — those are adopted lazily by `OfflinePolicyEngine` on
-  /// first playback instead of being treated as belonging to someone else.
+  /// untouched — they are not known to belong to a *different* account, so
+  /// purging them here would be wrong. They remain visible but are
+  /// permanently denied at playback time by `OfflinePolicyEngine` (see
+  /// that class's doc comment and the v7/v9 notes in
+  /// `StorageService._onUpgrade`) rather than being silently "adopted".
   ///
   /// Returns the number of downloads purged.
   Future<int> purgeDownloadsForOtherAccounts(String currentUserId) async {

@@ -210,12 +210,25 @@ class StorageService {
       //
       // Migration policy for rows that already exist at this point (created
       // before this column existed): they are left with user_id/device_id
-      // = NULL rather than retroactively invalidated. `OfflinePolicyEngine`
-      // adopts each one to the current account/device the first time it is
-      // played after this upgrade — see offline_policy_engine.dart. This
-      // avoids breaking playback of content a real user already
-      // legitimately downloaded on this same install, while still closing
-      // the gap for every download made from this point on.
+      // = NULL rather than retroactively invalidated or deleted, so the
+      // user does not lose visibility into content they already
+      // legitimately downloaded on this same install.
+      //
+      // CORRECTION (superseded by the v9 migration below): this originally
+      // planned for `OfflinePolicyEngine` to "adopt" these rows to the
+      // current account/device the first time they were played. That
+      // adoption path was never actually implemented — the engine has no
+      // code path that writes user_id/device_id — and v9 independently
+      // added a hard `entitlement_id` gate that denies every pre-v9 row
+      // regardless of ownership. The real, current behavior is: these
+      // rows stay visible in the Downloads list (P6.20 privacy: hidden
+      // from *other* accounts, but not deleted) and are permanently
+      // denied playback (`OfflinePlaybackDenialReason.serverRevalidationDenied`
+      // — see offline_policy_engine.dart), so the user can delete and
+      // re-download them under the current, server-authorized flow. This
+      // is fail-safe (no legacy row can bypass the entitlement boundary)
+      // but is a deliberate deny-and-prompt-redownload policy, not silent
+      // adoption.
       await db.execute('''
         ALTER TABLE $_tableDownloadedLessons ADD COLUMN user_id TEXT
       ''');
@@ -246,8 +259,10 @@ class StorageService {
       // A NULL signature is treated as "not yet signed" (allowed) by
       // StorageService.verifyDownloadSignature, and gets a real signature
       // automatically the next time anything legitimately updates that
-      // row (including the v7 legacy user/device adoption path in
-      // OfflinePolicyEngine, which already writes on first play).
+      // row (server-revalidation writes in OfflinePolicyEngine.authorize,
+      // cleanup, etc. — see the v7 migration note above for why this does
+      // *not* include a user/device "adoption" write; no such write path
+      // exists).
       await db.execute('''
         ALTER TABLE $_tableDownloadedLessons ADD COLUMN security_signature TEXT
       ''');
@@ -314,7 +329,11 @@ class StorageService {
   /// never even sees another account's download tiles, on top of (not
   /// instead of) the playback-time authorization enforced separately by
   /// `OfflinePolicyEngine`. Legacy rows with `user_id IS NULL` are always
-  /// included; see the v7 migration note above.
+  /// included — they remain visible but are permanently denied at
+  /// playback time (no server entitlement); see the v7 migration note
+  /// above for why this is a deny-and-prompt-redownload policy rather
+  /// than the "adoption" a stale earlier version of this comment
+  /// described.
   Future<List<Map<String, dynamic>>> getDownloadedLessons({
     String? ownerUserId,
   }) async {
@@ -338,8 +357,10 @@ class StorageService {
   /// than [currentUserId]. Used by `OfflineAccountGuard` right after login
   /// to purge any offline content left behind by a previous account on this
   /// device (P6.20). Rows with `user_id IS NULL` (legacy/unbound) are never
-  /// returned here — those are adopted lazily by `OfflinePolicyEngine`
-  /// instead of being treated as "someone else's".
+  /// returned here — they aren't known to belong to "someone else", so
+  /// they're left alone (visible, but permanently denied at playback —
+  /// see the v7 migration note in `_onUpgrade` for the current, corrected
+  /// description of what happens to them; they are not "adopted").
   Future<List<Map<String, dynamic>>> getDownloadsOwnedByOthers(
     String currentUserId,
   ) async {
@@ -369,8 +390,9 @@ class StorageService {
   /// account from downloading a lesson they are actually entitled to.
   /// Scoping to [ownerUserId] the same way [getDownloadedLessons] already
   /// does (excluding rows bound to a different account, but still matching
-  /// legacy `user_id IS NULL` rows so they're correctly adopted rather than
-  /// duplicated) closes that gap.
+  /// legacy `user_id IS NULL` rows so a pre-existing legacy row is treated
+  /// as "already downloaded" rather than duplicated by a new download
+  /// attempt) closes that gap.
   Future<Map<String, dynamic>?> getDownloadByLessonId(
     String lessonId, {
     String? ownerUserId,
@@ -543,8 +565,9 @@ class StorageService {
   /// separately) or when signing isn't available. Centralizing this here,
   /// rather than in each of the three write methods, is what makes every
   /// write path across the app (repository, execution service, link
-  /// refresher, crash recovery, policy-engine adoption) signed by
-  /// construction instead of needing every call site to remember to do it.
+  /// refresher, crash recovery, policy-engine server-revalidation writes)
+  /// signed by construction instead of needing every call site to
+  /// remember to do it.
   Future<String?> _signAfterMerge(
     DatabaseExecutor db,
     String id,

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/logging/domain/app_event.dart';
+import '../../../../core/logging/infrastructure/event_bus.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/encryption_service.dart';
 import '../../../../core/utils/device_info_helper.dart';
@@ -119,6 +121,7 @@ class OfflinePolicyEngine {
     String Function()? deviceFingerprint,
     String? Function()? currentUserId,
     OfflineClockGuard? clockGuard,
+    EventBus? eventBus,
   })  : _localDataSource = localDataSource,
         _encryptionService = encryptionService,
         _deviceFingerprint = deviceFingerprint ?? _defaultDeviceFingerprint,
@@ -130,13 +133,20 @@ class OfflinePolicyEngine {
         // `OfflineClockGuard(secureStorage: const FlutterSecureStorage())`
         // explicitly, mirroring `EncryptionService`'s convention — see
         // `offline_player_wrapper.dart`.
-        _clockGuard = clockGuard ?? OfflineClockGuard();
+        _clockGuard = clockGuard ?? OfflineClockGuard(),
+        // Optional (P6.36/P6.37 security telemetry): every existing
+        // construction site, including every existing test, keeps working
+        // unchanged when omitted — `authorize` simply skips emitting an
+        // event. Production call sites should pass the app's real
+        // `ref.read(eventBusProvider)` — see `offline_player_wrapper.dart`.
+        _eventBus = eventBus;
 
   final DownloadLocalDataSource _localDataSource;
   final EncryptionService _encryptionService;
   final String Function() _deviceFingerprint;
   final String? Function() _currentUserId;
   final OfflineClockGuard _clockGuard;
+  final EventBus? _eventBus;
 
   static String _defaultDeviceFingerprint() {
     try {
@@ -167,6 +177,31 @@ class OfflinePolicyEngine {
   /// switch) between when the downloads list was last loaded and the
   /// moment the user taps play.
   Future<void> authorize(String downloadId) async {
+    try {
+      await _authorizeInternal(downloadId);
+    } on OfflinePlaybackDeniedException catch (e) {
+      // P6.36/P6.37 security telemetry — never includes file paths, keys,
+      // or any of the fields OfflinePlaybackDeniedException.debugDetail
+      // may carry; only the machine-readable reason and downloadId, same
+      // as OfflinePlaybackDeniedException.userMessage's safety contract.
+      _eventBus?.emit(OfflinePlaybackDeniedEvent(
+        timestamp: DateTime.now(),
+        userId: _currentUserId(),
+        deviceId: _deviceFingerprint(),
+        downloadId: downloadId,
+        reason: e.reason.name,
+      ));
+      rethrow;
+    }
+    _eventBus?.emit(OfflinePlaybackAuthorizedEvent(
+      timestamp: DateTime.now(),
+      userId: _currentUserId(),
+      deviceId: _deviceFingerprint(),
+      downloadId: downloadId,
+    ));
+  }
+
+  Future<void> _authorizeInternal(String downloadId) async {
     final row = await _localDataSource.getDownloadById(downloadId);
     if (row == null) {
       throw OfflinePlaybackDeniedException(
