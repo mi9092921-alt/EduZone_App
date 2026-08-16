@@ -567,6 +567,19 @@ class StorageService {
   ///    it, and it matches the row's current fields.
   ///  - `false` when the row is missing, unsigned, or the signature cannot
   ///    be recomputed. The offline playback gate therefore fails closed.
+  ///
+  /// The comparison below is constant-time over the two (fixed-length,
+  /// hex-encoded SHA-256) signature strings: it XORs every byte pair and
+  /// accumulates the result with `|=` instead of returning as soon as a
+  /// mismatch is found, so recognizing a forged signature doesn't take
+  /// measurably less time than recognizing a valid one. A prior version of
+  /// this method attempted the same goal by re-hashing both sides with
+  /// `expected` itself as the HMAC key and then comparing the two hashes
+  /// with plain `==` — which doesn't actually buy anything: Dart's String
+  /// `==` still short-circuits on the first differing character, so that
+  /// final comparison remained exactly as timing-variable as comparing
+  /// `expected`/`storedSignature` directly, just with two extra hashes
+  /// computed first.
   Future<bool> verifyDownloadSignature(String id) async {
     final db = await database;
     final rows = await db.query(
@@ -583,13 +596,13 @@ class StorageService {
 
     final expected = await _sign(id, row);
     if (expected == null) return false;
+    if (expected.length != storedSignature.length) return false;
 
-    return crypto.Hmac(crypto.sha256, utf8.encode(expected))
-            .convert(utf8.encode(expected))
-            .toString() ==
-        crypto.Hmac(crypto.sha256, utf8.encode(expected))
-            .convert(utf8.encode(storedSignature))
-            .toString();
+    var diff = 0;
+    for (var i = 0; i < expected.length; i++) {
+      diff |= expected.codeUnitAt(i) ^ storedSignature.codeUnitAt(i);
+    }
+    return diff == 0;
   }
 
   /// Deletes a download record.

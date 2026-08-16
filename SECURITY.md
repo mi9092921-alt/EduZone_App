@@ -189,11 +189,14 @@ if any check fails. Account/device binding (`user_id`/`device_id` columns,
 schema v7) means a second account signing in on the same device neither
 sees nor can play back a previous account's downloads — enforced at three
 independent points: the downloads list query, the playback-time policy
-check, and an active purge on login. Downloads created before this binding
-existed (`user_id`/`device_id` both `NULL`) are adopted by whichever
-account plays them first rather than retroactively invalidated — a
-deliberate one-time migration trade-off, not an ongoing gap for anything
-downloaded from this point on.
+check, and an active purge on login. **As of schema v9**, a download with
+no owning account/device bound to it (or no active server entitlement,
+see below) is **denied outright**, not adopted — this reverses the
+earlier one-time migration trade-off for pre-v7 rows described in prior
+revisions of this document: any download created before account/device
+binding and server entitlements existed can no longer be played and must
+be deleted/re-downloaded. `CleanupScheduler`/`OfflineCrashRecovery` reclaim
+these over time; they are not retroactively force-deleted on upgrade.
 
 `OfflineCrashRecovery` (called once at startup) reclassifies any download
 stuck in `pending`/`downloading` status to `failed`, since nothing in this
@@ -201,24 +204,27 @@ codebase auto-resumes a download across an app restart — a row in one of
 those statuses at cold start can only mean the process that was writing
 to it is gone.
 
-Since schema v8, the security-critical fields that `OfflinePolicyEngine`
-actually bases its decision on (`id`, `user_id`, `device_id`, `expires_at`,
-`download_status`) are HMAC-SHA256 signed on every write
+Since schema v9, the security-critical fields `OfflinePolicyEngine`'s
+decision depends on — ownership/device binding, status, expiry,
+entitlement identity, content version, file paths, and both
+video/audio integrity hashes — are HMAC-SHA256 signed on every write
 (`StorageService._sign`/`_signAfterMerge`, applied inside
 `insertDownload`/`updateDownloadStatus`/`updateDownload` — the only three
 write paths every caller in this codebase funnels through) with a key that
 lives only in `flutter_secure_storage`, never in SQLite next to the data
 it protects. `OfflinePolicyEngine.authorize` re-verifies this signature
 (`StorageService.verifyDownloadSignature`) before trusting any of those
-fields — a row edited directly in the SQLite file (e.g. via a SQLite
+fields, using a constant-time byte comparison over the two fixed-length
+hex digests (not `==`, which short-circuits on the first differing
+character) — a row edited directly in the SQLite file (e.g. via a SQLite
 browser on a rooted device, bypassing this app's own code entirely) no
 longer matches its signature and is denied as
 `OfflinePlaybackDenialReason.tampered`, regardless of what the edited
-field values say. Rows created before this signing existed
-(`security_signature IS NULL`) are treated as "not yet signed" rather than
-denied, and get a real signature automatically the next time anything
-legitimately updates them — the same one-time migration trade-off as the
-v7 account/device binding above.
+field values say. **As of schema v9** an unsigned or unverifiable row
+(missing signature, or this instance unable to recompute one) is denied,
+not adopted — the fail-open "not yet signed" migration allowance from
+schema v8 no longer applies; only the current key holder's own writes are
+ever trusted.
 
 This closes the gap where a security decision depended purely on local
 metadata a user could edit directly — but the HMAC key is
@@ -227,6 +233,47 @@ against casual local tampering, not against an attacker who has fully
 compromised the device and can extract the key itself alongside
 everything else. That remains a real, deliberately-documented limitation
 below.
+
+### Server-authoritative offline entitlement (P6.3/P6.4)
+
+Every download now goes through `authorize_offline_download` (SQL,
+`SECURITY DEFINER`, `supabase/schema/07_functions.sql`) *before* any
+video bytes are fetched: it independently re-checks the caller's active
+enrollment, the lesson's published/course state, and that the device is
+already registered/active for that account, then creates (or reuses) a
+row in `public.offline_download_entitlements` — a table the client can
+only `SELECT` its own rows from (`09_rls.sql`/`10_permissions.sql`); all
+writes happen exclusively inside this function and
+`revalidate_offline_entitlement`, both `SECURITY DEFINER` with
+`search_path = ''`. A `BEFORE UPDATE` trigger
+(`offline_entitlement_transition_guard`) additionally rejects any state
+transition outside the documented state machine (`PENDING → ACTIVE →
+{EXPIRED, REVOKED, DELETED, CORRUPTED} → DELETED`), so even the two RPCs
+above can't move a row through an invalid sequence.
+
+`OfflinePolicyEngine.authorize` calls `revalidate_offline_entitlement`
+whenever the network is reachable and hard-denies playback on a
+non-transient server response (revoked, wrong device, expired
+enrollment); a genuine `SocketException` (device is actually offline)
+falls back to the locally cached entitlement and its already-verified
+expiry instead. This is a real change from the previous state documented
+here: there previously was *no* backend entitlement/license-issuance
+endpoint at all (P6.3/P6.4 were explicitly listed below as unimplemented)
+— that gap is now closed. What remains true: the entitlement is
+server-*authoritative*, not a cryptographically signed license the client
+can verify offline against a public key — the client trusts whatever the
+last successful RPC response said, cached locally (HMAC-signed against
+tampering, see above), until the next time it can reach the server. See
+"What this is not" immediately below for what that boundary still doesn't
+cover.
+
+Playback also now verifies a SHA-256 checksum of the encrypted video file
+(and, for dual-track downloads, the audio file separately) against a hash
+computed and stored at the moment the download completed
+(`download_execution_service.dart`), before ever attempting to decrypt —
+closing the gap where a truncated or corrupted encrypted file would only
+surface as a playback/decryption error deep inside the media pipeline
+instead of a clean, upfront `tampered`/`missingFile` denial.
 
 Since this hardening pass, the expiry check specifically is also guarded
 against device-clock rollback (P6.16) by `OfflineClockGuard`
@@ -254,13 +301,16 @@ sufficiently motivated attacker with root/jailbreak access extracting keys
 from a compromised device at the moment of use. Likewise, the
 `security_signature` HMAC and the `OfflineClockGuard` watermark above
 raise the bar against direct database edits and clock manipulation
-respectively, but neither is a server-issued, cryptographically signed
-license or a trusted-time source — there is no backend
-entitlement/license-issuance endpoint in this repo (see
-`EduZone_Offline_Download_Security_Trusted_Playback_Architecture.md`
-P6.3/P6.4), and no anti-replay protection (P6.25). See the offline-security
-architecture doc for the full threat model this is explicitly scoped
-against (and not against).
+respectively, but neither is a cryptographically signed license the
+device can verify offline against a public key — there **is** now a
+backend entitlement-issuance/revalidation boundary
+(`authorize_offline_download`/`revalidate_offline_entitlement`, see
+above — this closes what was previously documented here as a P6.3/P6.4
+gap), but it is a server-*authoritative* database record checked over the
+network, not a signed token the client verifies independently, and there
+is still no anti-replay protection on the RPC calls themselves (P6.25).
+See the offline-security architecture doc for the full threat model this
+is explicitly scoped against (and not against).
 
 ### Server-side entitlement surface for offline content
 
