@@ -2,6 +2,27 @@
 -- Source of truth: ../../Eduzone_schema_v13.sql
 -- Normalization pass #3 ownership rules applied.
 
+-- Section 12: the client may read only its own server entitlement rows.
+-- Creation/revocation is RPC-only; authenticated clients get no direct
+-- INSERT/UPDATE/DELETE path to the authorization record.
+ALTER TABLE public.offline_download_entitlements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.offline_download_entitlements FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS offline_entitlements_select_own
+  ON public.offline_download_entitlements;
+CREATE POLICY offline_entitlements_select_own
+  ON public.offline_download_entitlements
+  FOR SELECT TO authenticated
+  USING ((select auth.uid()) IS NOT NULL AND user_id = (select auth.uid()));
+
+DROP POLICY IF EXISTS offline_entitlements_service_all
+  ON public.offline_download_entitlements;
+CREATE POLICY offline_entitlements_service_all
+  ON public.offline_download_entitlements
+  FOR ALL TO service_role
+  USING (true)
+  WITH CHECK (true);
+
 ALTER TABLE public.security_incidents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.security_incidents FORCE ROW LEVEL SECURITY;
 

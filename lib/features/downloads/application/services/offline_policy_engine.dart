@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/encryption_service.dart';
 import '../../../../core/utils/device_info_helper.dart';
@@ -23,6 +25,7 @@ enum OfflinePlaybackDenialReason {
   missingFile,
   missingKey,
   clockRollbackSuspected,
+  serverRevalidationDenied,
 }
 
 /// Thrown by [OfflinePolicyEngine.authorize] when offline playback is not
@@ -70,6 +73,8 @@ class OfflinePlaybackDeniedException implements Exception {
       case OfflinePlaybackDenialReason.clockRollbackSuspected:
         return "This device's clock appears to have changed. Reconnect to "
             'the internet and try again.';
+      case OfflinePlaybackDenialReason.serverRevalidationDenied:
+        return 'This offline download is no longer authorized. Reconnect and download it again.';
     }
   }
 
@@ -205,7 +210,74 @@ class OfflinePolicyEngine {
       );
     }
 
-    final expiresAt = _asDateTime(row['expires_at']);
+    final entitlementId = row['entitlement_id']?.toString();
+    final localServerStatus = row['server_status']?.toString();
+    if (entitlementId == null || entitlementId.isEmpty || localServerStatus != 'ACTIVE') {
+      throw OfflinePlaybackDeniedException(
+        OfflinePlaybackDenialReason.serverRevalidationDenied,
+        'downloadId=$downloadId missing/inactive server entitlement', // check-ignore
+      );
+    }
+
+    // When the server is reachable, revalidate the authoritative entitlement.
+    // If the device is actually offline, continue with the locally cached
+    // ACTIVE entitlement and its fixed expiry. Any server-side deny is a hard
+    // deny and updates local state before playback can continue.
+    try {
+      final serverData = await SupabaseService.client.rpc(
+        'revalidate_offline_entitlement',
+        params: {
+          'p_entitlement_id': entitlementId,
+          'p_device_id': _deviceFingerprint(),
+        },
+      );
+      if (serverData is! Map<String, dynamic>) {
+        throw const OfflinePlaybackDeniedException(
+          OfflinePlaybackDenialReason.serverRevalidationDenied,
+          'invalid server revalidation response', // check-ignore: dev-only debugDetail, never rendered — see userMessage
+        );
+      }
+      final serverStatus = serverData['status']?.toString();
+      final serverExpiry = DateTime.tryParse(serverData['expires_at']?.toString() ?? '');
+      final serverRevokedAt = DateTime.tryParse(serverData['revoked_at']?.toString() ?? '');
+      await _localDataSource.updateDownload(downloadId, {
+        'server_status': serverStatus,
+        'server_expires_at': serverExpiry?.millisecondsSinceEpoch,
+        'server_revoked_at': serverRevokedAt?.millisecondsSinceEpoch,
+      });
+      if (serverStatus != 'ACTIVE' || serverExpiry == null) {
+        throw OfflinePlaybackDeniedException(
+          OfflinePlaybackDenialReason.serverRevalidationDenied,
+          'downloadId=$downloadId serverStatus=$serverStatus', // check-ignore
+        );
+      }
+    } on OfflinePlaybackDeniedException {
+      rethrow;
+    } on PostgrestException catch (e) {
+      final code = e.code ?? '';
+      final transient = code.startsWith('08') ||
+          code.startsWith('53') ||
+          code == 'PGRST000' ||
+          code == 'PGRST001' ||
+          code == 'PGRST002' ||
+          code == 'PGRST003';
+      if (!transient) {
+        throw OfflinePlaybackDeniedException(
+          OfflinePlaybackDenialReason.serverRevalidationDenied,
+          'downloadId=$downloadId serverCode=$code', // check-ignore
+        );
+      }
+    } on SocketException {
+      // Genuine offline operation: use the cached server entitlement below.
+    }
+
+    final localExpiresAt = _asDateTime(row['expires_at']);
+    final serverExpiresAt = _asDateTime(row['server_expires_at']);
+    final expiresAt = localExpiresAt == null
+        ? serverExpiresAt
+        : serverExpiresAt == null
+            ? localExpiresAt
+            : (localExpiresAt.isBefore(serverExpiresAt) ? localExpiresAt : serverExpiresAt);
     if (expiresAt != null && DateTime.now().isAfter(expiresAt)) {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.expired,
@@ -223,6 +295,40 @@ class OfflinePolicyEngine {
         OfflinePlaybackDenialReason.missingFile,
         'downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
       );
+    }
+
+    final expectedChecksum = row['checksum']?.toString();
+    if (expectedChecksum == null || expectedChecksum.isEmpty) {
+      throw OfflinePlaybackDeniedException(
+        OfflinePlaybackDenialReason.tampered,
+        'downloadId=$downloadId missing video integrity hash', // check-ignore
+      );
+    }
+    final actualChecksum = await _encryptionService.calculateChecksum(File(encryptedPath));
+    if (actualChecksum != expectedChecksum) {
+      throw OfflinePlaybackDeniedException(
+        OfflinePlaybackDenialReason.tampered,
+        'downloadId=$downloadId video integrity mismatch', // check-ignore
+      );
+    }
+
+    final audioPath = row['audio_path'] as String?;
+    if (audioPath != null && audioPath.isNotEmpty) {
+      final expectedAudioChecksum = row['audio_checksum']?.toString();
+      if (expectedAudioChecksum == null || expectedAudioChecksum.isEmpty ||
+          !await File(audioPath).exists()) {
+        throw OfflinePlaybackDeniedException(
+          OfflinePlaybackDenialReason.missingFile,
+          'downloadId=$downloadId audio integrity metadata/file missing', // check-ignore
+        );
+      }
+      final actualAudioChecksum = await _encryptionService.calculateChecksum(File(audioPath));
+      if (actualAudioChecksum != expectedAudioChecksum) {
+        throw OfflinePlaybackDeniedException(
+          OfflinePlaybackDenialReason.tampered,
+          'downloadId=$downloadId audio integrity mismatch', // check-ignore
+        );
+      }
     }
 
     String? key;
@@ -248,21 +354,13 @@ class OfflinePolicyEngine {
     final currentUserId = _currentUserId();
     final currentDeviceId = _deviceFingerprint();
 
-    if (ownerUserId == null && ownerDeviceId == null) {
-      // Legacy download created before account/device binding existed
-      // (pre schema-v7). Adopt it to the current account/device the first
-      // time it is played, instead of retroactively invalidating content
-      // the user already legitimately downloaded on this same install —
-      // see the migration note in storage_service.dart. Best-effort: a
-      // failure to persist the adoption must not block a play attempt
-      // that was otherwise allowed.
-      try {
-        await _localDataSource.updateDownload(downloadId, {
-          'user_id': currentUserId,
-          'device_id': currentDeviceId,
-        });
-      } catch (_) {}
-      return;
+    if (ownerUserId == null || ownerDeviceId == null ||
+        ownerUserId.isEmpty || ownerDeviceId.isEmpty ||
+        currentUserId == null || currentDeviceId.isEmpty) {
+      throw OfflinePlaybackDeniedException(
+        OfflinePlaybackDenialReason.ownerMismatch,
+        'downloadId=$downloadId unbound offline metadata', // check-ignore
+      );
     }
 
     if (ownerUserId != null && ownerUserId != currentUserId) {

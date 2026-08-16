@@ -106,22 +106,25 @@ class DownloadRepositoryImpl implements DownloadRepository {
         return const Left(UnknownFailure('Invalid video URL')); // check-ignore
       }
 
+      // The download identifier is created before authorization so the
+      // server entitlement and the local record share one immutable binding.
+      final generatedDownloadId = _localDataSource.generateDownloadId();
+      final downloadId = generatedDownloadId.isEmpty ? _uuid.v4() : generatedDownloadId;
+
       // Check if already downloaded
       final existing = await _localDataSource.getDownloadByLessonId(lessonId);
       if (existing != null) {
         return const Left(AlreadyDownloadedFailure());
       }
 
-      // Validate course/lesson access through Supabase Edge Function
-      final accessResult = await _remoteDataSource.validateCourseAccess(
+      // Ordinary online access is not an offline entitlement. The server
+      // validates authentication, enrollment, published content and the
+      // already-registered device binding before any content bytes are read.
+      final offlineEntitlement = await _remoteDataSource.authorizeOfflineDownload(
         lessonId: lessonId,
         courseId: courseId,
+        downloadId: downloadId,
       );
-      if (!accessResult.allowed) {
-        return const Left(
-          UnknownFailure('Offline access is not available for this lesson'), // check-ignore
-        );
-      }
 
       // Fetch video metadata and format URLs
       if (kDebugMode) debugPrint('🔍 getVideoInfo → calling with url: $videoUrl');
@@ -153,10 +156,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
         return const Left(StorageFailure('Insufficient storage space')); // check-ignore
       }
 
-      // Generate download ID and paths
-      final generatedDownloadId = _localDataSource.generateDownloadId();
-      final downloadId =
-          generatedDownloadId.isEmpty ? _uuid.v4() : generatedDownloadId;
+      // Generate paths only after server authorization has succeeded.
       final encryptedPath = await _localDataSource.createFilePath(
         lessonId: lessonId,
         quality: quality.label,
@@ -170,17 +170,13 @@ class DownloadRepositoryImpl implements DownloadRepository {
             )
           : null;
 
-      // Cap content retention at 30 days or the subscription expiry,
-      // whichever is sooner.  The previous fallback (3650 days) would grant
-      // 10-year offline access to a lesson whose subscription expired — a
-      // commercial and security bug.
-      final maxRetention = DateTime.now().add(const Duration(days: 30));
-      final subscriptionExpiry = accessResult.expiresAt;
-      final expiresAt =
-          (subscriptionExpiry == null ||
-                  subscriptionExpiry.isAfter(maxRetention))
-              ? maxRetention
-              : subscriptionExpiry;
+      final serverExpiresAt = DateTime.tryParse(
+        offlineEntitlement['expires_at']?.toString() ?? '',
+      );
+      if (serverExpiresAt == null) {
+        return const Left(UnknownFailure('Offline authorization returned no expiry')); // check-ignore
+      }
+      final expiresAt = serverExpiresAt;
 
       // Generate encryption key (shared for both video and audio files)
       final encryptionKey = _encryptionService.generateEncryptionKey();
@@ -207,6 +203,16 @@ class DownloadRepositoryImpl implements DownloadRepository {
 
       // Insert into database and start the download in the background.
       await _localDataSource.insertDownload(download);
+      await _localDataSource.updateDownload(downloadId, {
+        'entitlement_id': offlineEntitlement['entitlement_id']?.toString(),
+        'server_status': offlineEntitlement['status']?.toString(),
+        'server_issued_at': DateTime.tryParse(
+          offlineEntitlement['issued_at']?.toString() ?? '',
+        )?.millisecondsSinceEpoch,
+        'server_expires_at': serverExpiresAt.millisecondsSinceEpoch,
+        'server_revoked_at': null,
+        'content_version': offlineEntitlement['content_version']?.toString(),
+      });
       // Persist the original source URL (the parameter passed to startDownload)
       // separately from video_url (which holds the resolved short-lived server
       // link).  source_url is used by resumeDownload() to obtain a fresh link
@@ -227,7 +233,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
           encryptionKey: encryptionKey,
           lessonId: lessonId,
           quality: quality,
-          accessExpiresAt: accessResult.expiresAt,
+          accessExpiresAt: serverExpiresAt,
           sourceUrl: videoUrl,
         ).catchError((Object e, StackTrace stack) {
           if (kDebugMode) debugPrint('❌ startDownload background error: $e\n$stack');
@@ -288,6 +294,37 @@ class DownloadRepositoryImpl implements DownloadRepository {
               (downloadData['expires_at'] as num).toInt(),
             )
           : null;
+
+      final entitlementId = downloadData['entitlement_id']?.toString();
+      final localServerStatus = downloadData['server_status']?.toString();
+      if (entitlementId == null || entitlementId.isEmpty || localServerStatus != 'ACTIVE') {
+        return const Left(UnknownFailure('Offline entitlement is no longer valid')); // check-ignore
+      }
+
+      try {
+        final server = await _remoteDataSource.revalidateOfflineEntitlement(
+          entitlementId: entitlementId,
+        );
+        final serverStatus = server['status']?.toString();
+        final serverExpiresAt = DateTime.tryParse(server['expires_at']?.toString() ?? '');
+        await _localDataSource.updateDownload(downloadId, {
+          'server_status': serverStatus,
+          'server_expires_at': serverExpiresAt?.millisecondsSinceEpoch,
+          'server_revoked_at': DateTime.tryParse(server['revoked_at']?.toString() ?? '')
+              ?.millisecondsSinceEpoch,
+        });
+        if (serverStatus != 'ACTIVE' || serverExpiresAt == null ||
+            DateTime.now().isAfter(serverExpiresAt)) {
+          return const Left(UnknownFailure('Offline entitlement is no longer valid')); // check-ignore
+        }
+      } on ServerException catch (e) {
+        // A transient connectivity failure does not invalidate an otherwise
+        // active, unexpired entitlement. Server-side deny responses are not
+        // treated as transient by the RPC and remain a hard failure.
+        if (e.code != 'network_error') {
+          return Left(ServerFailure(e.message));
+        }
+      }
 
       // ── Link-refresh ─────────────────────────────────────────────────────
       // Delegated to DownloadLinkRefresher (see ARCH-006): if the stored

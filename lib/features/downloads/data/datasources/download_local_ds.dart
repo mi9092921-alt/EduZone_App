@@ -178,7 +178,10 @@ class DownloadLocalDataSource {
 
   /// Gets a download by its ID.
   Future<Map<String, dynamic>?> getDownloadById(String id) async {
-    return await _storageService.getDownloadById(id);
+    return await _storageService.getDownloadById(
+      id,
+      ownerUserId: _currentUserId(),
+    );
   }
 
   /// Re-verifies [id]'s tamper-evidence signature against its current
@@ -190,12 +193,18 @@ class DownloadLocalDataSource {
 
   /// Gets downloads by course ID.
   Future<List<Map<String, dynamic>>> getDownloadsByCourse(String courseId) async {
-    return await _storageService.getDownloadsByCourse(courseId);
+    return await _storageService.getDownloadsByCourse(
+      courseId,
+      ownerUserId: _currentUserId(),
+    );
   }
 
   /// Gets downloads by status.
   Future<List<Map<String, dynamic>>> getDownloadsByStatus(String status) async {
-    return await _storageService.getDownloadsByStatus(status);
+    return await _storageService.getDownloadsByStatus(
+      status,
+      ownerUserId: _currentUserId(),
+    );
   }
 
   /// Updates download status.
@@ -225,12 +234,16 @@ class DownloadLocalDataSource {
 
   /// Gets expired downloads.
   Future<List<Map<String, dynamic>>> getExpiredDownloads() async {
-    return await _storageService.getExpiredDownloads();
+    return await _storageService.getExpiredDownloads(
+      ownerUserId: _currentUserId(),
+    );
   }
 
   /// Gets total storage used.
   Future<int> getTotalStorageUsed() async {
-    return await _storageService.getTotalStorageUsed();
+    return await _storageService.getTotalStorageUsed(
+      ownerUserId: _currentUserId(),
+    );
   }
 
   /// Deletes the encrypted file for a download.

@@ -8,6 +8,25 @@
 -- - Unnecessary anon/authenticated access revoked from 120+ internal/admin functions
 -- - Follows principle of least privilege with explicit GRANT model
 -- - Maintains backward compatibility with production frontend & edge functions
+-- Section 12: entitlement records are readable by authenticated owners only;
+-- authorization-changing RPCs are the sole client write path.
+REVOKE ALL ON TABLE public.offline_download_entitlements FROM anon, authenticated;
+GRANT SELECT ON TABLE public.offline_download_entitlements TO authenticated;
+GRANT ALL ON TABLE public.offline_download_entitlements TO service_role;
+
+REVOKE ALL ON FUNCTION public.authorize_offline_download(uuid, uuid, text, uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.authorize_offline_download(uuid, uuid, text, uuid)
+  TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.revalidate_offline_entitlement(uuid, text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.revalidate_offline_entitlement(uuid, text)
+  TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.offline_entitlement_transition_guard()
+  FROM PUBLIC, anon, authenticated;
+
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
 
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;

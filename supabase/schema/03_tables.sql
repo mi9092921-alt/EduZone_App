@@ -2,6 +2,41 @@
 -- Source of truth: ../../Eduzone_schema_v13.sql
 -- Normalization pass #3 ownership rules applied.
 
+-- ============================================================================
+-- Section 12: server-authoritative offline entitlements
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.offline_download_entitlements (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  content_id uuid NOT NULL,
+  content_type text NOT NULL DEFAULT 'lesson' CHECK (content_type = 'lesson'),
+  device_id text NOT NULL CHECK (btrim(device_id) <> ''),
+  download_id uuid NOT NULL,
+  issued_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  revoked_at timestamptz,
+  status text NOT NULL DEFAULT 'ACTIVE'
+    CHECK (status IN ('PENDING','ACTIVE','EXPIRED','REVOKED','DELETED','CORRUPTED')),
+  content_version text NOT NULL DEFAULT 'v1',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT offline_entitlement_dates CHECK (expires_at > issued_at),
+  CONSTRAINT offline_entitlement_revoked_state CHECK (
+    (status <> 'REVOKED') OR revoked_at IS NOT NULL
+  ),
+  CONSTRAINT offline_entitlement_active_state CHECK (
+    (status <> 'ACTIVE') OR revoked_at IS NULL
+  ),
+  UNIQUE (user_id, download_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_offline_entitlements_owner
+  ON public.offline_download_entitlements (user_id, device_id, content_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_offline_entitlements_expiry
+  ON public.offline_download_entitlements (expires_at)
+  WHERE status IN ('PENDING','ACTIVE');
+
 -- Security telemetry written by the authenticated client when a local
 -- integrity/RASP control (SecurityService, freeRASP) detects a threat.
 -- This is telemetry only and is never an authorization boundary — no
@@ -563,6 +598,20 @@ CREATE TABLE IF NOT EXISTS public.lesson_contents (
     REFERENCES public.lessons(id, course_id, section_id, tenant_id)
     ON DELETE RESTRICT
 );
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_constraint
+    WHERE conname = 'offline_entitlements_content_fkey'
+      AND conrelid = 'public.offline_download_entitlements'::pg_catalog.regclass
+  ) THEN
+    ALTER TABLE public.offline_download_entitlements
+      ADD CONSTRAINT offline_entitlements_content_fkey
+      FOREIGN KEY (content_id) REFERENCES public.lessons(id) ON DELETE CASCADE;
+  END IF;
+END;
+$$;
 
 -- ============================================================================
 -- Enrollment, progress, activity, and devices

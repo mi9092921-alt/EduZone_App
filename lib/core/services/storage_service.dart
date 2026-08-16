@@ -20,7 +20,7 @@ import 'package:sqflite/sqflite.dart';
 /// - File sizes and checksums
 class StorageService {
   static const _databaseName = 'eduzone_downloads.db';
-  static const _databaseVersion = 8;
+  static const _databaseVersion = 9;
 
   static const _tableDownloadedLessons = 'downloaded_lessons';
   static const _tableBookmarks = 'bookmarks';
@@ -103,7 +103,14 @@ class StorageService {
         link_validated_at INTEGER,
         user_id TEXT,
         device_id TEXT,
-        security_signature TEXT
+        security_signature TEXT,
+        entitlement_id TEXT,
+        server_status TEXT,
+        server_issued_at INTEGER,
+        server_expires_at INTEGER,
+        server_revoked_at INTEGER,
+        content_version TEXT,
+        audio_checksum TEXT
       )
     ''');
 
@@ -246,6 +253,19 @@ class StorageService {
       ''');
     }
 
+    if (oldVersion < 9) {
+      await db.execute('ALTER TABLE $_tableDownloadedLessons ADD COLUMN entitlement_id TEXT');
+      await db.execute('ALTER TABLE $_tableDownloadedLessons ADD COLUMN server_status TEXT');
+      await db.execute('ALTER TABLE $_tableDownloadedLessons ADD COLUMN server_issued_at INTEGER');
+      await db.execute('ALTER TABLE $_tableDownloadedLessons ADD COLUMN server_expires_at INTEGER');
+      await db.execute('ALTER TABLE $_tableDownloadedLessons ADD COLUMN server_revoked_at INTEGER');
+      await db.execute('ALTER TABLE $_tableDownloadedLessons ADD COLUMN content_version TEXT');
+      await db.execute('ALTER TABLE $_tableDownloadedLessons ADD COLUMN audio_checksum TEXT');
+      // Existing local downloads have no server-issued entitlement and must
+      // therefore not cross the production offline authorization boundary.
+      // They remain visible so the user can delete/re-download them.
+    }
+
     // Preventive data-integrity sweep: any 'completed' row that is missing
     // critical numeric fields would cause a silent TypeError in _mapToEntity
     // (swallowed by the catch block), making it invisible in the downloads
@@ -373,14 +393,24 @@ class StorageService {
   }
 
   /// Gets a download by its ID.
-  Future<Map<String, dynamic>?> getDownloadById(String id) async {
+  Future<Map<String, dynamic>?> getDownloadById(
+    String id, {
+    String? ownerUserId,
+  }) async {
     final db = await database;
-    final results = await db.query(
-      _tableDownloadedLessons,
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
+    final results = ownerUserId == null
+        ? await db.query(
+            _tableDownloadedLessons,
+            where: 'id = ?',
+            whereArgs: [id],
+            limit: 1,
+          )
+        : await db.query(
+            _tableDownloadedLessons,
+            where: 'id = ? AND user_id = ?',
+            whereArgs: [id, ownerUserId],
+            limit: 1,
+          );
     return results.isNotEmpty ? results.first : null;
   }
 
@@ -433,9 +463,10 @@ class StorageService {
 
   // ── Metadata tamper-evidence (P6.22/P6.23) ────────────────────────────
   //
-  // `security_signature` is an HMAC-SHA256 over the five fields that
-  // OfflinePolicyEngine's playback decision actually depends on:
-  // id, user_id, device_id, expires_at, download_status. The HMAC key
+  // `security_signature` is an HMAC-SHA256 over the authorization and
+  // integrity metadata used by OfflinePolicyEngine: ownership, status,
+  // expiry, entitlement identity, content version, file paths and hashes.
+  // The HMAC key
   // lives only in secure storage (Keystore/Keychain-backed), never in
   // SQLite next to the data it protects — so editing the SQLite file
   // directly (the exact T4 threat this whole file's callers exist to
@@ -452,10 +483,8 @@ class StorageService {
   // honesty-required boundary statement.
 
   /// Lazily generates (once per device install) and caches the HMAC key.
-  /// Returns null — meaning "skip signing, not sign-with-empty-key" —
-  /// whenever no [FlutterSecureStorage] was supplied to this instance, or
-  /// if reading/writing it fails for any reason. Every caller below must
-  /// treat null as "this instance can't sign right now", not as an error.
+  /// A missing/unavailable secure storage is a security failure, not a reason
+  /// to silently disable metadata authenticity.
   Future<String?> _getHmacKey() async {
     final secureStorage = _secureStorage;
     if (secureStorage == null) return null;
@@ -471,10 +500,7 @@ class StorageService {
       _cachedHmacKey = key;
       return key;
     } catch (e) {
-      debugPrint(
-        '[StorageService] HMAC key unavailable, signing skipped: '
-        '${e.runtimeType}',
-      );
+      debugPrint('[StorageService] HMAC key unavailable: ${e.runtimeType}');
       return null;
     }
   }
@@ -490,7 +516,16 @@ class StorageService {
     final deviceId = values['device_id'] as String? ?? '';
     final expiresAt = values['expires_at']?.toString() ?? '';
     final status = values['download_status'] as String? ?? '';
-    return '$id|$userId|$deviceId|$expiresAt|$status';
+    final entitlementId = values['entitlement_id']?.toString() ?? '';
+    final serverStatus = values['server_status']?.toString() ?? '';
+    final serverExpiresAt = values['server_expires_at']?.toString() ?? '';
+    final contentVersion = values['content_version']?.toString() ?? '';
+    final encryptedPath = values['encrypted_path']?.toString() ?? '';
+    final audioPath = values['audio_path']?.toString() ?? '';
+    final checksum = values['checksum']?.toString() ?? '';
+    final audioChecksum = values['audio_checksum']?.toString() ?? '';
+    return '$id|$userId|$deviceId|$expiresAt|$status|$entitlementId|$serverStatus|'
+        '$serverExpiresAt|$contentVersion|$encryptedPath|$audioPath|$checksum|$audioChecksum';
   }
 
   /// Returns the HMAC-SHA256 signature for [values], or null if signing
@@ -528,16 +563,10 @@ class StorageService {
 
   /// Re-verifies [id]'s stored `security_signature` against its current
   /// field values. Returns:
-  ///  - `true` when the row doesn't exist (nothing to verify — callers
-  ///    like `OfflinePolicyEngine` already deny "not found" separately),
-  ///    when there is no stored signature yet (pre-v8 row — adopted, not
-  ///    denied, exactly like the v7 user/device binding migration), or
-  ///    when this instance can't sign (no secure storage supplied — fails
-  ///    open only for "can't verify", never for a confirmed mismatch).
-  ///  - `false` only when a signature exists AND it does not match the
-  ///    row's current fields — i.e. something wrote to this row's
-  ///    security-critical fields without going through this class's own
-  ///    signing write path.
+  ///  - `true` only when a signature exists, this instance can recompute
+  ///    it, and it matches the row's current fields.
+  ///  - `false` when the row is missing, unsigned, or the signature cannot
+  ///    be recomputed. The offline playback gate therefore fails closed.
   Future<bool> verifyDownloadSignature(String id) async {
     final db = await database;
     final rows = await db.query(
@@ -546,16 +575,21 @@ class StorageService {
       whereArgs: [id],
       limit: 1,
     );
-    if (rows.isEmpty) return true;
+    if (rows.isEmpty) return false;
 
     final row = rows.first;
     final storedSignature = row['security_signature'] as String?;
-    if (storedSignature == null) return true;
+    if (storedSignature == null || storedSignature.isEmpty) return false;
 
     final expected = await _sign(id, row);
-    if (expected == null) return true;
+    if (expected == null) return false;
 
-    return expected == storedSignature;
+    return crypto.Hmac(crypto.sha256, utf8.encode(expected))
+            .convert(utf8.encode(expected))
+            .toString() ==
+        crypto.Hmac(crypto.sha256, utf8.encode(expected))
+            .convert(utf8.encode(storedSignature))
+            .toString();
   }
 
   /// Deletes a download record.
@@ -569,25 +603,45 @@ class StorageService {
   }
 
   /// Gets all downloads with a specific status.
-  Future<List<Map<String, dynamic>>> getDownloadsByStatus(String status) async {
+  Future<List<Map<String, dynamic>>> getDownloadsByStatus(
+    String status, {
+    String? ownerUserId,
+  }) async {
     final db = await database;
-    return await db.query(
-      _tableDownloadedLessons,
-      where: 'download_status = ?',
-      whereArgs: [status],
-      orderBy: 'downloaded_at DESC',
-    );
+    return ownerUserId == null
+        ? await db.query(
+            _tableDownloadedLessons,
+            where: 'download_status = ?',
+            whereArgs: [status],
+            orderBy: 'downloaded_at DESC',
+          )
+        : await db.query(
+            _tableDownloadedLessons,
+            where: 'download_status = ? AND user_id = ?',
+            whereArgs: [status, ownerUserId],
+            orderBy: 'downloaded_at DESC',
+          );
   }
 
   /// Gets all downloads for a specific course.
-  Future<List<Map<String, dynamic>>> getDownloadsByCourse(String courseId) async {
+  Future<List<Map<String, dynamic>>> getDownloadsByCourse(
+    String courseId, {
+    String? ownerUserId,
+  }) async {
     final db = await database;
-    return await db.query(
-      _tableDownloadedLessons,
-      where: 'course_id = ?',
-      whereArgs: [courseId],
-      orderBy: 'downloaded_at DESC',
-    );
+    return ownerUserId == null
+        ? await db.query(
+            _tableDownloadedLessons,
+            where: 'course_id = ?',
+            whereArgs: [courseId],
+            orderBy: 'downloaded_at DESC',
+          )
+        : await db.query(
+            _tableDownloadedLessons,
+            where: 'course_id = ? AND user_id = ?',
+            whereArgs: [courseId, ownerUserId],
+            orderBy: 'downloaded_at DESC',
+          );
   }
 
   /// Gets expired downloads (expires_at < current time) **or** records that
@@ -597,7 +651,9 @@ class StorageService {
   /// Previously this method only looked at [expires_at], so completed records
   /// expiring in the future were never cleaned up, and failed/pending orphans
   /// were never included at all — making the Cleanup button a no-op.
-  Future<List<Map<String, dynamic>>> getExpiredDownloads() async {
+  Future<List<Map<String, dynamic>>> getExpiredDownloads({
+    String? ownerUserId,
+  }) async {
     final db = await database;
     final now = DateTime.now().millisecondsSinceEpoch;
     // Orphan threshold: failed or pending records older than 24 h
@@ -609,8 +665,9 @@ class StorageService {
       WHERE expires_at < ?
          OR (download_status IN ('failed', 'pending')
              AND downloaded_at < ?)
+        ${ownerUserId == null ? '' : 'AND user_id = ?'}
       ''',
-      [now, orphanThreshold],
+      ownerUserId == null ? [now, orphanThreshold] : [now, orphanThreshold, ownerUserId],
     );
   }
 
@@ -619,12 +676,18 @@ class StorageService {
   /// SQLite's SUM() aggregate may return [double] even for INTEGER columns when
   /// the summed values were stored via sqflite's num codec. Using `as int?`
   /// directly would throw a [TypeError]; cast via [num] instead.
-  Future<int> getTotalStorageUsed() async {
+  Future<int> getTotalStorageUsed({String? ownerUserId}) async {
     final db = await database;
-    final result = await db.rawQuery(
-      'SELECT SUM(file_size) as total FROM $_tableDownloadedLessons WHERE download_status = ?',
-      ['completed'],
-    );
+    final result = ownerUserId == null
+        ? await db.rawQuery(
+            'SELECT SUM(file_size) as total FROM $_tableDownloadedLessons WHERE download_status = ?',
+            ['completed'],
+          )
+        : await db.rawQuery(
+            'SELECT SUM(file_size) as total FROM $_tableDownloadedLessons '
+            'WHERE download_status = ? AND user_id = ?',
+            ['completed', ownerUserId],
+          );
     final total = result.first['total'];
     if (total == null) return 0;
     if (total is int) return total;

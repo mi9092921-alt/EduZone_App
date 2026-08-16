@@ -257,14 +257,15 @@ class DownloadExecutionService {
         final videoSize = await videoEncrypted.length();
         final audioSize = await audioEncrypted.length();
         final totalFileSize = videoSize + audioSize;
-        final checksum =
-            await _encryptionService.calculateChecksum(videoEncrypted);
+        final checksum = await _encryptionService.calculateChecksum(videoEncrypted);
+        final audioChecksum = await _encryptionService.calculateChecksum(audioEncrypted);
 
         await _localDataSource.updateDownload(downloadId, {
           'download_status': 'completed',
           'progress': 100.0,
           'file_size': totalFileSize,
           'checksum': checksum,
+          'audio_checksum': audioChecksum,
         });
       } else {
         // ── Single-file muxed download ─────────────────────────────────────

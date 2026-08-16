@@ -1,3 +1,248 @@
+-- ============================================================================
+-- Section 12: authoritative server-side offline entitlement boundary
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.offline_entitlement_transition_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.status IS DISTINCT FROM OLD.status THEN
+    IF NOT (
+      (OLD.status = 'PENDING' AND NEW.status = 'ACTIVE') OR
+      (OLD.status = 'ACTIVE' AND NEW.status IN ('EXPIRED','REVOKED','DELETED','CORRUPTED')) OR
+      (OLD.status IN ('EXPIRED','REVOKED','CORRUPTED') AND NEW.status = 'DELETED')
+    ) THEN
+      RAISE EXCEPTION 'invalid offline entitlement state transition' USING ERRCODE = '23514';
+    END IF;
+  END IF;
+  NEW.updated_at := pg_catalog.now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_offline_entitlement_transition
+  ON public.offline_download_entitlements;
+CREATE TRIGGER trg_offline_entitlement_transition
+BEFORE UPDATE ON public.offline_download_entitlements
+FOR EACH ROW EXECUTE FUNCTION public.offline_entitlement_transition_guard();
+
+CREATE OR REPLACE FUNCTION public.authorize_offline_download(
+  p_lesson_id uuid,
+  p_course_id uuid,
+  p_device_id text,
+  p_download_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_enrollment public.enrollments%ROWTYPE;
+  v_content_version text;
+  v_expires_at timestamptz;
+  v_entitlement public.offline_download_entitlements%ROWTYPE;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'authentication required' USING ERRCODE = '42501';
+  END IF;
+  -- Serialize concurrent claims for the same user/content/device so a
+  -- double-tap or duplicate worker cannot race two active entitlements.
+  PERFORM pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtext(v_user_id::text || ':' || p_lesson_id::text || ':' || p_device_id)
+  );
+  IF p_download_id IS NULL OR p_lesson_id IS NULL OR p_course_id IS NULL
+     OR p_device_id IS NULL OR btrim(p_device_id) = '' THEN
+    RAISE EXCEPTION 'invalid offline authorization request' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT e.* INTO v_enrollment
+  FROM public.enrollments e
+  WHERE e.user_id = v_user_id
+    AND e.course_id = p_course_id
+    AND e.status = 'active'
+    AND (e.expires_at IS NULL OR e.expires_at > pg_catalog.now())
+    AND e.deleted_at IS NULL;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'offline entitlement denied' USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.lessons l
+    WHERE l.id = p_lesson_id
+      AND l.course_id = p_course_id
+      AND l.is_published
+      AND l.deleted_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'offline entitlement denied' USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.devices d
+    WHERE d.user_id = v_user_id
+      AND d.device_id = p_device_id
+      AND d.is_active
+  ) THEN
+    RAISE EXCEPTION 'offline entitlement denied' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT COALESCE(to_char(lc.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'v1')
+    INTO v_content_version
+  FROM public.lesson_contents lc
+  WHERE lc.lesson_id = p_lesson_id;
+  v_content_version := COALESCE(v_content_version, 'v1');
+
+  v_expires_at := LEAST(
+    COALESCE(v_enrollment.expires_at, pg_catalog.now() + interval '30 days'),
+    pg_catalog.now() + interval '30 days'
+  );
+
+  SELECT * INTO v_entitlement
+  FROM public.offline_download_entitlements e
+  WHERE e.user_id = v_user_id
+    AND e.download_id = p_download_id
+  LIMIT 1;
+
+  IF FOUND THEN
+    IF v_entitlement.device_id <> p_device_id
+       OR v_entitlement.content_id <> p_lesson_id THEN
+      RAISE EXCEPTION 'offline entitlement denied' USING ERRCODE = '42501';
+    END IF;
+    IF v_entitlement.status IN ('REVOKED','DELETED','CORRUPTED') THEN
+      RAISE EXCEPTION 'offline entitlement denied' USING ERRCODE = '42501';
+    END IF;
+  ELSE
+    INSERT INTO public.offline_download_entitlements (
+      user_id, content_id, content_type, device_id, download_id,
+      issued_at, expires_at, status, content_version
+    ) VALUES (
+      v_user_id, p_lesson_id, 'lesson', p_device_id, p_download_id,
+      pg_catalog.now(), v_expires_at, 'PENDING', v_content_version
+    )
+    RETURNING * INTO v_entitlement;
+
+    UPDATE public.offline_download_entitlements
+       SET status = 'ACTIVE'
+     WHERE id = v_entitlement.id
+     RETURNING * INTO v_entitlement;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'entitlement_id', v_entitlement.id,
+    'download_id', v_entitlement.download_id,
+    'user_id', v_entitlement.user_id,
+    'content_id', v_entitlement.content_id,
+    'content_type', v_entitlement.content_type,
+    'device_id', v_entitlement.device_id,
+    'issued_at', v_entitlement.issued_at,
+    'expires_at', v_entitlement.expires_at,
+    'revoked_at', v_entitlement.revoked_at,
+    'status', v_entitlement.status,
+    'content_version', v_entitlement.content_version
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.revalidate_offline_entitlement(
+  p_entitlement_id uuid,
+  p_device_id text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_entitlement public.offline_download_entitlements%ROWTYPE;
+  v_course_id uuid;
+  v_enrollment_status text;
+  v_enrollment_expires timestamptz;
+  v_content_version text;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'authentication required' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT * INTO v_entitlement
+  FROM public.offline_download_entitlements e
+  WHERE e.id = p_entitlement_id
+    AND e.user_id = v_user_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_entitlement.device_id <> p_device_id THEN
+    RAISE EXCEPTION 'offline entitlement denied' USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.devices d
+    WHERE d.user_id = v_user_id
+      AND d.device_id = p_device_id
+      AND d.is_active
+  ) AND v_entitlement.status = 'ACTIVE' THEN
+    UPDATE public.offline_download_entitlements
+       SET status = 'REVOKED', revoked_at = pg_catalog.now()
+     WHERE id = v_entitlement.id;
+  END IF;
+
+  SELECT l.course_id INTO v_course_id
+  FROM public.lessons l
+  WHERE l.id = v_entitlement.content_id;
+
+  SELECT COALESCE(to_char(lc.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'v1')
+    INTO v_content_version
+  FROM public.lesson_contents lc
+  WHERE lc.lesson_id = v_entitlement.content_id;
+  v_content_version := COALESCE(v_content_version, 'v1');
+
+  SELECT e.status, e.expires_at
+    INTO v_enrollment_status, v_enrollment_expires
+  FROM public.enrollments e
+  WHERE e.user_id = v_user_id
+    AND e.course_id = v_course_id
+    AND e.deleted_at IS NULL
+  ORDER BY e.created_at DESC
+  LIMIT 1;
+
+  SELECT * INTO v_entitlement
+  FROM public.offline_download_entitlements
+  WHERE id = v_entitlement.id;
+
+  IF v_entitlement.status = 'ACTIVE' AND v_entitlement.expires_at <= pg_catalog.now() THEN
+    UPDATE public.offline_download_entitlements
+       SET status = 'EXPIRED'
+     WHERE id = v_entitlement.id;
+  ELSIF v_entitlement.status = 'ACTIVE' AND v_content_version <> v_entitlement.content_version THEN
+    UPDATE public.offline_download_entitlements
+       SET status = 'CORRUPTED'
+     WHERE id = v_entitlement.id;
+  ELSIF v_entitlement.status = 'ACTIVE'
+    AND (v_enrollment_status IS DISTINCT FROM 'active'
+         OR (v_enrollment_expires IS NOT NULL AND v_enrollment_expires <= pg_catalog.now())) THEN
+    UPDATE public.offline_download_entitlements
+       SET status = 'REVOKED', revoked_at = pg_catalog.now()
+     WHERE id = v_entitlement.id;
+  END IF;
+
+  SELECT * INTO v_entitlement
+  FROM public.offline_download_entitlements
+  WHERE id = v_entitlement.id;
+
+  RETURN jsonb_build_object(
+    'entitlement_id', v_entitlement.id,
+    'download_id', v_entitlement.download_id,
+    'status', v_entitlement.status,
+    'issued_at', v_entitlement.issued_at,
+    'expires_at', v_entitlement.expires_at,
+    'revoked_at', v_entitlement.revoked_at,
+    'content_version', v_entitlement.content_version
+  );
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION private.get_kms_key()
 RETURNS text
 LANGUAGE plpgsql

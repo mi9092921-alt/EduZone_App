@@ -54,8 +54,8 @@ class UnauthenticatedException extends AppException {
 }
 
 class ServerException extends AppException {
-  const ServerException([super.message = 'Server error']) // check-ignore
-    : super(code: 'server_error');
+  const ServerException([super.message = 'Server error', String? errorCode]) // check-ignore
+    : super(code: errorCode ?? 'server_error');
 }
 
 /// Device not found for current user — forced logout.

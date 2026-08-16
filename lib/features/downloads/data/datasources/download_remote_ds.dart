@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/error/exceptions.dart';
+import '../../../../core/utils/device_info_helper.dart';
 import '../../data/models/video_info.dart';
 
 /// Remote data source for download-related operations.
@@ -12,6 +15,86 @@ class DownloadRemoteDataSource {
   final SupabaseClient _client;
 
   DownloadRemoteDataSource(this._client);
+
+  /// Creates/claims a server-authoritative offline entitlement. This is
+  /// deliberately separate from ordinary lesson access: preview/online
+  /// access never implies offline authorization.
+  Future<Map<String, dynamic>> authorizeOfflineDownload({
+    required String lessonId,
+    required String courseId,
+    required String downloadId,
+  }) async {
+    try {
+      final deviceId = DeviceInfoHelper.fingerprint;
+      if (deviceId.isEmpty) {
+        throw const ServerException('Device binding is unavailable'); // check-ignore
+      }
+      final data = await _client.rpc(
+        'authorize_offline_download',
+        params: {
+          'p_lesson_id': lessonId,
+          'p_course_id': courseId,
+          'p_device_id': deviceId,
+          'p_download_id': downloadId,
+        },
+      );
+      if (data is! Map<String, dynamic> ||
+          data['status'] != 'ACTIVE' ||
+          data['entitlement_id'] == null) {
+        throw const ServerException('Offline authorization was denied'); // check-ignore
+      }
+      return data;
+    } on PostgrestException catch (e) {
+      throw ServerException('Offline authorization was denied: ${e.code}'); // check-ignore
+    } on ServerException {
+      rethrow;
+    } catch (e) {
+      throw ServerException('Offline authorization failed'); // check-ignore
+    }
+  }
+
+  /// Revalidates an existing entitlement when connectivity is available.
+  /// Network failures are surfaced to the caller so the playback gate can
+  /// distinguish "server says deny" from "device is currently offline".
+  Future<Map<String, dynamic>> revalidateOfflineEntitlement({
+    required String entitlementId,
+  }) async {
+    final deviceId = DeviceInfoHelper.fingerprint;
+    if (deviceId.isEmpty) {
+      throw const ServerException('Device binding is unavailable'); // check-ignore
+    }
+    try {
+      final data = await _client.rpc(
+        'revalidate_offline_entitlement',
+        params: {
+          'p_entitlement_id': entitlementId,
+          'p_device_id': deviceId,
+        },
+      );
+      if (data is! Map<String, dynamic>) {
+        throw const ServerException('Invalid offline revalidation response'); // check-ignore
+      }
+      return data;
+    } on PostgrestException catch (e) {
+      final code = e.code ?? '';
+      final transient = code.startsWith('08') ||
+          code.startsWith('53') ||
+          code == 'PGRST000' ||
+          code == 'PGRST001' ||
+          code == 'PGRST002' ||
+          code == 'PGRST003';
+      throw ServerException(
+        'Offline entitlement revalidation failed', // check-ignore
+        transient ? 'network_error' : 'server_error', // check-ignore: internal error-code classifier, never rendered
+      );
+    } catch (e) {
+      if (e is ServerException) rethrow;
+      throw ServerException(
+        'Offline entitlement revalidation failed', // check-ignore
+        e is SocketException ? 'network_error' : 'server_error', // check-ignore: internal error-code classifier, never rendered
+      );
+    }
+  }
 
   /// Validates access for a lesson or course.
   Future<CourseAccessResult> validateCourseAccess({
