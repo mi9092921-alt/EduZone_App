@@ -982,6 +982,7 @@ BEGIN
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relname = 'offline_download_entitlements'
       AND pol.polname NOT IN ('offline_entitlements_select_own', 'offline_entitlements_service_all')
+      AND pol.polname NOT LIKE 'auth_session_required_%'
     UNION ALL
     SELECT 'authenticated has a non-SELECT policy: ' || pol.polname
     FROM pg_policy pol

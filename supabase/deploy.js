@@ -46,6 +46,27 @@ async function main() {
     await client.connect();
     console.log('Successfully connected to the database!');
 
+    // Ensure eduzone_kms_key exists in Supabase Vault before running seeds/triggers
+    try {
+      const vaultCheck = await client.query("SELECT 1 FROM pg_namespace WHERE nspname = 'vault'");
+      if (vaultCheck.rowCount > 0) {
+        const secretCheck = await client.query("SELECT 1 FROM vault.decrypted_secrets WHERE name = 'eduzone_kms_key'");
+        if (secretCheck.rowCount === 0) {
+          const crypto = require('crypto');
+          console.log('Provisioning eduzone_kms_key in Supabase Vault...');
+          const randomKey = crypto.randomBytes(32).toString('hex');
+          await client.query("SELECT vault.create_secret($1, $2, $3)", [
+            randomKey,
+            'eduzone_kms_key',
+            'EduZone KMS key for PII encryption (auto-provisioned)'
+          ]);
+          console.log('✓ Successfully provisioned eduzone_kms_key in Supabase Vault');
+        }
+      }
+    } catch (vaultErr) {
+      console.warn('Warning checking/provisioning Vault KMS key:', vaultErr.message);
+    }
+
     const files = [
       'schema/01_extensions.sql',
       'schema/02_types.sql',
