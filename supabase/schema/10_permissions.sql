@@ -82,10 +82,11 @@ GRANT SELECT ON public.tenants                  TO authenticated;
 GRANT SELECT ON public.users                    TO authenticated;
 GRANT SELECT ON public.roles, public.permissions, public.role_permissions, public.user_roles TO authenticated;
 GRANT SELECT ON public.settings_kv, public.settings_cache, public.security_settings TO authenticated, service_role;
-GRANT SELECT ON public.feature_flags, public.feature_flag_roles, public.feature_flag_users TO authenticated;
--- anon intentionally excluded: feature_flags_select / feature_flag_roles_select /
--- feature_flag_users_select are all scoped `TO authenticated` only; the grant was dead.
+-- Feature flags table grants (administrative access governed by RLS)
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.feature_flags TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.tenant_feature_flags TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.feature_flag_users TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.feature_flag_roles TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.courses, public.course_prerequisites, public.course_learning_objectives, public.sections, public.lessons TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.lesson_contents TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.enrollments TO authenticated;
@@ -390,10 +391,11 @@ GRANT SELECT ON public.tenants                  TO authenticated;
 GRANT SELECT ON public.users                    TO authenticated;
 GRANT SELECT ON public.roles, public.permissions, public.role_permissions, public.user_roles TO authenticated;
 GRANT SELECT ON public.settings_kv, public.settings_cache, public.security_settings TO authenticated, service_role;
-GRANT SELECT ON public.feature_flags, public.feature_flag_roles, public.feature_flag_users TO authenticated;
--- anon intentionally excluded: feature_flags_select / feature_flag_roles_select /
--- feature_flag_users_select are all scoped `TO authenticated` only; the grant was dead.
+-- Feature flags table grants (administrative access governed by RLS)
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.feature_flags TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.tenant_feature_flags TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.feature_flag_users TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.feature_flag_roles TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.courses, public.course_prerequisites, public.course_learning_objectives, public.sections, public.lessons TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.lesson_contents TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.enrollments TO authenticated;
@@ -648,4 +650,62 @@ GRANT ALL ON public.video_cache TO service_role;
 
 GRANT SELECT, INSERT ON public.download_logs TO authenticated;
 GRANT ALL ON public.download_logs TO service_role;
+
+-- ============================================================================
+-- Feature Flags — least-privilege grants
+-- ============================================================================
+
+REVOKE ALL ON TABLE public.feature_flags FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.tenant_feature_flags FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.feature_flag_users FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.feature_flag_roles FROM PUBLIC, anon, authenticated;
+
+-- RLS remains the authorization boundary for authenticated administrative access.
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON public.feature_flags
+TO authenticated;
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON public.tenant_feature_flags
+TO authenticated;
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON public.feature_flag_users
+TO authenticated;
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON public.feature_flag_roles
+TO authenticated;
+
+GRANT ALL ON TABLE public.feature_flags,
+               public.tenant_feature_flags,
+               public.feature_flag_users,
+               public.feature_flag_roles
+TO service_role;
+
+REVOKE ALL ON FUNCTION public.feature_flag_rollout_bucket(uuid, uuid, text)
+FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.evaluate_feature_flag(text, uuid, uuid)
+FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.evaluate_feature_flag(text, uuid, uuid)
+TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.evaluate_feature_flags(text[])
+FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.evaluate_feature_flags(text[])
+TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.is_feature_enabled(text, uuid)
+FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.is_feature_enabled(text, uuid)
+TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.is_feature_enabled_for_user(text, uuid)
+FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.is_feature_enabled_for_user(text, uuid)
+TO authenticated, service_role;
+
+GRANT SELECT ON public.feature_flags_admin TO authenticated;
+
 

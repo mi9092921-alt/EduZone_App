@@ -301,3 +301,42 @@ ALTER VIEW IF EXISTS public.system_health_check SET (security_invoker = true);
 ALTER VIEW IF EXISTS public.vw_course_stats SET (security_invoker = true);
 
 ALTER VIEW IF EXISTS public.mv_course_stats SET (security_invoker = true);
+
+-- ============================================================================
+-- Feature Flags — administrative catalog view
+-- ============================================================================
+
+CREATE OR REPLACE VIEW public.feature_flags_admin AS
+SELECT
+  ff.id,
+  ff.key,
+  ff.description,
+  ff.is_enabled,
+  ff.rollout_pct,
+  ff.status,
+  ff.enabled_from,
+  ff.enabled_until,
+  ff.version,
+  ff.created_by,
+  ff.updated_by,
+  ff.created_at,
+  ff.updated_at,
+  (
+    SELECT count(*)
+    FROM public.tenant_feature_flags tff
+    WHERE tff.flag_id = ff.id
+  ) AS tenant_override_count,
+  (
+    SELECT count(*)
+    FROM public.feature_flag_users ffu
+    WHERE ffu.flag_id = ff.id
+  ) AS user_override_count,
+  (
+    SELECT count(*)
+    FROM public.feature_flag_roles ffr
+    WHERE ffr.flag_id = ff.id
+  ) AS role_override_count
+FROM public.feature_flags ff;
+
+ALTER VIEW public.feature_flags_admin SET (security_invoker = true);
+

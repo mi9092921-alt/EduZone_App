@@ -935,7 +935,168 @@ BEGIN
   END IF;
 END $$;
 
--- Ã¢â€â‚¬Ã¢â€â‚¬ E. user_access_cache: allow 'completed' status (patch 22) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.lessons'::regclass
+      AND conname = 'lessons_tenant_fkey'
+  ) THEN
+    ALTER TABLE public.lessons
+      ADD CONSTRAINT lessons_tenant_fkey
+      FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE RESTRICT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.lessons'::regclass
+      AND conname = 'lessons_id_tenant_unique'
+  ) THEN
+    ALTER TABLE public.lessons
+      ADD CONSTRAINT lessons_id_tenant_unique UNIQUE (id, tenant_id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.lessons'::regclass
+      AND conname = 'lessons_course_tenant_fkey'
+  ) THEN
+    ALTER TABLE public.lessons
+      ADD CONSTRAINT lessons_course_tenant_fkey
+      FOREIGN KEY (course_id, tenant_id) REFERENCES public.courses(id, tenant_id) ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.lesson_contents'::regclass
+      AND conname = 'lesson_contents_tenant_fkey'
+  ) THEN
+    ALTER TABLE public.lesson_contents
+      ADD CONSTRAINT lesson_contents_tenant_fkey
+      FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE RESTRICT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.lesson_contents'::regclass
+      AND conname = 'lesson_contents_course_tenant_fkey'
+  ) THEN
+    ALTER TABLE public.lesson_contents
+      ADD CONSTRAINT lesson_contents_course_tenant_fkey
+      FOREIGN KEY (course_id, tenant_id) REFERENCES public.courses(id, tenant_id) ON DELETE RESTRICT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.lesson_contents'::regclass
+      AND conname = 'lesson_contents_lesson_tenant_fkey'
+  ) THEN
+    ALTER TABLE public.lesson_contents
+      ADD CONSTRAINT lesson_contents_lesson_tenant_fkey
+      FOREIGN KEY (lesson_id, tenant_id) REFERENCES public.lessons(id, tenant_id) ON DELETE CASCADE;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- 005b_deferred_constraints.sql
+-- Constraints referencing tables created after the composite-index block.
+-- All tables (notifications, notification_targets, user_notifications,
+-- internal.job_queue) exist at this point. Guards make this idempotent.
+-- ============================================================================
+DO $$
+BEGIN
+  -- user_notifications already has UNIQUE (user_id, notification_id) from CREATE TABLE.
+  -- Add reverse-column named alias only if neither exists yet.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'uq_notification_user'
+      AND conrelid = 'public.user_notifications'::regclass
+  ) THEN
+    -- The inline UNIQUE (user_id, notification_id) covers the same index.
+    -- Skip to avoid duplicate-index error on re-run.
+    NULL;
+  END IF;
+
+  -- notifications: chk_target_audience - corrected enum (removed invalid 'specific')
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'chk_target_audience'
+      AND conrelid = 'public.notifications'::regclass
+  ) THEN
+    ALTER TABLE public.notifications
+      ADD CONSTRAINT chk_target_audience
+      CHECK (target_audience IN ('all', 'students', 'teachers', 'admins'));
+  END IF;
+
+  -- notification_targets: supplemental named FKs (inline FKs already declared in CREATE TABLE)
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'fk_nt_notification'
+      AND conrelid = 'public.notification_targets'::regclass
+  ) THEN
+    ALTER TABLE public.notification_targets
+      ADD CONSTRAINT fk_nt_notification
+      FOREIGN KEY (notification_id) REFERENCES public.notifications(id) ON DELETE CASCADE;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'fk_nt_user'
+      AND conrelid = 'public.notification_targets'::regclass
+  ) THEN
+    ALTER TABLE public.notification_targets
+      ADD CONSTRAINT fk_nt_user
+      FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+  END IF;
+
+  -- internal.job_queue: canonical dedup cleanup before FK/constraint checks
+    DELETE FROM internal.job_queue
+    WHERE id IN (
+      SELECT id FROM (
+        SELECT id, row_number() OVER (PARTITION BY job_type, md5(payload::text) ORDER BY created_at DESC) AS rn
+        FROM internal.job_queue
+      ) t WHERE t.rn > 1
+    );
+END $$;
+
+-- JSONB size checks (L-1 Consolidation)
+DO $$
+BEGIN
+  -- Tenants metadata (128 KB)
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.tenants'::regclass AND conname = 'chk_tenants_metadata_size') THEN
+    ALTER TABLE public.tenants ADD CONSTRAINT chk_tenants_metadata_size CHECK (pg_column_size(metadata) <= 131072);
+  END IF;
+
+  -- Device info (16 KB)
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.devices'::regclass AND conname = 'chk_devices_device_info_size') THEN
+    ALTER TABLE public.devices ADD CONSTRAINT chk_devices_device_info_size CHECK (pg_column_size(device_info) <= 16384);
+  END IF;
+
+  -- Activity logs / queue details JSONB (64 KB unified cap)
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.activity_logs'::regclass AND conname = 'chk_activity_logs_details_size') THEN
+    ALTER TABLE public.activity_logs ADD CONSTRAINT chk_activity_logs_details_size CHECK (pg_column_size(details) <= 65536);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.activity_log_queue'::regclass AND conname = 'chk_activity_log_queue_details_size') THEN
+    ALTER TABLE public.activity_log_queue ADD CONSTRAINT chk_activity_log_queue_details_size CHECK (pg_column_size(details) <= 65536);
+  END IF;
+
+  -- Settings metadata (32 KB)
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.tenant_settings'::regclass AND conname = 'chk_tenant_settings_size') THEN
+    ALTER TABLE public.tenant_settings ADD CONSTRAINT chk_tenant_settings_size CHECK (pg_column_size(settings) <= 32768);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.security_settings'::regclass AND conname = 'chk_security_settings_size') THEN
+    ALTER TABLE public.security_settings ADD CONSTRAINT chk_security_settings_size CHECK (pg_column_size(settings) <= 32768);
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'JSONB size constraint application failed: %', SQLERRM;
+END $$;
+
+-- Ã¢â€ â‚¬Ã¢â€ â‚¬ E. user_access_cache: allow 'completed' status (patch 22) Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬
 DO $$
 BEGIN
   -- Drop old constraint if it doesn't include 'completed'
@@ -951,4 +1112,120 @@ BEGIN
     CHECK (status IN ('active', 'expired', 'revoked', 'completed'));
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'user_access_cache constraint update: %', SQLERRM;
+END $$;
+
+-- ============================================================================
+-- Feature Flags — production invariants (idempotent)
+-- ============================================================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flags_key_format') THEN
+    ALTER TABLE public.feature_flags
+      ADD CONSTRAINT chk_feature_flags_key_format
+      CHECK (
+        key = lower(btrim(key))
+        AND key ~ '^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$'
+        AND length(key) BETWEEN 2 AND 128
+      );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flags_description_length') THEN
+    ALTER TABLE public.feature_flags
+      ADD CONSTRAINT chk_feature_flags_description_length
+      CHECK (description IS NULL OR length(description) <= 1000);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flags_rollout_pct') THEN
+    ALTER TABLE public.feature_flags
+      ADD CONSTRAINT chk_feature_flags_rollout_pct
+      CHECK (rollout_pct BETWEEN 0 AND 10000);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flags_status') THEN
+    ALTER TABLE public.feature_flags
+      ADD CONSTRAINT chk_feature_flags_status
+      CHECK (status IN ('active', 'deprecated', 'archived'));
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flags_schedule') THEN
+    ALTER TABLE public.feature_flags
+      ADD CONSTRAINT chk_feature_flags_schedule
+      CHECK (enabled_until IS NULL OR enabled_from IS NULL OR enabled_until > enabled_from);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flags_metadata_object') THEN
+    ALTER TABLE public.feature_flags
+      ADD CONSTRAINT chk_feature_flags_metadata_object
+      CHECK (jsonb_typeof(metadata) = 'object');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flags_metadata_size') THEN
+    ALTER TABLE public.feature_flags
+      ADD CONSTRAINT chk_feature_flags_metadata_size
+      CHECK (pg_column_size(metadata) <= 65536);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flags_version') THEN
+    ALTER TABLE public.feature_flags
+      ADD CONSTRAINT chk_feature_flags_version
+      CHECK (version >= 1);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_tenant_feature_flags_override_present') THEN
+    ALTER TABLE public.tenant_feature_flags
+      ADD CONSTRAINT chk_tenant_feature_flags_override_present
+      CHECK (is_enabled IS NOT NULL OR rollout_pct IS NOT NULL);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_tenant_feature_flags_rollout_pct') THEN
+    ALTER TABLE public.tenant_feature_flags
+      ADD CONSTRAINT chk_tenant_feature_flags_rollout_pct
+      CHECK (rollout_pct IS NULL OR rollout_pct BETWEEN 0 AND 10000);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_tenant_feature_flags_version') THEN
+    ALTER TABLE public.tenant_feature_flags
+      ADD CONSTRAINT chk_tenant_feature_flags_version
+      CHECK (version >= 1);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flag_roles_version') THEN
+    ALTER TABLE public.feature_flag_roles
+      ADD CONSTRAINT chk_feature_flag_roles_version
+      CHECK (version >= 1);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flag_users_version') THEN
+    ALTER TABLE public.feature_flag_users
+      ADD CONSTRAINT chk_feature_flag_users_version
+      CHECK (version >= 1);
+  END IF;
+
+  -- Composite tenant-consistency guarantees.
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_users_tenant_id') THEN
+    ALTER TABLE public.users
+      ADD CONSTRAINT uq_users_tenant_id UNIQUE (tenant_id, id);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_roles_tenant_id') THEN
+    ALTER TABLE public.roles
+      ADD CONSTRAINT uq_roles_tenant_id UNIQUE (tenant_id, id);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_feature_flag_users_tenant_user') THEN
+    ALTER TABLE public.feature_flag_users
+      ADD CONSTRAINT fk_feature_flag_users_tenant_user
+      FOREIGN KEY (tenant_id, user_id)
+      REFERENCES public.users (tenant_id, id)
+      ON DELETE CASCADE;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_feature_flag_roles_tenant_role') THEN
+    ALTER TABLE public.feature_flag_roles
+      ADD CONSTRAINT fk_feature_flag_roles_tenant_role
+      FOREIGN KEY (tenant_id, role_id)
+      REFERENCES public.roles (tenant_id, id)
+      ON DELETE CASCADE;
+  END IF;
 END $$;

@@ -554,3 +554,30 @@ END $$;
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_video_hash ON public.video_cache (url_hash);
 CREATE INDEX IF NOT EXISTS idx_download_logs_user ON public.download_logs (user_id);
+
+-- ============================================================================
+-- Feature Flags — runtime and administrative indexes
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_feature_flags_active
+  ON public.feature_flags (status, is_enabled, updated_at DESC)
+  WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_feature_flags_updated_at
+  ON public.feature_flags (updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_feature_flags_flag_tenant
+  ON public.tenant_feature_flags (flag_id, tenant_id);
+
+CREATE INDEX IF NOT EXISTS idx_feature_flag_users_eval
+  ON public.feature_flag_users (tenant_id, user_id, flag_id);
+
+CREATE INDEX IF NOT EXISTS idx_feature_flag_users_flag_user
+  ON public.feature_flag_users (flag_id, user_id, tenant_id);
+
+CREATE INDEX IF NOT EXISTS idx_feature_flag_roles_eval
+  ON public.feature_flag_roles (tenant_id, role_id, flag_id);
+
+CREATE INDEX IF NOT EXISTS idx_feature_flag_roles_flag_role
+  ON public.feature_flag_roles (flag_id, role_id, tenant_id);
+

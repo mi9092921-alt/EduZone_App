@@ -391,18 +391,45 @@ CREATE TABLE IF NOT EXISTS public.cache_invalidation_queue (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- ============================================================================
+-- Feature Flags — canonical production data model
+-- ============================================================================
+
 CREATE TABLE IF NOT EXISTS public.feature_flags (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  key text NOT NULL UNIQUE CHECK (btrim(key) <> ''),
+  key text NOT NULL UNIQUE,
   description text,
   is_enabled boolean NOT NULL DEFAULT false,
-  rollout_pct smallint NOT NULL DEFAULT 0 CHECK (rollout_pct BETWEEN 0 AND 100),
-  metadata jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(metadata) = 'object'),
+  rollout_pct smallint NOT NULL DEFAULT 0,
+  status text NOT NULL DEFAULT 'active',
+  enabled_from timestamptz,
+  enabled_until timestamptz,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  version bigint NOT NULL DEFAULT 1,
+  created_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  updated_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- TenantÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Ëœspecific overrides for global settings (P1)
+ALTER TABLE public.feature_flags ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'active';
+ALTER TABLE public.feature_flags ADD COLUMN IF NOT EXISTS enabled_from timestamptz;
+ALTER TABLE public.feature_flags ADD COLUMN IF NOT EXISTS enabled_until timestamptz;
+ALTER TABLE public.feature_flags ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
+ALTER TABLE public.feature_flags ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE public.feature_flags ADD COLUMN IF NOT EXISTS updated_by uuid REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+COMMENT ON TABLE public.feature_flags IS
+'Global feature-flag definitions. Runtime evaluation is performed by the canonical SECURITY DEFINER evaluator. Client applications do not read this table directly.';
+COMMENT ON COLUMN public.feature_flags.rollout_pct IS
+'Deterministic rollout percentage in basis points: 0..10000 (10000 = 100%).';
+COMMENT ON COLUMN public.feature_flags.is_enabled IS
+'Global kill switch. FALSE always disables the flag, regardless of targeting or rollout.';
+COMMENT ON COLUMN public.feature_flags.version IS
+'Monotonic configuration revision used for cache invalidation and optimistic consistency.';
+
+-- Tenant–specific overrides for global settings (P1)
 CREATE TABLE IF NOT EXISTS public.tenant_settings (
   tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
   key text NOT NULL CHECK (btrim(key) <> ''),
@@ -426,11 +453,60 @@ COMMENT ON TABLE public.security_settings IS
 force_single_session prevents concurrent logins across multiple devices.';
 
 CREATE TABLE IF NOT EXISTS public.tenant_feature_flags (
-  tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE RESTRICT,
+  tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
   flag_id uuid NOT NULL REFERENCES public.feature_flags(id) ON DELETE CASCADE,
-  is_enabled boolean NOT NULL DEFAULT false,
+  is_enabled boolean,
+  rollout_pct smallint,
+  version bigint NOT NULL DEFAULT 1,
+  created_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  updated_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (tenant_id, flag_id)
 );
+
+ALTER TABLE public.tenant_feature_flags ADD COLUMN IF NOT EXISTS rollout_pct smallint;
+ALTER TABLE public.tenant_feature_flags ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
+ALTER TABLE public.tenant_feature_flags ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE public.tenant_feature_flags ADD COLUMN IF NOT EXISTS updated_by uuid REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE public.tenant_feature_flags ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE public.tenant_feature_flags ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE public.tenant_feature_flags ALTER COLUMN is_enabled DROP NOT NULL;
+
+COMMENT ON TABLE public.tenant_feature_flags IS
+'Tenant-scoped override of a global feature flag. A row must contain at least one explicit override (enabled state or rollout percentage).';
+
+CREATE TABLE IF NOT EXISTS public.feature_flag_roles (
+  tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  flag_id uuid NOT NULL REFERENCES public.feature_flags(id) ON DELETE CASCADE,
+  role_id uuid NOT NULL REFERENCES public.roles(id) ON DELETE CASCADE,
+  is_enabled boolean NOT NULL,
+  version bigint NOT NULL DEFAULT 1,
+  created_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  updated_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, flag_id, role_id)
+);
+
+COMMENT ON TABLE public.feature_flag_roles IS
+'Explicit role targeting. FALSE is an explicit deny; TRUE is an explicit allow. The evaluator uses deny-over-allow when a user has multiple matching roles.';
+
+CREATE TABLE IF NOT EXISTS public.feature_flag_users (
+  tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  flag_id uuid NOT NULL REFERENCES public.feature_flags(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  is_enabled boolean NOT NULL,
+  version bigint NOT NULL DEFAULT 1,
+  created_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  updated_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, flag_id, user_id)
+);
+
+COMMENT ON TABLE public.feature_flag_users IS
+'Explicit user targeting. A matching user override takes precedence over role targeting and rollout, but never over the global kill switch.';
 
 -- ============================================================================
 -- NEW: User Validity Cache (v13.2 enhancement)
@@ -448,15 +524,47 @@ CREATE TABLE IF NOT EXISTS public.feature_flag_roles (
   tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
   flag_id uuid NOT NULL REFERENCES public.feature_flags(id) ON DELETE CASCADE,
   role_id uuid NOT NULL REFERENCES public.roles(id) ON DELETE CASCADE,
+  is_enabled boolean NOT NULL DEFAULT false,
+  version bigint NOT NULL DEFAULT 1,
+  created_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  updated_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (tenant_id, flag_id, role_id)
 );
+
+ALTER TABLE public.feature_flag_roles ADD COLUMN IF NOT EXISTS is_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE public.feature_flag_roles ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
+ALTER TABLE public.feature_flag_roles ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE public.feature_flag_roles ADD COLUMN IF NOT EXISTS updated_by uuid REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE public.feature_flag_roles ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE public.feature_flag_roles ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+COMMENT ON TABLE public.feature_flag_roles IS
+'Explicit role targeting. FALSE is an explicit deny; TRUE is an explicit allow. The evaluator uses deny-over-allow when a user has multiple matching roles.';
 
 CREATE TABLE IF NOT EXISTS public.feature_flag_users (
   tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
   flag_id uuid NOT NULL REFERENCES public.feature_flags(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  is_enabled boolean NOT NULL DEFAULT false,
+  version bigint NOT NULL DEFAULT 1,
+  created_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  updated_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (tenant_id, flag_id, user_id)
 );
+
+ALTER TABLE public.feature_flag_users ADD COLUMN IF NOT EXISTS is_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE public.feature_flag_users ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
+ALTER TABLE public.feature_flag_users ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE public.feature_flag_users ADD COLUMN IF NOT EXISTS updated_by uuid REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE public.feature_flag_users ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE public.feature_flag_users ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+COMMENT ON TABLE public.feature_flag_users IS
+'Explicit user targeting. A matching user override takes precedence over role targeting and rollout, but never over the global kill switch.';
 
 -- ============================================================================
 -- Learning content
@@ -1312,15 +1420,6 @@ COMMENT ON TABLE public.notifications IS 'System and teacher notifications for u
 COMMENT ON TABLE public.rate_limits IS 'Atomic rate limiting tracking. RLS protected to prevent bypass.';
 
 COMMENT ON TABLE internal.job_queue IS 'Background task queue. Accessed only via service_role and internal functions.';
-
-COMMENT ON TABLE public.feature_flags IS 
-'Feature flags with gradual rollout support.
-Semantics:
-- is_enabled=false: Flag is OFF for all users (rollout_pct ignored)
-- is_enabled=true, rollout_pct=0: Flag is OFF
-- is_enabled=true, rollout_pct=100: Flag is ON for all users
-- is_enabled=true, rollout_pct=1-99: Gradual rollout to N% of users (hash-based)
-Assignment: Use (abs(hashtext(user_id::text)) % 100) < rollout_pct.';
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- video_cache

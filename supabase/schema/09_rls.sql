@@ -2610,3 +2610,144 @@ CREATE POLICY devices_admin_all ON public.devices
     public.is_current_user_super_admin_lite()
     OR (tenant_id = public.get_current_tenant_id() AND public.is_current_user_admin_lite())
   );
+
+-- ============================================================================
+-- Feature Flags — canonical RLS (remove all historical duplicate policies)
+-- ============================================================================
+
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT schemaname, tablename, policyname
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename IN (
+        'feature_flags',
+        'tenant_feature_flags',
+        'feature_flag_users',
+        'feature_flag_roles'
+      )
+  LOOP
+    EXECUTE format(
+      'DROP POLICY IF EXISTS %I ON %I.%I',
+      r.policyname,
+      r.schemaname,
+      r.tablename
+    );
+  END LOOP;
+END;
+$$;
+
+ALTER TABLE public.feature_flags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tenant_feature_flags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.feature_flag_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.feature_flag_roles ENABLE ROW LEVEL SECURITY;
+
+-- Global definitions: only users with the global Feature Flags permission may
+-- inspect or modify definitions. Runtime clients use the evaluator RPC instead.
+CREATE POLICY feature_flags_manage
+ON public.feature_flags
+FOR ALL TO authenticated
+USING (
+  public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.manage'::text,
+    public.system_tenant_id()
+  )
+)
+WITH CHECK (
+  public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.manage'::text,
+    public.system_tenant_id()
+  )
+);
+
+-- Tenant overrides and targeting may be managed by either a global Feature Flag
+-- administrator or a tenant-scoped feature flag manager for that tenant.
+CREATE POLICY tenant_feature_flags_manage
+ON public.tenant_feature_flags
+FOR ALL TO authenticated
+USING (
+  public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.manage'::text,
+    public.system_tenant_id()
+  )
+  OR public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.tenant_manage'::text,
+    tenant_id
+  )
+)
+WITH CHECK (
+  public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.manage'::text,
+    public.system_tenant_id()
+  )
+  OR public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.tenant_manage'::text,
+    tenant_id
+  )
+);
+
+CREATE POLICY feature_flag_users_manage
+ON public.feature_flag_users
+FOR ALL TO authenticated
+USING (
+  public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.manage'::text,
+    public.system_tenant_id()
+  )
+  OR public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.tenant_manage'::text,
+    tenant_id
+  )
+)
+WITH CHECK (
+  public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.manage'::text,
+    public.system_tenant_id()
+  )
+  OR public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.tenant_manage'::text,
+    tenant_id
+  )
+);
+
+CREATE POLICY feature_flag_roles_manage
+ON public.feature_flag_roles
+FOR ALL TO authenticated
+USING (
+  public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.manage'::text,
+    public.system_tenant_id()
+  )
+  OR public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.tenant_manage'::text,
+    tenant_id
+  )
+)
+WITH CHECK (
+  public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.manage'::text,
+    public.system_tenant_id()
+  )
+  OR public.user_has_permission(
+    (select auth.uid()),
+    'feature_flags.tenant_manage'::text,
+    tenant_id
+  )
+);
+

@@ -1065,6 +1065,234 @@ BEGIN
   );
 END $$;
 
+-- ============================================================================
+-- Feature Flags — production readiness validation
+-- ============================================================================
+
+DO $$
+DECLARE
+  v_ok boolean;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_name = 'feature_flags'
+  )
+  AND EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_name = 'tenant_feature_flags'
+  )
+  AND EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_name = 'feature_flag_users'
+  )
+  AND EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_name = 'feature_flag_roles'
+  )
+  INTO v_ok;
+
+  INSERT INTO validation_results VALUES (
+    'Feature Flag Core Tables Exist',
+    CASE WHEN v_ok THEN 'PASS' ELSE 'FAIL' END,
+    CASE WHEN v_ok THEN 'All Feature Flag tables exist' ELSE 'Feature Flag tables are incomplete' END
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_ok boolean;
+BEGIN
+  SELECT
+    EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flags_rollout_pct')
+    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flags_status')
+    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_feature_flags_key_format')
+    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_tenant_feature_flags_override_present')
+    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_feature_flag_users_tenant_user')
+    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_feature_flag_roles_tenant_role')
+  INTO v_ok;
+
+  INSERT INTO validation_results VALUES (
+    'Feature Flag Constraints',
+    CASE WHEN v_ok THEN 'PASS' ELSE 'FAIL' END,
+    CASE WHEN v_ok THEN 'Core rollout/status/tenant invariants are present' ELSE 'Feature Flag constraints are incomplete' END
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_ok boolean;
+BEGIN
+  SELECT
+    c1.relrowsecurity
+    AND c2.relrowsecurity
+    AND c3.relrowsecurity
+    AND c4.relrowsecurity
+  INTO v_ok
+  FROM pg_class c1
+  JOIN pg_namespace n1 ON n1.oid = c1.relnamespace
+  JOIN pg_class c2 ON c2.relname = 'tenant_feature_flags'
+  JOIN pg_class c3 ON c3.relname = 'feature_flag_users'
+  JOIN pg_class c4 ON c4.relname = 'feature_flag_roles'
+  WHERE n1.nspname = 'public'
+    AND c1.relname = 'feature_flags';
+
+  INSERT INTO validation_results VALUES (
+    'Feature Flag RLS Enabled',
+    CASE WHEN v_ok THEN 'PASS' ELSE 'FAIL' END,
+    CASE WHEN v_ok THEN 'RLS is enabled on all Feature Flag tables' ELSE 'Feature Flag RLS is incomplete' END
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_bad integer;
+BEGIN
+  SELECT count(*) INTO v_bad
+  FROM pg_policies
+  WHERE schemaname = 'public'
+    AND tablename IN ('feature_flags','tenant_feature_flags','feature_flag_users','feature_flag_roles')
+    AND policyname IN (
+      'feature_flags_select',
+      'feature_flags_admin_all',
+      'feature_flags_admin_insert',
+      'feature_flags_admin_update',
+      'feature_flags_admin_delete',
+      'tenant_feature_flags_select',
+      'tenant_feature_flags_manage'
+    );
+
+  INSERT INTO validation_results VALUES (
+    'No Historical Feature Flag RLS Duplicates',
+    CASE WHEN v_bad = 0 THEN 'PASS' ELSE 'FAIL' END,
+    CASE WHEN v_bad = 0 THEN 'Historical permissive policy names are gone' ELSE 'Old Feature Flag policy definitions remain' END
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_hashtext boolean;
+  v_wrapper boolean;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'evaluate_feature_flag'
+      AND pg_get_functiondef(p.oid) ILIKE '%hashtext%'
+  ) INTO v_hashtext;
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'is_feature_enabled'
+      AND pg_get_functiondef(p.oid) ILIKE '%is_feature_enabled_for_user%'
+  ) INTO v_wrapper;
+
+  INSERT INTO validation_results VALUES (
+    'Canonical Feature Flag Evaluator',
+    CASE WHEN NOT v_hashtext AND v_wrapper THEN 'PASS' ELSE 'FAIL' END,
+    CASE
+      WHEN NOT v_hashtext AND v_wrapper
+        THEN 'Single canonical evaluator uses the deterministic bucket helper'
+      ELSE 'Legacy evaluator semantics remain active'
+    END
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_d1 integer;
+  v_d2 integer;
+BEGIN
+  v_d1 := public.feature_flag_rollout_bucket(
+    '00000000-0000-0000-0000-000000000001'::uuid,
+    'aaaaaaaa-0000-0000-0000-000000000004'::uuid,
+    'new_video_player'
+  );
+  v_d2 := public.feature_flag_rollout_bucket(
+    '00000000-0000-0000-0000-000000000001'::uuid,
+    'aaaaaaaa-0000-0000-0000-000000000004'::uuid,
+    'new_video_player'
+  );
+
+  INSERT INTO validation_results VALUES (
+    'Deterministic Rollout Bucket',
+    CASE WHEN v_d1 = v_d2 AND v_d1 BETWEEN 0 AND 9999 THEN 'PASS' ELSE 'FAIL' END,
+    format('bucket_1=%s, bucket_2=%s', v_d1, v_d2)
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_global_manage integer;
+  v_tenant_manage integer;
+BEGIN
+  SELECT count(*) INTO v_global_manage
+  FROM public.role_permissions rp
+  JOIN public.roles r ON r.id = rp.role_id
+  JOIN public.permissions p ON p.id = rp.permission_id
+  WHERE r.name = 'admin'
+    AND p.name = 'feature_flags.manage';
+
+  SELECT count(*) INTO v_tenant_manage
+  FROM public.role_permissions rp
+  JOIN public.roles r ON r.id = rp.role_id
+  JOIN public.permissions p ON p.id = rp.permission_id
+  WHERE r.name = 'admin'
+    AND p.name = 'feature_flags.tenant_manage';
+
+  INSERT INTO validation_results VALUES (
+    'Feature Flag Role Separation',
+    CASE WHEN v_global_manage = 0 AND v_tenant_manage > 0 THEN 'PASS' ELSE 'FAIL' END,
+    format('admin_global_manage=%s, admin_tenant_manage=%s', v_global_manage, v_tenant_manage)
+  );
+END $$;
+
+DO $$
+DECLARE
+  v_auth_eval boolean;
+  v_anon_eval boolean;
+  v_auth_tables boolean;
+  v_anon_tables boolean;
+BEGIN
+  SELECT has_function_privilege(
+    'authenticated',
+    'public.evaluate_feature_flags(text[])',
+    'EXECUTE'
+  ) INTO v_auth_eval;
+
+  SELECT has_function_privilege(
+    'anon',
+    'public.evaluate_feature_flags(text[])',
+    'EXECUTE'
+  ) INTO v_auth_eval;
+
+  SELECT has_table_privilege('authenticated', 'public.feature_flags', 'SELECT')
+      AND has_table_privilege('authenticated', 'public.tenant_feature_flags', 'UPDATE')
+    INTO v_auth_tables;
+
+  SELECT has_table_privilege('anon', 'public.feature_flags', 'SELECT')
+      OR has_table_privilege('anon', 'public.tenant_feature_flags', 'SELECT')
+    INTO v_anon_tables;
+
+  INSERT INTO validation_results VALUES (
+    'Feature Flag Permissions',
+    CASE WHEN v_auth_eval AND NOT v_anon_eval AND v_auth_tables AND NOT v_anon_tables THEN 'PASS' ELSE 'FAIL' END,
+    format(
+      'authenticated_eval=%s, anon_eval=%s, authenticated_table_privileges=%s, anon_table_privileges=%s',
+      v_auth_eval, v_anon_eval, v_auth_tables, v_anon_tables
+    )
+  );
+END $$;
+
 -- Display Results (includes Check 24 above)
 SELECT * FROM validation_results ORDER BY check_name;
 

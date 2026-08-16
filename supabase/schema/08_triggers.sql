@@ -410,3 +410,56 @@ CREATE TRIGGER trg_cascade_course_soft_delete
   FOR EACH ROW
   WHEN (NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS DISTINCT FROM NEW.deleted_at)
   EXECUTE FUNCTION public.trg_cascade_course_soft_delete();
+
+-- ============================================================================
+-- Feature Flags — timestamps, revisions, audit trail
+-- ============================================================================
+
+DROP TRIGGER IF EXISTS trg_feature_flags_touch ON public.feature_flags;
+CREATE TRIGGER trg_feature_flags_touch
+BEFORE INSERT OR UPDATE ON public.feature_flags
+FOR EACH ROW
+EXECUTE FUNCTION public.trg_touch_feature_flag_row();
+
+DROP TRIGGER IF EXISTS trg_tenant_feature_flags_touch ON public.tenant_feature_flags;
+CREATE TRIGGER trg_tenant_feature_flags_touch
+BEFORE INSERT OR UPDATE ON public.tenant_feature_flags
+FOR EACH ROW
+EXECUTE FUNCTION public.trg_touch_feature_flag_row();
+
+DROP TRIGGER IF EXISTS trg_feature_flag_users_touch ON public.feature_flag_users;
+CREATE TRIGGER trg_feature_flag_users_touch
+BEFORE INSERT OR UPDATE ON public.feature_flag_users
+FOR EACH ROW
+EXECUTE FUNCTION public.trg_touch_feature_flag_row();
+
+DROP TRIGGER IF EXISTS trg_feature_flag_roles_touch ON public.feature_flag_roles;
+CREATE TRIGGER trg_feature_flag_roles_touch
+BEFORE INSERT OR UPDATE ON public.feature_flag_roles
+FOR EACH ROW
+EXECUTE FUNCTION public.trg_touch_feature_flag_row();
+
+DROP TRIGGER IF EXISTS trg_feature_flags_audit ON public.feature_flags;
+CREATE TRIGGER trg_feature_flags_audit
+AFTER INSERT OR UPDATE OR DELETE ON public.feature_flags
+FOR EACH ROW
+EXECUTE FUNCTION public.trg_audit_feature_flag_change();
+
+DROP TRIGGER IF EXISTS trg_tenant_feature_flags_audit ON public.tenant_feature_flags;
+CREATE TRIGGER trg_tenant_feature_flags_audit
+AFTER INSERT OR UPDATE OR DELETE ON public.tenant_feature_flags
+FOR EACH ROW
+EXECUTE FUNCTION public.trg_audit_feature_flag_change();
+
+DROP TRIGGER IF EXISTS trg_feature_flag_users_audit ON public.feature_flag_users;
+CREATE TRIGGER trg_feature_flag_users_audit
+AFTER INSERT OR UPDATE OR DELETE ON public.feature_flag_users
+FOR EACH ROW
+EXECUTE FUNCTION public.trg_audit_feature_flag_change();
+
+DROP TRIGGER IF EXISTS trg_feature_flag_roles_audit ON public.feature_flag_roles;
+CREATE TRIGGER trg_feature_flag_roles_audit
+AFTER INSERT OR UPDATE OR DELETE ON public.feature_flag_roles
+FOR EACH ROW
+EXECUTE FUNCTION public.trg_audit_feature_flag_change();
+

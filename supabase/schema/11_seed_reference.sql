@@ -51,6 +51,7 @@ VALUES
   ('sessions.manage', 'sessions', 'manage', 'tenant', now()),
   ('audit.read', 'audit', 'read', 'global', now()),
   ('feature_flags.manage', 'features', 'manage', 'global', now()),
+  ('feature_flags.tenant_manage', 'features', 'tenant_manage', 'tenant', now()),
   ('tenants.manage', 'tenants', 'manage', 'global', now()),
   ('notifications.send', 'notifications', 'send', 'tenant', now()),
   ('notifications.delete', 'notifications', 'delete', 'tenant', now())
@@ -65,15 +66,36 @@ WHERE r.tenant_id = '00000000-0000-0000-0000-000000000001'
   AND r.name = 'super_admin'
 ON CONFLICT DO NOTHING;
 
--- Admin gets all except tenant management
+-- Admin gets all except tenant management and global feature flags management
 INSERT INTO public.role_permissions (role_id, permission_id)
 SELECT r.id, p.id
 FROM public.roles r
 CROSS JOIN public.permissions p
 WHERE r.tenant_id = '00000000-0000-0000-0000-000000000001'
   AND r.name = 'admin'
-  AND p.name <> 'tenants.manage'
+  AND p.name NOT IN ('tenants.manage', 'feature_flags.manage')
 ON CONFLICT DO NOTHING;
+
+-- Tenant admins may manage tenant-scoped overrides only; they never receive
+-- the global feature_flags.manage permission.
+INSERT INTO public.role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM public.roles r
+JOIN public.permissions p
+  ON p.name = 'feature_flags.tenant_manage'
+WHERE r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  AND r.name = 'admin'
+ON CONFLICT DO NOTHING;
+
+-- Defensive cleanup in case a previous seed granted global Feature Flag
+-- management to the admin role.
+DELETE FROM public.role_permissions rp
+USING public.roles r, public.permissions p
+WHERE rp.role_id = r.id
+  AND rp.permission_id = p.id
+  AND r.tenant_id = '00000000-0000-0000-0000-000000000001'
+  AND r.name = 'admin'
+  AND p.name = 'feature_flags.manage';
 
 -- Teacher gets course + warning + reports + notifications
 INSERT INTO public.role_permissions (role_id, permission_id)

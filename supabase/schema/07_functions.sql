@@ -5966,3 +5966,396 @@ BEGIN
   );
 END;
 $$;
+
+-- ============================================================================
+-- Feature Flags — canonical deterministic evaluation engine
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.feature_flag_rollout_bucket(
+  p_tenant_id uuid,
+  p_user_id uuid,
+  p_flag_key text
+)
+RETURNS integer
+LANGUAGE sql
+IMMUTABLE
+STRICT
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  WITH d AS (
+    SELECT extensions.digest(
+      pg_catalog.convert_to(
+        p_tenant_id::text || ':' || p_user_id::text || ':' || p_flag_key,
+        'UTF8'
+      ),
+      'sha256'
+    ) AS h
+  )
+  SELECT pg_catalog.mod(
+    (
+      (pg_catalog.get_byte(h, 0)::bigint << 40) |
+      (pg_catalog.get_byte(h, 1)::bigint << 32) |
+      (pg_catalog.get_byte(h, 2)::bigint << 24) |
+      (pg_catalog.get_byte(h, 3)::bigint << 16) |
+      (pg_catalog.get_byte(h, 4)::bigint << 8)  |
+       pg_catalog.get_byte(h, 5)::bigint
+    ),
+    10000
+  )::integer
+  FROM d;
+$$;
+
+CREATE OR REPLACE FUNCTION public.evaluate_feature_flag(
+  p_key text,
+  p_tenant_id uuid,
+  p_user_id uuid
+)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_flag public.feature_flags%ROWTYPE;
+  v_user public.users%ROWTYPE;
+  v_tenant_override public.tenant_feature_flags%ROWTYPE;
+  v_user_override boolean;
+  v_rollout_pct integer;
+  v_bucket integer;
+  v_key text := lower(pg_catalog.btrim(p_key));
+BEGIN
+  IF v_key IS NULL OR v_key = '' OR p_user_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  IF auth.role() <> 'service_role' THEN
+    IF auth.uid() IS NULL OR p_user_id <> auth.uid() THEN
+      RETURN false;
+    END IF;
+
+    IF NOT public.validate_user_session() THEN
+      RETURN false;
+    END IF;
+  END IF;
+
+  SELECT u.*
+    INTO v_user
+  FROM public.users u
+  WHERE u.id = p_user_id
+    AND u.deleted_at IS NULL
+    AND u.account_status = 'active';
+
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+
+  IF p_tenant_id IS NULL OR v_user.tenant_id <> p_tenant_id THEN
+    RETURN false;
+  END IF;
+
+  IF auth.role() <> 'service_role'
+     AND p_tenant_id <> public.get_current_tenant_id() THEN
+    RETURN false;
+  END IF;
+
+  SELECT ff.*
+    INTO v_flag
+  FROM public.feature_flags ff
+  WHERE ff.key = v_key;
+
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+
+  -- Global kill switch is absolute.
+  IF v_flag.is_enabled IS FALSE THEN
+    RETURN false;
+  END IF;
+
+  IF v_flag.status = 'archived' THEN
+    RETURN false;
+  END IF;
+
+  IF v_flag.enabled_from IS NOT NULL
+     AND pg_catalog.now() < v_flag.enabled_from THEN
+    RETURN false;
+  END IF;
+
+  IF v_flag.enabled_until IS NOT NULL
+     AND pg_catalog.now() >= v_flag.enabled_until THEN
+    RETURN false;
+  END IF;
+
+  -- Tenant override: explicit FALSE is a tenant kill switch; explicit TRUE
+  -- allows the tenant to participate in the feature, while its rollout may
+  -- still be restricted by rollout_pct.
+  SELECT *
+    INTO v_tenant_override
+  FROM public.tenant_feature_flags tff
+  WHERE tff.tenant_id = p_tenant_id
+    AND tff.flag_id = v_flag.id;
+
+  IF FOUND THEN
+    IF v_tenant_override.is_enabled IS FALSE THEN
+      RETURN false;
+    END IF;
+
+    v_rollout_pct := coalesce(
+      v_tenant_override.rollout_pct,
+      v_flag.rollout_pct
+    );
+  ELSE
+    v_rollout_pct := v_flag.rollout_pct;
+  END IF;
+
+  -- Explicit user targeting is stronger than role targeting and rollout.
+  SELECT ffu.is_enabled
+    INTO v_user_override
+  FROM public.feature_flag_users ffu
+  WHERE ffu.tenant_id = p_tenant_id
+    AND ffu.flag_id = v_flag.id
+    AND ffu.user_id = p_user_id;
+
+  IF FOUND THEN
+    RETURN v_user_override;
+  END IF;
+
+  -- Role targeting: explicit deny wins over any allow when a user has multiple
+  -- matching roles, preventing ambiguous multi-role evaluations.
+  IF EXISTS (
+    SELECT 1
+    FROM public.feature_flag_roles ffr
+    JOIN public.user_roles ur
+      ON ur.tenant_id = p_tenant_id
+     AND ur.role_id = ffr.role_id
+     AND ur.user_id = p_user_id
+     AND ur.is_active = true
+     AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
+    WHERE ffr.tenant_id = p_tenant_id
+      AND ffr.flag_id = v_flag.id
+      AND ffr.is_enabled = false
+  ) THEN
+    RETURN false;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.feature_flag_roles ffr
+    JOIN public.user_roles ur
+      ON ur.tenant_id = p_tenant_id
+     AND ur.role_id = ffr.role_id
+     AND ur.user_id = p_user_id
+     AND ur.is_active = true
+     AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
+    WHERE ffr.tenant_id = p_tenant_id
+      AND ffr.flag_id = v_flag.id
+      AND ffr.is_enabled = true
+  ) THEN
+    RETURN true;
+  END IF;
+
+  v_rollout_pct := greatest(0, least(v_rollout_pct, 10000));
+
+  IF v_rollout_pct = 0 THEN
+    RETURN false;
+  END IF;
+
+  IF v_rollout_pct = 10000 THEN
+    RETURN true;
+  END IF;
+
+  v_bucket := public.feature_flag_rollout_bucket(
+    p_tenant_id,
+    p_user_id,
+    v_flag.key
+  );
+
+  RETURN v_bucket < v_rollout_pct;
+END;
+$$;
+
+-- Compatibility-safe wrapper: authenticated callers may evaluate only their own
+-- user; service_role may evaluate another user explicitly.
+CREATE OR REPLACE FUNCTION public.is_feature_enabled_for_user(
+  p_flag_key text,
+  p_user_id uuid
+)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_tenant_id uuid;
+BEGIN
+  IF auth.role() <> 'service_role'
+     AND p_user_id IS DISTINCT FROM auth.uid() THEN
+    RETURN false;
+  END IF;
+
+  SELECT u.tenant_id INTO v_tenant_id
+  FROM public.users u
+  WHERE u.id = p_user_id
+    AND u.deleted_at IS NULL
+    AND u.account_status = 'active';
+
+  IF v_tenant_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  RETURN public.evaluate_feature_flag(
+    p_flag_key,
+    v_tenant_id,
+    p_user_id
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_feature_enabled(
+  p_key text,
+  p_user_id uuid DEFAULT auth.uid()
+)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  RETURN public.is_feature_enabled_for_user(p_key, p_user_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.evaluate_feature_flags(
+  p_keys text[]
+)
+RETURNS TABLE (
+  key text,
+  enabled boolean,
+  version bigint
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_tenant_id uuid := public.get_current_tenant_id();
+BEGIN
+  IF v_uid IS NULL OR v_tenant_id IS NULL OR NOT public.validate_user_session() THEN
+    RETURN;
+  END IF;
+
+  IF p_keys IS NULL OR pg_catalog.cardinality(p_keys) = 0 THEN
+    RETURN;
+  END IF;
+
+  IF pg_catalog.cardinality(p_keys) > 100 THEN
+    RAISE EXCEPTION 'Too many feature flag keys in one evaluation request' USING ERRCODE = '22023';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    lower(pg_catalog.btrim(k)) AS key,
+    public.evaluate_feature_flag(
+      lower(pg_catalog.btrim(k)),
+      v_tenant_id,
+      v_uid
+    ) AS enabled,
+    coalesce(ff.version, 0::bigint) AS version
+  FROM pg_catalog.unnest(p_keys) AS k
+  LEFT JOIN public.feature_flags ff
+    ON ff.key = lower(pg_catalog.btrim(k));
+END;
+$$;
+
+-- Configuration mutation/metadata hardening for all four Feature Flag tables.
+CREATE OR REPLACE FUNCTION public.trg_touch_feature_flag_row()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.version := greatest(coalesce(NEW.version, 1), 1);
+    NEW.created_at := coalesce(NEW.created_at, pg_catalog.now());
+    NEW.updated_at := coalesce(NEW.updated_at, pg_catalog.now());
+    NEW.created_by := coalesce(NEW.created_by, auth.uid());
+    NEW.updated_by := coalesce(NEW.updated_by, auth.uid());
+    RETURN NEW;
+  END IF;
+
+  NEW.version := OLD.version + 1;
+  NEW.updated_at := pg_catalog.now();
+  NEW.updated_by := coalesce(auth.uid(), NEW.updated_by, OLD.updated_by);
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.trg_audit_feature_flag_change()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_flag_id uuid;
+  v_key text;
+  v_tenant_id uuid;
+  v_before jsonb;
+  v_after jsonb;
+BEGIN
+  v_flag_id := CASE
+    WHEN TG_TABLE_NAME = 'feature_flags' THEN coalesce(NEW.id, OLD.id)
+    ELSE coalesce(NEW.flag_id, OLD.flag_id)
+  END;
+
+  v_tenant_id := CASE
+    WHEN TG_TABLE_NAME = 'feature_flags' THEN public.system_tenant_id()
+    ELSE coalesce(NEW.tenant_id, OLD.tenant_id, public.system_tenant_id())
+  END;
+
+  SELECT ff.key INTO v_key
+    FROM public.feature_flags ff
+   WHERE ff.id = v_flag_id;
+
+  v_before := CASE
+    WHEN TG_OP IN ('UPDATE', 'DELETE') THEN to_jsonb(OLD)
+    ELSE NULL
+  END;
+  v_after := CASE
+    WHEN TG_OP IN ('INSERT', 'UPDATE') THEN to_jsonb(NEW)
+    ELSE NULL
+  END;
+
+  PERFORM public.log_activity_async(
+    auth.uid(),
+    CASE TG_OP
+      WHEN 'INSERT' THEN 'feature_flag_created'
+      WHEN 'UPDATE' THEN 'feature_flag_updated'
+      WHEN 'DELETE' THEN 'feature_flag_deleted'
+    END,
+    jsonb_build_object(
+      'feature_flag_id', v_flag_id,
+      'key', v_key,
+      'tenant_id', v_tenant_id,
+      'table', TG_TABLE_NAME,
+      'operation', TG_OP,
+      'before', v_before,
+      'after', v_after
+    ),
+    NULL::inet,
+    NULL::uuid,
+    'high',
+    v_tenant_id
+  );
+
+  RETURN coalesce(NEW, OLD);
+END;
+$$;
+
