@@ -919,6 +919,25 @@ AS $$
   );
 $$;
 
+-- FIX (FLUTTER-6 / 42P17): SECURITY DEFINER accessor for the caller's own
+-- primary_role. users_update_merged's WITH CHECK previously ran a raw
+-- `SELECT ... FROM public.users` inline inside a policy defined ON
+-- public.users itself; evaluating that subquery forces Postgres to
+-- re-apply users' own RLS policies to it, which Postgres detects as a
+-- self-referential cycle and rejects with "infinite recursion detected in
+-- policy for relation users". SECURITY DEFINER functions run as their
+-- owner and are not subject to the caller's RLS on their internal
+-- queries, breaking the cycle — the same pattern already used by
+-- get_auth_user_id/get_current_tenant_id/is_user_valid_cached above.
+CREATE OR REPLACE FUNCTION public.get_own_primary_role()
+RETURNS text
+LANGUAGE sql
+STABLE
+SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+  SELECT primary_role FROM public.users WHERE id = auth.uid();
+$$;
+
 CREATE OR REPLACE FUNCTION public.trg_refresh_user_validity()
 RETURNS trigger
 LANGUAGE plpgsql

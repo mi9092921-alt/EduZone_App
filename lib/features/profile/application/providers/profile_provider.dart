@@ -75,6 +75,15 @@ class ProfileActions extends _$ProfileActions {
     String? firstName,
     String? lastName,
   }) async {
+    // FIX (FLUTTER-A/9): ProfileActions is autoDispose (default for
+    // @riverpod class) and the UI only ever does `ref.read(...notifier)`
+    // (never `watch`), so nothing keeps this notifier alive across the
+    // first `await` below. Riverpod can dispose it mid-flight, and any
+    // `ref`/`state` access afterwards — including inside `catch` — then
+    // throws UnmountedRefException uncaught. Must be called before any
+    // `await` (see player4_provider.dart for the same established
+    // pattern in this codebase).
+    final keepAliveLink = ref.keepAlive();
     state = state.copyWith(isUpdating: true, clearError: true, clearSuccess: true);
 
     try {
@@ -82,12 +91,16 @@ class ProfileActions extends _$ProfileActions {
         firstName: firstName,
         lastName: lastName,
       );
+      // The backend write already succeeded at this point regardless of
+      // what happens below, so treat disposal here as success, not error.
+      if (!ref.mounted) return true;
 
       // Invalidate profile provider to refetch
       ref.invalidate(profileProvider);
 
       // Refresh global auth user to update headers/session-bound UI
       await ref.read(authProvider.notifier).refreshUser();
+      if (!ref.mounted) return true;
 
       state = state.copyWith(
         isUpdating: false,
@@ -95,26 +108,37 @@ class ProfileActions extends _$ProfileActions {
       );
       return true;
     } catch (e) {
-      state = state.copyWith(
-        isUpdating: false,
-        error: e.toString(),
-      );
+      if (ref.mounted) {
+        state = state.copyWith(
+          isUpdating: false,
+          error: e.toString(),
+        );
+      }
       return false;
+    } finally {
+      // Release the keep-alive once this operation settles so the
+      // notifier can still be garbage-collected normally afterwards.
+      keepAliveLink.close();
     }
   }
 
   /// Upload avatar from local file path.
   Future<bool> uploadAvatar(String filePath) async {
+    // See updateName() above for why this must be acquired before the
+    // first `await` (FLUTTER-A/9).
+    final keepAliveLink = ref.keepAlive();
     state = state.copyWith(isUploadingAvatar: true, clearError: true, clearSuccess: true);
 
     try {
       await ref.read(updateProfileUseCaseProvider).uploadAvatar(filePath);
+      if (!ref.mounted) return true;
 
       // Invalidate to refetch and show new avatar
       ref.invalidate(profileProvider);
 
       // Refresh global auth user
       await ref.read(authProvider.notifier).refreshUser();
+      if (!ref.mounted) return true;
 
       state = state.copyWith(
         isUploadingAvatar: false,
@@ -122,11 +146,15 @@ class ProfileActions extends _$ProfileActions {
       );
       return true;
     } catch (e) {
-      state = state.copyWith(
-        isUploadingAvatar: false,
-        error: e.toString(),
-      );
+      if (ref.mounted) {
+        state = state.copyWith(
+          isUploadingAvatar: false,
+          error: e.toString(),
+        );
+      }
       return false;
+    } finally {
+      keepAliveLink.close();
     }
   }
 }
