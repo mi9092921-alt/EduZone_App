@@ -4,7 +4,15 @@ import 'dart:io';
 
 import 'package:background_downloader/background_downloader.dart';
 import 'package:dio/dio.dart'
-    show CancelToken, Dio, Options, ProgressCallback, ResponseBody, ResponseType;
+    show
+        CancelToken,
+        Dio,
+        DioException,
+        DioExceptionType,
+        Options,
+        ProgressCallback,
+        ResponseBody,
+        ResponseType;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding;
 import 'package:path/path.dart' as p;
@@ -102,6 +110,63 @@ class DownloadManager {
   static const int _maxConcurrentDownloads = 3;
   static const int _parallelDownloadMinBytes = 8 * 1024 * 1024;
   static const int _parallelDownloadLargeBytes = 80 * 1024 * 1024;
+
+  // ── Range-worker resilience (P4 networking reliability) ──────────────────
+  //
+  // Every range/chunk-group GET below deliberately sets `receiveTimeout:
+  // Duration.zero` (no timeout) because Dio's receiveTimeout would otherwise
+  // bound the *entire* streamed transfer, not just idle gaps — a large video
+  // legitimately taking minutes would be aborted by a short receiveTimeout,
+  // and a receiveTimeout long enough to tolerate that defeats the point of
+  // having one. That previously left stalled connections (dead socket, no
+  // more bytes, no error either) to hang indefinitely — which is what a
+  // "download is slow, then eventually fails" report usually is: not slow,
+  // stalled, with no bound on how long it stalls before something upstream
+  // (OS/CDN) finally kills the socket and the whole worker throws with zero
+  // retry. `Stream.timeout` below re-introduces a bound, but as an *idle*
+  // timeout (reset on every received chunk) instead of a whole-transfer one.
+  //
+  // Combined with genuinely zero retry on any transient error (one flaky
+  // packet anywhere aborted the whole `Future.wait` of workers, and — for
+  // the encrypted pipelined path — the *entire* download restarts from byte
+  // 0 next time, per `startEncryptedDownload`'s doc comment), this made any
+  // network hiccup during a large download disproportionately costly.
+  static const Duration _streamIdleTimeout = Duration(seconds: 20);
+  static const int _maxWorkerAttempts = 4;
+  static const Duration _retryBaseDelay = Duration(seconds: 1);
+  static const Duration _retryMaxDelay = Duration(seconds: 15);
+
+  /// Whether [error] is safe to retry: a network-layer/idle-timeout failure
+  /// (or a transient-looking server response), as opposed to a definitive
+  /// failure (bad credentials/URL, deliberate cancellation) that retrying
+  /// cannot fix. Range GETs are idempotent, so retrying them is always safe
+  /// from a correctness standpoint — this only decides whether it's *useful*.
+  static bool _isTransientDownloadError(Object error) {
+    if (error is DioException) {
+      switch (error.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.sendTimeout:
+        case DioExceptionType.receiveTimeout:
+        case DioExceptionType.connectionError:
+        case DioExceptionType.unknown:
+          return true;
+        case DioExceptionType.badResponse:
+          final code = error.response?.statusCode;
+          return code == 408 || code == 429 || (code != null && code >= 500);
+        default:
+          return false;
+      }
+    }
+    // Stream.timeout() surfaces a stalled connection as TimeoutException;
+    // "server closed the connection early" / empty stream body surface as
+    // TimeoutException or StateError — both are worth retrying.
+    return error is TimeoutException || error is StateError;
+  }
+
+  static Future<void> _delayBeforeRetry(int attempt) async {
+    final scaled = _retryBaseDelay * (1 << (attempt - 1));
+    await Future.delayed(scaled > _retryMaxDelay ? _retryMaxDelay : scaled);
+  }
 
   /// [dioFactory], [isAndroid], [configureOnInit], and [pinnedCertsLoader]
   /// exist purely as testing seams — production code should never pass them.
@@ -555,111 +620,154 @@ class DownloadManager {
     required ProgressCallback onProgress,
   }) async {
     if (chunks.isEmpty) return;
-    final rangeStart = chunks.first.plaintextStart;
     final rangeEnd = chunks.last.plaintextEnd;
 
-    final response = await dio.get<ResponseBody>(
-      url,
-      options: Options(
-        headers: {...headers, 'Range': 'bytes=$rangeStart-$rangeEnd'},
-        followRedirects: true,
-        responseType: ResponseType.stream,
-        receiveTimeout: Duration.zero,
-        sendTimeout: const Duration(seconds: 30),
-        validateStatus: (status) => status == 206,
-      ),
-      cancelToken: cancelToken,
-    );
+    // Resume point for retries: only chunks that have actually been
+    // encrypted and written to disk (via flushBatch, below) count as done.
+    // On a transient failure we re-request from the next un-flushed chunk's
+    // boundary rather than restarting this worker's whole range — anything
+    // still sitting in [pending]/[batchChunks] at the moment of failure was
+    // never written, so discarding it and re-fetching is safe and cheap
+    // (at most `batchChunkCount` chunks of re-download per retry).
+    var flushedChunkCount = 0;
+    var attempt = 0;
 
-    final body = response.data;
-    if (body == null) throw StateError('Range response body is empty');
+    while (flushedChunkCount < chunks.length) {
+      attempt++;
+      final rangeStart = chunks[flushedChunkCount].plaintextStart;
 
-    // FIFO of not-yet-consumed network packets, so a chunk boundary that
-    // falls mid-packet doesn't require re-copying everything received so
-    // far — only the (small) remainder of the packet that straddles it.
-    final pending = <Uint8List>[];
-    var pendingLength = 0;
-    var chunkCursor = 0;
-    var batchChunks = <PlannedChunk>[];
-    var batchPlaintexts = <Uint8List>[];
-    // ~2 MB of plaintext per `Isolate.run` call at the default 512 KB chunk
-    // size — batched so a worker handling hundreds of chunks doesn't pay
-    // isolate-spawn overhead per chunk (every chunk here is unique, unlike
-    // the read-side LRU cache in `EdzLocalProxy`, so there's no cache to
-    // fall back on to absorb that cost).
-    const batchChunkCount = 4;
+      try {
+        final response = await dio.get<ResponseBody>(
+          url,
+          options: Options(
+            headers: {...headers, 'Range': 'bytes=$rangeStart-$rangeEnd'},
+            followRedirects: true,
+            responseType: ResponseType.stream,
+            receiveTimeout: Duration.zero,
+            sendTimeout: const Duration(seconds: 30),
+            validateStatus: (status) => status == 206,
+          ),
+          cancelToken: cancelToken,
+        );
 
-    Uint8List takeExactly(int n) {
-      final out = Uint8List(n);
-      var written = 0;
-      while (written < n) {
-        final first = pending.first;
-        final need = n - written;
-        if (first.length <= need) {
-          out.setRange(written, written + first.length, first);
-          written += first.length;
-          pending.removeAt(0);
-        } else {
-          out.setRange(written, n, first);
-          pending[0] = first.sublist(need);
-          written = n;
+        final body = response.data;
+        if (body == null) throw StateError('Range response body is empty');
+
+        // FIFO of not-yet-consumed network packets, so a chunk boundary
+        // that falls mid-packet doesn't require re-copying everything
+        // received so far — only the (small) remainder of the packet that
+        // straddles it.
+        final pending = <Uint8List>[];
+        var pendingLength = 0;
+        var chunkCursor = flushedChunkCount;
+        var batchChunks = <PlannedChunk>[];
+        var batchPlaintexts = <Uint8List>[];
+        // ~2 MB of plaintext per `Isolate.run` call at the default 512 KB
+        // chunk size — batched so a worker handling hundreds of chunks
+        // doesn't pay isolate-spawn overhead per chunk (every chunk here is
+        // unique, unlike the read-side LRU cache in `EdzLocalProxy`, so
+        // there's no cache to fall back on to absorb that cost).
+        const batchChunkCount = 4;
+
+        Uint8List takeExactly(int n) {
+          final out = Uint8List(n);
+          var written = 0;
+          while (written < n) {
+            final first = pending.first;
+            final need = n - written;
+            if (first.length <= need) {
+              out.setRange(written, written + first.length, first);
+              written += first.length;
+              pending.removeAt(0);
+            } else {
+              out.setRange(written, n, first);
+              pending[0] = first.sublist(need);
+              written = n;
+            }
+          }
+          pendingLength -= n;
+          return out;
         }
-      }
-      pendingLength -= n;
-      return out;
-    }
 
-    Future<void> flushBatch() async {
-      if (batchChunks.isEmpty) return;
-      final toEncrypt = batchChunks;
-      final toEncryptPlaintexts = batchPlaintexts;
-      batchChunks = [];
-      batchPlaintexts = [];
+        Future<void> flushBatch() async {
+          if (batchChunks.isEmpty) return;
+          final toEncrypt = batchChunks;
+          final toEncryptPlaintexts = batchPlaintexts;
+          batchChunks = [];
+          batchPlaintexts = [];
 
-      final encrypted = await encryptChunkBatch(toEncryptPlaintexts, keyBase64);
-      await writeLock.run(() async {
-        for (var i = 0; i < toEncrypt.length; i++) {
-          final c = toEncrypt[i];
-          final rec = encrypted[i];
-          final lengthBytes = ByteData(4)..setInt32(0, rec.cipherWithTag.length);
-          await raf.setPosition(c.encryptedOffset);
-          await raf.writeFrom(rec.iv);
-          await raf.writeFrom(lengthBytes.buffer.asUint8List());
-          await raf.writeFrom(rec.cipherWithTag);
+          final encrypted =
+              await encryptChunkBatch(toEncryptPlaintexts, keyBase64);
+          await writeLock.run(() async {
+            for (var i = 0; i < toEncrypt.length; i++) {
+              final c = toEncrypt[i];
+              final rec = encrypted[i];
+              final lengthBytes = ByteData(4)
+                ..setInt32(0, rec.cipherWithTag.length);
+              await raf.setPosition(c.encryptedOffset);
+              await raf.writeFrom(rec.iv);
+              await raf.writeFrom(lengthBytes.buffer.asUint8List());
+              await raf.writeFrom(rec.cipherWithTag);
+            }
+          });
+          flushedChunkCount += toEncrypt.length;
         }
-      });
-    }
 
-    await for (final data in body.stream) {
-      if (cancelToken.isCancelled) {
-        throw cancelToken.cancelError ?? StateError('Download canceled');
-      }
-      pending.add(data);
-      pendingLength += data.length;
-      progressByWorker[workerIndex] += data.length;
-      final received = progressByWorker.fold<int>(0, (s, v) => s + v);
-      onProgress(received, totalPlaintextBytes);
+        await for (final data in body.stream.timeout(_streamIdleTimeout)) {
+          if (cancelToken.isCancelled) {
+            throw cancelToken.cancelError ?? StateError('Download canceled');
+          }
+          pending.add(data);
+          pendingLength += data.length;
+          progressByWorker[workerIndex] += data.length;
+          final received = progressByWorker.fold<int>(0, (s, v) => s + v);
+          onProgress(received, totalPlaintextBytes);
 
-      while (chunkCursor < chunks.length &&
-          pendingLength >= chunks[chunkCursor].plaintextLength) {
-        final c = chunks[chunkCursor];
-        batchChunks.add(c);
-        batchPlaintexts.add(takeExactly(c.plaintextLength));
-        chunkCursor++;
-        if (batchChunks.length >= batchChunkCount) {
-          await flushBatch();
+          while (chunkCursor < chunks.length &&
+              pendingLength >= chunks[chunkCursor].plaintextLength) {
+            final c = chunks[chunkCursor];
+            batchChunks.add(c);
+            batchPlaintexts.add(takeExactly(c.plaintextLength));
+            chunkCursor++;
+            if (batchChunks.length >= batchChunkCount) {
+              await flushBatch();
+            }
+          }
         }
+
+        await flushBatch();
+
+        if (chunkCursor < chunks.length) {
+          throw StateError(
+            'Range download for worker $workerIndex ended with '
+            '${chunks.length - chunkCursor} chunk(s) unfilled '
+            '(server closed the connection early)',
+          );
+        }
+        return;
+      } catch (e) {
+        if (cancelToken.isCancelled) rethrow;
+        if (attempt >= _maxWorkerAttempts || !_isTransientDownloadError(e)) {
+          rethrow;
+        }
+        // Bytes received in the failed attempt beyond the last flush were
+        // never encrypted/written, so roll the progress counter back to
+        // what's actually durable — otherwise the retry's re-fetched bytes
+        // would be double-counted in the combined progress total.
+        final flushedPlaintextBytes = flushedChunkCount == 0
+            ? 0
+            : chunks[flushedChunkCount - 1].plaintextEnd -
+                chunks.first.plaintextStart +
+                1;
+        progressByWorker[workerIndex] = flushedPlaintextBytes;
+        if (kDebugMode) {
+          debugPrint(
+            'Encrypted chunk worker $workerIndex stalled/failed '
+            '(attempt $attempt): $e — retrying from chunk $flushedChunkCount',
+          );
+        }
+        await _delayBeforeRetry(attempt);
       }
-    }
-
-    await flushBatch();
-
-    if (chunkCursor < chunks.length) {
-      throw StateError(
-        'Range download for worker $workerIndex ended with '
-        '${chunks.length - chunkCursor} chunk(s) unfilled '
-        '(server closed the connection early)',
-      );
     }
   }
 
@@ -793,20 +901,39 @@ class DownloadManager {
     );
     if (usedParallelDownload) return;
 
-    await dio.download(
-      effectiveUrl,
-      savePath,
-      options: Options(
-        headers: headers,
-        followRedirects: true,
-        receiveTimeout: Duration.zero,
-        sendTimeout: const Duration(seconds: 30),
-        validateStatus: (status) =>
-            status != null && status >= 200 && status < 300,
-      ),
-      cancelToken: cancelToken,
-      onReceiveProgress: onProgress,
-    );
+    var attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        await dio.download(
+          effectiveUrl,
+          savePath,
+          options: Options(
+            headers: headers,
+            followRedirects: true,
+            receiveTimeout: Duration.zero,
+            sendTimeout: const Duration(seconds: 30),
+            validateStatus: (status) =>
+                status != null && status >= 200 && status < 300,
+          ),
+          cancelToken: cancelToken,
+          onReceiveProgress: onProgress,
+        );
+        return;
+      } catch (e) {
+        if (cancelToken.isCancelled) rethrow;
+        if (attempt >= _maxWorkerAttempts || !_isTransientDownloadError(e)) {
+          rethrow;
+        }
+        if (kDebugMode) {
+          debugPrint(
+            'Whole-file dio.download failed (attempt $attempt): $e — '
+            'retrying from scratch (no range support on this path)',
+          );
+        }
+        await _delayBeforeRetry(attempt);
+      }
+    }
   }
 
   Future<bool> _tryDownloadWithParallelRanges({
@@ -881,27 +1008,42 @@ class DownloadManager {
     required Map<String, String> headers,
     required CancelToken cancelToken,
   }) async {
-    final response = await dio.get<ResponseBody>(
-      url,
-      options: Options(
-        headers: {
-          ...headers,
-          'Range': 'bytes=0-0',
-        },
-        followRedirects: true,
-        responseType: ResponseType.stream,
-        receiveTimeout: const Duration(seconds: 30),
-        sendTimeout: const Duration(seconds: 30),
-        validateStatus: (status) => status == 206,
-      ),
-      cancelToken: cancelToken,
-    );
+    var attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        final response = await dio.get<ResponseBody>(
+          url,
+          options: Options(
+            headers: {
+              ...headers,
+              'Range': 'bytes=0-0',
+            },
+            followRedirects: true,
+            responseType: ResponseType.stream,
+            receiveTimeout: const Duration(seconds: 30),
+            sendTimeout: const Duration(seconds: 30),
+            validateStatus: (status) => status == 206,
+          ),
+          cancelToken: cancelToken,
+        );
 
-    await _drainResponse(response.data);
-    final contentRange = response.headers.value('content-range');
-    final totalBytes = _parseTotalBytesFromContentRange(contentRange);
-    if (totalBytes == null || totalBytes <= 0) return null;
-    return _RangeProbe(totalBytes);
+        await _drainResponse(response.data);
+        final contentRange = response.headers.value('content-range');
+        final totalBytes = _parseTotalBytesFromContentRange(contentRange);
+        if (totalBytes == null || totalBytes <= 0) return null;
+        return _RangeProbe(totalBytes);
+      } catch (e) {
+        if (cancelToken.isCancelled) rethrow;
+        if (attempt >= _maxWorkerAttempts || !_isTransientDownloadError(e)) {
+          rethrow;
+        }
+        if (kDebugMode) {
+          debugPrint('Range probe failed (attempt $attempt): $e — retrying');
+        }
+        await _delayBeforeRetry(attempt);
+      }
+    }
   }
 
   Future<void> _downloadRange({
@@ -916,45 +1058,77 @@ class DownloadManager {
     required CancelToken cancelToken,
     required ProgressCallback onProgress,
   }) async {
-    final response = await dio.get<ResponseBody>(
-      url,
-      options: Options(
-        headers: {
-          ...headers,
-          'Range': 'bytes=${range.start}-${range.end}',
-        },
-        followRedirects: true,
-        responseType: ResponseType.stream,
-        receiveTimeout: Duration.zero,
-        sendTimeout: const Duration(seconds: 30),
-        validateStatus: (status) => status == 206,
-      ),
-      cancelToken: cancelToken,
-    );
+    // Resume point for retries: bytes already durably written to [savePath]
+    // for this range are never re-fetched, so a stall/error partway through
+    // only costs the retry backoff, not the bytes already on disk.
+    var currentStart = range.start;
+    var attempt = 0;
 
-    final body = response.data;
-    if (body == null) {
-      throw StateError('Range response body is empty');
-    }
-
-    final file = File(savePath);
-    final raf = await file.open(mode: FileMode.write);
-    try {
-      await raf.setPosition(range.start);
-      await for (final chunk in body.stream) {
-        if (cancelToken.isCancelled) {
-          throw cancelToken.cancelError ?? StateError('Download canceled');
-        }
-        await raf.writeFrom(chunk);
-        progressByRange[rangeIndex] += chunk.length;
-        final received = progressByRange.fold<int>(
-          0,
-          (sum, item) => sum + item,
+    while (true) {
+      attempt++;
+      try {
+        final response = await dio.get<ResponseBody>(
+          url,
+          options: Options(
+            headers: {
+              ...headers,
+              'Range': 'bytes=$currentStart-${range.end}',
+            },
+            followRedirects: true,
+            responseType: ResponseType.stream,
+            receiveTimeout: Duration.zero,
+            sendTimeout: const Duration(seconds: 30),
+            validateStatus: (status) => status == 206,
+          ),
+          cancelToken: cancelToken,
         );
-        onProgress(received, totalBytes);
+
+        final body = response.data;
+        if (body == null) {
+          throw StateError('Range response body is empty');
+        }
+
+        final file = File(savePath);
+        // FileMode.append (not .write): multiple range workers share this
+        // same savePath concurrently, and FileMode.write truncates to zero
+        // length on *every* open() call — a later worker (or, on retry,
+        // this same worker) opening the file after a sibling has already
+        // written data would silently wipe it out. .append never
+        // truncates; setPosition() below still does a normal random-access
+        // seek, so this doesn't force writes to the end of the file.
+        final raf = await file.open(mode: FileMode.append);
+        try {
+          await raf.setPosition(currentStart);
+          await for (final chunk in body.stream.timeout(_streamIdleTimeout)) {
+            if (cancelToken.isCancelled) {
+              throw cancelToken.cancelError ?? StateError('Download canceled');
+            }
+            await raf.writeFrom(chunk);
+            currentStart += chunk.length;
+            progressByRange[rangeIndex] += chunk.length;
+            final received = progressByRange.fold<int>(
+              0,
+              (sum, item) => sum + item,
+            );
+            onProgress(received, totalBytes);
+          }
+        } finally {
+          await raf.close();
+        }
+        return;
+      } catch (e) {
+        if (cancelToken.isCancelled) rethrow;
+        if (attempt >= _maxWorkerAttempts || !_isTransientDownloadError(e)) {
+          rethrow;
+        }
+        if (kDebugMode) {
+          debugPrint(
+            'Range worker $rangeIndex stalled/failed (attempt $attempt): '
+            '$e — retrying from byte $currentStart',
+          );
+        }
+        await _delayBeforeRetry(attempt);
       }
-    } finally {
-      await raf.close();
     }
   }
 
