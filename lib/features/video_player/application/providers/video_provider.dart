@@ -20,7 +20,9 @@ VideoPlayerRemoteDataSource videoPlayerRemoteDataSource(Ref ref) {
 
 @riverpod
 VideoPlayerRepository videoPlayerRepository(Ref ref) {
-  return VideoPlayerRepositoryImpl(ref.watch(videoPlayerRemoteDataSourceProvider));
+  return VideoPlayerRepositoryImpl(
+    ref.watch(videoPlayerRemoteDataSourceProvider),
+  );
 }
 
 @riverpod
@@ -37,7 +39,10 @@ SyncLessonProgress syncLessonProgress(Ref ref) {
 /// is still flushed correctly if the user immediately opens another lesson
 /// before the first sync completes. Reviewed 2026-08-13 as part of the
 /// memory-hygiene audit; see tool/check_memory_hygiene.py.
-final lessonProgressSyncEngineProvider = Provider<LessonProgressSyncEngine>((ref) { // check-ignore
+final lessonProgressSyncEngineProvider = Provider<LessonProgressSyncEngine>((
+  ref,
+) {
+  // check-ignore
   final engine = LessonProgressSyncEngine(
     syncLessonProgress: ref.watch(syncLessonProgressProvider),
   );
@@ -93,8 +98,9 @@ class VideoProgress extends _$VideoProgress {
   int _lastWatchTimeSec = 0;
   double _lastProgressPct = 0.0;
 
-  late final VideoPlayerRepository _repo;
-  late final LessonProgressSyncEngine _syncEngine;
+  VideoPlayerRepository? _repo;
+  LessonProgressSyncEngine? _syncEngine;
+  bool _disposeRegistered = false;
 
   @override
   VideoState build(String courseId, String lessonId) {
@@ -102,29 +108,49 @@ class VideoProgress extends _$VideoProgress {
     // since callers use ref.read(...) rather than ref.watch(...).
     ref.keepAlive();
 
+    // A kept-alive provider is rebuilt in place when invalidated. Flush the
+    // previous account's pending progress and reset all in-memory state first.
+    if (_lastWatchTimeSec > 0 && _syncEngine != null) {
+      _queueSync(courseId, lessonId, flushNow: true);
+    }
+    _syncTimer?.cancel();
+    _syncTimer = null;
+    _markedComplete = false;
+    _lastWatchTimeSec = 0;
+    _lastProgressPct = 0.0;
+
     // Resolve dependencies once, while ref is still valid. These are plain
     // object references from here on — safe to use even after this
     // provider itself has been disposed.
     _repo = ref.read(videoPlayerRepositoryProvider);
     _syncEngine = ref.read(lessonProgressSyncEngineProvider);
 
-    ref.onDispose(() {
-      _syncTimer?.cancel();
-      // Final sync on dispose if progress was made. Safe: _syncToDb no
-      // longer touches ref or state.
-      if (_lastWatchTimeSec > 0) {
-        _queueSync(courseId, lessonId, flushNow: true);
-      }
-    });
+    if (!_disposeRegistered) {
+      _disposeRegistered = true;
+      ref.onDispose(() {
+        _syncTimer?.cancel();
+        // Final sync on dispose if progress was made. Safe: _syncToDb no
+        // longer touches ref or state.
+        if (_lastWatchTimeSec > 0 && _syncEngine != null) {
+          _queueSync(courseId, lessonId, flushNow: true);
+        }
+        // Invalidation may rebuild this notifier after running onDispose.
+        // Clear the snapshot so the rebuild does not enqueue it twice.
+        _lastWatchTimeSec = 0;
+        _lastProgressPct = 0.0;
+        _markedComplete = false;
+      });
+    }
 
-    return VideoState(
-      progressPct: 0.0,
-      watchTimeSec: 0,
-      isCompleted: false,
-    );
+    return VideoState(progressPct: 0.0, watchTimeSec: 0, isCompleted: false);
   }
 
-  void updateProgress(double pct, int watchTimeSec, String courseId, String lessonId) {
+  void updateProgress(
+    double pct,
+    int watchTimeSec,
+    String courseId,
+    String lessonId,
+  ) {
     final currentPct = math.min(pct, 100.0);
     final wasCompleted = _markedComplete;
 
@@ -171,12 +197,8 @@ class VideoProgress extends _$VideoProgress {
   }
 
   /// Does NOT use `ref` or `state` — safe to call from onDispose or after disposal.
-  void _queueSync(
-    String courseId,
-    String lessonId, {
-    bool flushNow = false,
-  }) {
-    _syncEngine.enqueue(
+  void _queueSync(String courseId, String lessonId, {bool flushNow = false}) {
+    _syncEngine?.enqueue(
       LessonProgressSyncItem(
         courseId: courseId,
         lessonId: lessonId,
@@ -191,15 +213,45 @@ class VideoProgress extends _$VideoProgress {
   /// Does NOT use `ref` or `state` — safe to call from onDispose or after disposal.
   Future<void> _logCompletion(String courseId, String lessonId) async {
     try {
-      await _repo.logActivity(
+      await _repo?.logActivity(
         eventType: 'lesson_completed',
-        metadata: {
-          'course_id': courseId,
-          'lesson_id': lessonId,
-        },
+        metadata: {'course_id': courseId, 'lesson_id': lessonId},
       );
     } catch (_) {
       // Best effort
     }
   }
+}
+
+// ─── Session cleanup ─────────────────────────────────────────────────────────
+
+/// Invalidates every user-scoped provider owned by the `video_player`
+/// feature. Called by [Auth.logout]. When you add a new user-scoped
+/// provider to this file, add it here too.
+///
+/// [videoProgressProvider] is a family, one instance per (courseId,
+/// lessonId), and — like [downloadsProvider]/[bookmarkedCoursesProvider]
+/// before this feature was audited — each instance keeps itself alive via
+/// `ref.keepAlive()` (see the class doc comment on [VideoProgress]), so it
+/// is never torn down just because the player widget navigates away. Left
+/// unaddressed, if a second account signs in on the same device without a
+/// full app restart and opens a lesson the first account had already been
+/// watching, the progress bar/"resume from X%"/completed badge would show
+/// the first account's in-memory watch progress rather than the second
+/// account's — the same account-isolation violation already fixed for
+/// downloads and course bookmarks/progress (STATE-001).
+///
+/// Invalidating the family here is also the *correct* way to end the
+/// session, not just a privacy fix: [VideoProgress]'s own `ref.onDispose`
+/// already flushes any pending unsynced progress via [_queueSync] before
+/// tearing down, so calling this from logout ensures the last few seconds
+/// of watch time are persisted rather than silently dropped.
+///
+/// [player4VideoInfoProvider] (Player4VideoInfo, in player4_provider.dart)
+/// is deliberately NOT invalidated here: it caches a signed streaming URL
+/// keyed by videoId, not by account, and already self-invalidates on its
+/// own `cacheExpiresAt` timer regardless of which account is signed in, so
+/// leaving it alive across a logout does not leak account-specific data.
+void invalidateVideoProgressProviders(Ref ref) {
+  ref.invalidate(videoProgressProvider);
 }

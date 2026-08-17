@@ -4,6 +4,7 @@ import 'package:app/features/home/application/providers/home_provider.dart';
 import 'package:app/features/notifications/application/providers/notifications_provider.dart';
 import 'package:app/features/profile/application/providers/profile_provider.dart';
 import 'package:app/features/todo/application/providers/todo_provider.dart';
+import 'package:app/features/video_player/application/providers/video_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 /// Composition-root aggregator for "invalidate everything user-scoped on
@@ -26,6 +27,11 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 /// they survived logout unlike every other feature's user-scoped state.
 /// See the doc comment on `invalidateDownloadsProviders` in
 /// downloads_provider.dart for the full account-isolation rationale.
+///
+/// `video_player` was added (STATE-002, same class of bug as STATE-001):
+/// `VideoProgress`'s per-(courseId, lessonId) `keepAlive()` state was never
+/// wired into this aggregator either. See the doc comment on
+/// `invalidateVideoProgressProviders` in video_provider.dart.
 void invalidateAllUserScopedProviders(Ref ref) {
   invalidateProfileProviders(ref);
   invalidateCoursesProviders(ref);
@@ -33,4 +39,5 @@ void invalidateAllUserScopedProviders(Ref ref) {
   invalidateHomeProviders(ref);
   invalidateNotificationsProviders(ref);
   invalidateDownloadsProviders(ref);
+  invalidateVideoProgressProviders(ref);
 }

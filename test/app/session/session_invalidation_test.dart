@@ -3,6 +3,9 @@ import 'package:app/features/courses/domain/entities/course_progress_summary.dar
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
 import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:app/features/downloads/domain/repositories/download_repository.dart';
+import 'package:app/features/video_player/application/providers/video_provider.dart';
+import 'package:app/features/video_player/domain/entities/lesson_progress_sync_item.dart';
+import 'package:app/features/video_player/domain/repositories/video_player_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
@@ -13,6 +16,8 @@ import 'package:mocktail/mocktail.dart';
 class MockCoursesRepository extends Mock implements CoursesRepository {}
 
 class MockDownloadRepository extends Mock implements DownloadRepository {}
+
+class MockVideoPlayerRepository extends Mock implements VideoPlayerRepository {}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -30,24 +35,38 @@ void _runInvalidateDownloads(ProviderContainer container) {
   container.read(Provider<void>((ref) => invalidateDownloadsProviders(ref)));
 }
 
-/// Regression test for STATE-001 (Section 7 audit, 2026-08-17):
+void _runInvalidateVideoProgress(ProviderContainer container) {
+  container.read(
+    Provider<void>((ref) => invalidateVideoProgressProviders(ref)),
+  );
+}
+
+/// Regression test for STATE-001 and STATE-002 (Section 7 audit,
+/// 2026-08-17/18):
 ///
-/// `bookmarkedCoursesProvider` / `courseProgressProvider` (courses feature)
-/// and the whole `downloads` feature's `downloadsProvider` /
-/// `totalStorageUsedProvider` are declared `keepAlive: true`, which means —
-/// unlike every plain `@riverpod` (autoDispose) provider — they are never
-/// torn down just because their last widget listener drops off. Before this
-/// fix, none of the four were wired into
+/// `bookmarkedCoursesProvider` / `courseProgressProvider` (courses feature),
+/// the whole `downloads` feature's `downloadsProvider` /
+/// `totalStorageUsedProvider`, and the `video_player` feature's
+/// `videoProgressProvider` are all declared/kept `keepAlive: true`, which
+/// means — unlike every plain `@riverpod` (autoDispose) provider — they are
+/// never torn down just because their last widget listener drops off.
+/// Before these fixes, none of them were wired into
 /// `invalidateAllUserScopedProviders`/the per-feature `invalidateXProviders`
 /// helpers it calls, so they kept serving the previous account's bookmarks,
-/// progress, and download list in memory to whichever account signed in
-/// next on the same device/session, directly violating the project's
-/// auth-cache-isolation requirement.
+/// course progress, download list, and video watch progress in memory to
+/// whichever account signed in next on the same device/session, directly
+/// violating the project's auth-cache-isolation requirement.
 ///
 /// These tests assert the fix: invalidating each provider forces the next
-/// read to hit the repository again rather than reusing the stale cached
-/// value.
+/// read to either hit the repository again or reset to a fresh default
+/// state, rather than reusing the previous account's cached value.
 void main() {
+  setUpAll(() {
+    // Needed by mocktail for `any()` matchers when the argument type isn't
+    // a primitive (mirrors test/features/video_player/.../video_provider_test.dart).
+    registerFallbackValue(<LessonProgressSyncItem>[]);
+  });
+
   group('invalidateCoursesProviders — user-scoped keepAlive cache isolation', () {
     late MockCoursesRepository repository;
     late ProviderContainer container;
@@ -177,4 +196,88 @@ void main() {
       ); // one additional call triggered by the invalidation, not zero
     });
   });
+
+  group(
+    'invalidateVideoProgressProviders — user-scoped keepAlive cache isolation (STATE-002)',
+    () {
+      const courseId = 'course-1';
+      const lessonId = 'lesson-1';
+
+      late MockVideoPlayerRepository repository;
+      late ProviderContainer container;
+
+      setUp(() {
+        repository = MockVideoPlayerRepository();
+        when(
+          () => repository.syncProgressBatch(any()),
+        ).thenAnswer((_) async => const Right(null));
+        when(
+          () => repository.logActivity(
+            eventType: any(named: 'eventType'),
+            metadata: any(named: 'metadata'),
+          ),
+        ).thenAnswer((_) async {});
+        container = ProviderContainer(
+          overrides: [
+            videoPlayerRepositoryProvider.overrideWithValue(repository),
+          ],
+        );
+        addTearDown(container.dispose);
+      });
+
+      test(
+        'resets to a fresh VideoState instead of leaking the previous '
+        "account's in-memory watch progress",
+        () async {
+          container.listen(videoProgressProvider(courseId, lessonId), (_, _) {});
+
+          // Simulate the first account watching partway through the lesson.
+          container
+              .read(videoProgressProvider(courseId, lessonId).notifier)
+              .updateProgress(42.0, 120, courseId, lessonId);
+          expect(
+            container.read(videoProgressProvider(courseId, lessonId)).progressPct,
+            42.0,
+          );
+
+          _runInvalidateVideoProgress(container);
+
+          // A second account opening the exact same lesson afterwards must
+          // see a fresh state, not the first account's leftover progress.
+          container.listen(videoProgressProvider(courseId, lessonId), (_, _) {});
+          final rebuilt = container.read(
+            videoProgressProvider(courseId, lessonId),
+          );
+
+          expect(
+            rebuilt.progressPct,
+            0.0,
+            reason:
+                'videoProgressProvider must not keep serving the previous '
+                "account's cached watch progress after logout/invalidation",
+          );
+          expect(rebuilt.watchTimeSec, 0);
+          expect(rebuilt.isCompleted, false);
+        },
+      );
+
+      test(
+        'flushes pending progress to the repository as part of invalidation, '
+        'not silently dropping it',
+        () async {
+          container.listen(videoProgressProvider(courseId, lessonId), (_, _) {});
+          container
+              .read(videoProgressProvider(courseId, lessonId).notifier)
+              .updateProgress(55.0, 200, courseId, lessonId);
+
+          _runInvalidateVideoProgress(container);
+          // The final sync is queued via a debounced/batching engine; give
+          // its microtask/flush chain a turn to run.
+          await Future<void>.delayed(Duration.zero);
+
+          verify(() => repository.syncProgressBatch(any())).called(1);
+        },
+      );
+    },
+  );
 }
