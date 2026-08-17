@@ -31,6 +31,10 @@ abstract final class AuthErrorPolicy {
     }
 
     if (error is ServerException) {
+      if (error.code == 'RPC_RLS_RECURSION') {
+        return true;
+      }
+
       final message = error.message.toLowerCase();
       return message.contains('network') ||
           message.contains('timeout') ||
@@ -66,9 +70,7 @@ abstract final class AuthErrorPolicy {
     // Never log exception messages here: SDK/backend errors may contain
     // request details or other sensitive diagnostic data. Keep only the
     // runtime type, which is sufficient to classify and monitor the gap.
-    debugPrint(
-      '[AuthErrorPolicy] Unmapped exception type: ${e.runtimeType}',
-    );
+    debugPrint('[AuthErrorPolicy] Unmapped exception type: ${e.runtimeType}');
     return 'errorGeneric';
   }
 }

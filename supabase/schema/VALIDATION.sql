@@ -1491,15 +1491,18 @@ DO $$
 DECLARE
   v_overlap text[];
 BEGIN
-  SELECT array_agg(DISTINCT (schemaname || '.' || tablename || ' [' || cmd || ']') ORDER BY 1)
+  SELECT array_agg(policy_scope ORDER BY policy_scope)
     INTO v_overlap
   FROM (
-    SELECT schemaname, tablename, cmd, roles, policyname,
-           COUNT(*) OVER (PARTITION BY schemaname, tablename, cmd, roles) AS c
-    FROM pg_policies
-    WHERE schemaname = 'public'
-  ) x
-  WHERE x.c > 1;
+    SELECT DISTINCT schemaname || '.' || tablename || ' [' || cmd || ']' AS policy_scope
+    FROM (
+      SELECT schemaname, tablename, cmd, roles, policyname,
+             COUNT(*) OVER (PARTITION BY schemaname, tablename, cmd, roles) AS c
+      FROM pg_policies
+      WHERE schemaname = 'public'
+    ) x
+    WHERE x.c > 1
+  ) overlap;
 
   INSERT INTO validation_results VALUES (
     'No Overlapping/Legacy RLS Policies Per Table+Command+Role',
@@ -1523,25 +1526,28 @@ DO $$
 DECLARE
   v_bad text[];
 BEGIN
-  SELECT array_agg(DISTINCT (n.nspname || '.' || p.proname) ORDER BY 1)
+  SELECT array_agg(function_name ORDER BY function_name)
     INTO v_bad
-  FROM pg_proc p
-  JOIN pg_namespace n ON n.oid = p.pronamespace
-  WHERE n.nspname = 'public'
-    AND p.proname IN (
-      'is_admin_with_session_validation', 'assert_tenant',
-      'is_current_user_super_admin', 'is_current_user_admin',
-      'validate_user_session', 'user_has_permission',
-      'get_current_tenant_id', 'is_user_valid_cached', 'get_auth_user_id'
-    )
-    AND (
-      pg_get_functiondef(p.oid) ILIKE '%public.users%'
-      OR pg_get_functiondef(p.oid) ILIKE '%public.user_roles%'
-    )
-    AND (
-      NOT p.prosecdef
-      OR pg_get_functiondef(p.oid) !~* 'SET\s+search_path\s*='
-    );
+  FROM (
+    SELECT DISTINCT n.nspname || '.' || p.proname AS function_name
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN (
+        'is_admin_with_session_validation', 'assert_tenant',
+        'is_current_user_super_admin', 'is_current_user_admin',
+        'validate_user_session', 'user_has_permission',
+        'get_current_tenant_id', 'is_user_valid_cached', 'get_auth_user_id'
+      )
+      AND (
+        pg_get_functiondef(p.oid) ILIKE '%public.users%'
+        OR pg_get_functiondef(p.oid) ILIKE '%public.user_roles%'
+      )
+      AND (
+        NOT p.prosecdef
+        OR pg_get_functiondef(p.oid) !~* 'SET\s+search_path\s*='
+      )
+  ) bad_functions;
 
   INSERT INTO validation_results VALUES (
     'RLS Recursion Guards Remain SECURITY DEFINER With Safe search_path',
@@ -1564,14 +1570,17 @@ DO $$
 DECLARE
   v_bad text[];
 BEGIN
-  SELECT array_agg(DISTINCT (schemaname || '.' || tablename || '/' || policyname) ORDER BY 1)
+  SELECT array_agg(policy_name ORDER BY policy_name)
     INTO v_bad
-  FROM pg_policies
-  WHERE schemaname = 'public'
-    AND (
-      regexp_replace(coalesce(qual, ''), '\s+', '', 'g') = 'true'
-      OR regexp_replace(coalesce(with_check, ''), '\s+', '', 'g') = 'true'
-    );
+  FROM (
+    SELECT DISTINCT schemaname || '.' || tablename || '/' || policyname AS policy_name
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND (
+        regexp_replace(coalesce(qual, ''), '\s+', '', 'g') = 'true'
+        OR regexp_replace(coalesce(with_check, ''), '\s+', '', 'g') = 'true'
+      )
+  ) bad_policies;
 
   INSERT INTO validation_results VALUES (
     'No USING(true)/WITH CHECK(true) RLS Bypass Workarounds',

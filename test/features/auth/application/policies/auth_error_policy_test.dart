@@ -12,7 +12,10 @@ void main() {
     });
 
     test('returns true for TimeoutException', () {
-      expect(AuthErrorPolicy.isTransient(TimeoutException('timed out')), isTrue);
+      expect(
+        AuthErrorPolicy.isTransient(TimeoutException('timed out')),
+        isTrue,
+      );
     });
 
     test('returns true for SocketException', () {
@@ -24,7 +27,9 @@ void main() {
 
     test('returns true for ServerException whose message mentions network', () {
       expect(
-        AuthErrorPolicy.isTransient(const ServerException('Network error occurred')),
+        AuthErrorPolicy.isTransient(
+          const ServerException('Network error occurred'),
+        ),
         isTrue,
       );
     });
@@ -36,12 +41,17 @@ void main() {
       );
     });
 
-    test('returns true for ServerException whose message mentions connection', () {
-      expect(
-        AuthErrorPolicy.isTransient(const ServerException('Connection refused')),
-        isTrue,
-      );
-    });
+    test(
+      'returns true for ServerException whose message mentions connection',
+      () {
+        expect(
+          AuthErrorPolicy.isTransient(
+            const ServerException('Connection refused'),
+          ),
+          isTrue,
+        );
+      },
+    );
 
     test('is case-insensitive when matching ServerException messages', () {
       expect(
@@ -52,8 +62,22 @@ void main() {
 
     test('returns false for ServerException with an unrelated message', () {
       expect(
-        AuthErrorPolicy.isTransient(const ServerException('Internal server error')),
+        AuthErrorPolicy.isTransient(
+          const ServerException('Internal server error'),
+        ),
         isFalse,
+      );
+    });
+
+    test('returns true for RLS recursion during session verification', () {
+      expect(
+        AuthErrorPolicy.isTransient(
+          const ServerException(
+            'RPC rejected: infinite recursion detected in an RLS policy',
+            'RPC_RLS_RECURSION',
+          ),
+        ),
+        isTrue,
       );
     });
 
@@ -121,11 +145,14 @@ void main() {
       );
     });
 
-    test('falls back to errorGeneric for a ServerException (not explicitly mapped)', () {
-      expect(
-        AuthErrorPolicy.mapExceptionToKey(const ServerException('500')),
-        'errorGeneric',
-      );
-    });
+    test(
+      'falls back to errorGeneric for a ServerException (not explicitly mapped)',
+      () {
+        expect(
+          AuthErrorPolicy.mapExceptionToKey(const ServerException('500')),
+          'errorGeneric',
+        );
+      },
+    );
   });
 }

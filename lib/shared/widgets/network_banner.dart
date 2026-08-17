@@ -98,7 +98,7 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
                     ],
                   ),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Icon(
                         AppIcons.wifiOff,
@@ -106,7 +106,7 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
                         size: 18,
                       ),
                       const SizedBox(width: 12),
-                      Flexible(
+                      Expanded(
                         child: Builder(
                           builder: (ctx) {
                             // Use Builder to get context with localizations

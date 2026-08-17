@@ -26,8 +26,9 @@ void main() {
   void stubRpc(String name, dynamic value, {bool withParams = false}) {
     final builder = MockRpcBuilder();
     if (withParams) {
-      when(() => mockClient.rpc(name, params: any(named: 'params')))
-          .thenAnswer((_) => builder);
+      when(
+        () => mockClient.rpc(name, params: any(named: 'params')),
+      ).thenAnswer((_) => builder);
     } else {
       when(() => mockClient.rpc(name)).thenAnswer((_) => builder);
     }
@@ -42,8 +43,9 @@ void main() {
 
   void stubRpcThrows(String name, Object error, {bool withParams = false}) {
     if (withParams) {
-      when(() => mockClient.rpc(name, params: any(named: 'params')))
-          .thenThrow(error);
+      when(
+        () => mockClient.rpc(name, params: any(named: 'params')),
+      ).thenThrow(error);
     } else {
       when(() => mockClient.rpc(name)).thenThrow(error);
     }
@@ -67,7 +69,10 @@ void main() {
     });
 
     test('returns banned status when allowed is false', () async {
-      stubRpc('check_user_access', {'allowed': false, 'reason': 'account_banned'});
+      stubRpc('check_user_access', {
+        'allowed': false,
+        'reason': 'account_banned',
+      });
 
       final result = await dataSource.checkUserAccess();
 
@@ -85,11 +90,35 @@ void main() {
     });
 
     test('throws ServerException on PostgrestException', () async {
-      stubRpcThrows('check_user_access', const PostgrestException(message: 'DB error'));
+      stubRpcThrows(
+        'check_user_access',
+        const PostgrestException(message: 'DB error'),
+      );
 
       await expectLater(
         () => dataSource.checkUserAccess(),
         throwsA(isA<ServerException>()),
+      );
+    });
+
+    test('preserves RLS recursion code from check_user_access', () async {
+      stubRpcThrows(
+        'check_user_access',
+        const PostgrestException(
+          message: 'infinite recursion detected in policy for relation "users"',
+          code: '42P17',
+        ),
+      );
+
+      await expectLater(
+        () => dataSource.checkUserAccess(),
+        throwsA(
+          isA<ServerException>().having(
+            (e) => e.code,
+            'code',
+            'RPC_RLS_RECURSION',
+          ),
+        ),
       );
     });
   });
@@ -100,21 +129,29 @@ void main() {
     const tDeviceInfo = {'model': 'Pixel 7'};
 
     test('returns verified status when RPC returns verified', () async {
-      stubRpc('bind_device_for_current_user', {'status': 'verified'},
-          withParams: true);
+      stubRpc('bind_device_for_current_user', {
+        'status': 'verified',
+      }, withParams: true);
 
-      final result =
-          await dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform);
+      final result = await dataSource.bindDevice(
+        tDeviceId,
+        tDeviceInfo,
+        tPlatform,
+      );
 
       expect(result.status, BindDeviceStatus.verified);
     });
 
     test('returns bound status for non-verified response', () async {
-      stubRpc('bind_device_for_current_user', {'status': 'bound'},
-          withParams: true);
+      stubRpc('bind_device_for_current_user', {
+        'status': 'bound',
+      }, withParams: true);
 
-      final result =
-          await dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform);
+      final result = await dataSource.bindDevice(
+        tDeviceId,
+        tDeviceInfo,
+        tPlatform,
+      );
 
       expect(result.status, BindDeviceStatus.bound);
     });
@@ -124,17 +161,20 @@ void main() {
         'model': 'Pixel 7',
         'fingerprint_version': 'v2',
       };
-      stubRpc('bind_device_for_current_user', {'status': 'verified'},
-          withParams: true);
+      stubRpc('bind_device_for_current_user', {
+        'status': 'verified',
+      }, withParams: true);
 
       await dataSource.bindDevice(tDeviceId, versionedDeviceInfo, tPlatform);
 
-      final captured = verify(
-        () => mockClient.rpc(
-          'bind_device_for_current_user',
-          params: captureAny(named: 'params'),
-        ),
-      ).captured.single as Map<String, dynamic>;
+      final captured =
+          verify(
+                () => mockClient.rpc(
+                  'bind_device_for_current_user',
+                  params: captureAny(named: 'params'),
+                ),
+              ).captured.single
+              as Map<String, dynamic>;
 
       expect(captured['p_device_id'], tDeviceId);
       expect(captured['p_device_info'], versionedDeviceInfo);
@@ -195,7 +235,10 @@ void main() {
       () async {
         stubRpcThrows(
           'bind_device_for_current_user',
-          const PostgrestException(message: 'function not found', code: 'PGRST202'),
+          const PostgrestException(
+            message: 'function not found',
+            code: 'PGRST202',
+          ),
           withParams: true,
         );
 
@@ -218,7 +261,11 @@ void main() {
       () async {
         stubRpcThrows(
           'bind_device_for_current_user',
-          const PostgrestException(message: 'permission denied for function bind_device_for_current_user', code: '42501'),
+          const PostgrestException(
+            message:
+                'permission denied for function bind_device_for_current_user',
+            code: '42501',
+          ),
           withParams: true,
         );
 
@@ -235,120 +282,106 @@ void main() {
       },
     );
 
-    test(
-      'throws ServerException with code RPC_RLS_RECURSION on a Postgres '
-      '42P17 infinite-recursion error (the exact users/user_roles '
-      'FORCE ROW LEVEL SECURITY symptom from AUTH-BUG-01)',
-      () async {
-        stubRpcThrows(
-          'bind_device_for_current_user',
-          const PostgrestException(
-            message: 'infinite recursion detected in policy for relation "users"',
-            code: '42P17',
+    test('throws ServerException with code RPC_RLS_RECURSION on a Postgres '
+        '42P17 infinite-recursion error (the exact users/user_roles '
+        'FORCE ROW LEVEL SECURITY symptom from AUTH-BUG-01)', () async {
+      stubRpcThrows(
+        'bind_device_for_current_user',
+        const PostgrestException(
+          message: 'infinite recursion detected in policy for relation "users"',
+          code: '42P17',
+        ),
+        withParams: true,
+      );
+
+      await expectLater(
+        () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+        throwsA(
+          isA<ServerException>().having(
+            (e) => e.code,
+            'code',
+            'RPC_RLS_RECURSION',
           ),
-          withParams: true,
-        );
+        ),
+      );
+    });
 
-        await expectLater(
-          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
-          throwsA(
-            isA<ServerException>().having(
-              (e) => e.code,
-              'code',
-              'RPC_RLS_RECURSION',
-            ),
+    test('throws ServerException with code TENANT_MISMATCH when RPC rejects '
+        'with TENANT_MISMATCH', () async {
+      stubRpcThrows(
+        'bind_device_for_current_user',
+        const PostgrestException(message: 'TENANT_MISMATCH'),
+        withParams: true,
+      );
+
+      await expectLater(
+        () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+        throwsA(
+          isA<ServerException>().having(
+            (e) => e.code,
+            'code',
+            'TENANT_MISMATCH',
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
 
-    test(
-      'throws ServerException with code TENANT_MISMATCH when RPC rejects '
-      'with TENANT_MISMATCH',
-      () async {
-        stubRpcThrows(
-          'bind_device_for_current_user',
-          const PostgrestException(message: 'TENANT_MISMATCH'),
-          withParams: true,
-        );
+    test('throws ServerException with code INVALID_DEVICE_ID when RPC rejects '
+        'with INVALID_DEVICE_ID', () async {
+      stubRpcThrows(
+        'bind_device_for_current_user',
+        const PostgrestException(message: 'INVALID_DEVICE_ID'),
+        withParams: true,
+      );
 
-        await expectLater(
-          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
-          throwsA(
-            isA<ServerException>().having(
-              (e) => e.code,
-              'code',
-              'TENANT_MISMATCH',
-            ),
+      await expectLater(
+        () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+        throwsA(
+          isA<ServerException>().having(
+            (e) => e.code,
+            'code',
+            'INVALID_DEVICE_ID',
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
 
-    test(
-      'throws ServerException with code INVALID_DEVICE_ID when RPC rejects '
-      'with INVALID_DEVICE_ID',
-      () async {
-        stubRpcThrows(
-          'bind_device_for_current_user',
-          const PostgrestException(message: 'INVALID_DEVICE_ID'),
-          withParams: true,
-        );
+    test('throws ServerException with code INVALID_FINGERPRINT_VERSION when '
+        'RPC rejects with INVALID_FINGERPRINT_VERSION', () async {
+      stubRpcThrows(
+        'bind_device_for_current_user',
+        const PostgrestException(message: 'INVALID_FINGERPRINT_VERSION'),
+        withParams: true,
+      );
 
-        await expectLater(
-          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
-          throwsA(
-            isA<ServerException>().having(
-              (e) => e.code,
-              'code',
-              'INVALID_DEVICE_ID',
-            ),
+      await expectLater(
+        () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+        throwsA(
+          isA<ServerException>().having(
+            (e) => e.code,
+            'code',
+            'INVALID_FINGERPRINT_VERSION',
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
 
-    test(
-      'throws ServerException with code INVALID_FINGERPRINT_VERSION when '
-      'RPC rejects with INVALID_FINGERPRINT_VERSION',
-      () async {
-        stubRpcThrows(
-          'bind_device_for_current_user',
-          const PostgrestException(message: 'INVALID_FINGERPRINT_VERSION'),
-          withParams: true,
-        );
+    test('falls back to the raw PostgREST error code for anything else, '
+        'never silently losing it', () async {
+      stubRpcThrows(
+        'bind_device_for_current_user',
+        const PostgrestException(
+          message: 'some unmapped failure',
+          code: '99999',
+        ),
+        withParams: true,
+      );
 
-        await expectLater(
-          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
-          throwsA(
-            isA<ServerException>().having(
-              (e) => e.code,
-              'code',
-              'INVALID_FINGERPRINT_VERSION',
-            ),
-          ),
-        );
-      },
-    );
-
-    test(
-      'falls back to the raw PostgREST error code for anything else, '
-      'never silently losing it',
-      () async {
-        stubRpcThrows(
-          'bind_device_for_current_user',
-          const PostgrestException(message: 'some unmapped failure', code: '99999'),
-          withParams: true,
-        );
-
-        await expectLater(
-          () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
-          throwsA(
-            isA<ServerException>().having((e) => e.code, 'code', '99999'),
-          ),
-        );
-      },
-    );
+      await expectLater(
+        () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
+        throwsA(isA<ServerException>().having((e) => e.code, 'code', '99999')),
+      );
+    });
   });
 
   group('login', () {
@@ -360,14 +393,10 @@ void main() {
       '(real DNS/socket failure, e.g. FLUTTER-2)',
       () async {
         when(
-          () => mockAuth.signInWithPassword(
-            email: tEmail,
-            password: tPassword,
-          ),
+          () => mockAuth.signInWithPassword(email: tEmail, password: tPassword),
         ).thenThrow(
           AuthRetryableFetchException(
-            message:
-                'ClientException with SocketException: Failed host lookup',
+            message: 'ClientException with SocketException: Failed host lookup',
           ),
         );
 
@@ -383,10 +412,7 @@ void main() {
       'AuthRetryableFetchException carries a 5xx statusCode from Supabase',
       () async {
         when(
-          () => mockAuth.signInWithPassword(
-            email: tEmail,
-            password: tPassword,
-          ),
+          () => mockAuth.signInWithPassword(email: tEmail, password: tPassword),
         ).thenThrow(
           AuthRetryableFetchException(
             message: 'Internal Server Error',
@@ -401,18 +427,18 @@ void main() {
       },
     );
 
-    test('throws InvalidCredentialsException when AuthException contains invalid credentials', () async {
-      when(
-        () => mockAuth.signInWithPassword(
-          email: tEmail,
-          password: tPassword,
-        ),
-      ).thenThrow(const AuthException('Invalid login credentials'));
+    test(
+      'throws InvalidCredentialsException when AuthException contains invalid credentials',
+      () async {
+        when(
+          () => mockAuth.signInWithPassword(email: tEmail, password: tPassword),
+        ).thenThrow(const AuthException('Invalid login credentials'));
 
-      await expectLater(
-        () => dataSource.login(tEmail, tPassword),
-        throwsA(isA<InvalidCredentialsException>()),
-      );
-    });
+        await expectLater(
+          () => dataSource.login(tEmail, tPassword),
+          throwsA(isA<InvalidCredentialsException>()),
+        );
+      },
+    );
   });
 }

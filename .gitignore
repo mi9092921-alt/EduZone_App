@@ -52,6 +52,7 @@ android/key.properties
 google-services.json
 GoogleService-Info.plist
 supabase/db_url.txt
+supabase/deploy_command.txt
 # Play Console service-account key — written locally by
 # .github/workflows/deploy.yml's deploy_android job from the
 # PLAY_STORE_JSON_KEY secret. As sensitive as a service-role credential;

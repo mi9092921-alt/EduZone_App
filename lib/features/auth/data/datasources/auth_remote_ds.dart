@@ -53,9 +53,7 @@ class AuthRemoteDataSource {
       final allowed = data['allowed'] as bool? ?? false;
       final reason = data['reason'] as String?;
       final role = UserRole.fromString(
-        data['role'] as String? ??
-            data['primary_role'] as String? ??
-            'student',
+        data['role'] as String? ?? data['primary_role'] as String? ?? 'student',
       );
 
       if (allowed) {
@@ -71,8 +69,8 @@ class AuthRemoteDataSource {
             ? DateTime.tryParse(data['ends_at'])
             : null,
       );
-    } on PostgrestException {
-      throw const ServerException('Authentication backend request failed'); // check-ignore
+    } on PostgrestException catch (e) {
+      throw _mapRpcException(e);
     }
   }
 
@@ -270,11 +268,11 @@ class AuthRemoteDataSource {
           .maybeSingle();
 
       return result != null;
-    } on PostgrestException {
+    } on PostgrestException catch (e) {
       // A database/RLS/network failure is not proof that the device is
       // missing. Preserve the failure so startup cannot silently turn a
       // verification outage into an automatic device re-bind/logout path.
-      throw const ServerException('Authentication backend request failed'); // check-ignore
+      throw _mapRpcException(e);
     }
   }
 
@@ -304,8 +302,8 @@ class AuthRemoteDataSource {
 
       if (userData == null) return null;
       return _mapUserData(userData);
-    } on PostgrestException {
-      throw const ServerException('Authentication backend request failed'); // check-ignore
+    } on PostgrestException catch (e) {
+      throw _mapRpcException(e);
     }
   }
 
@@ -380,7 +378,9 @@ class AuthRemoteDataSource {
     if (e is AuthRetryableFetchException) {
       return e.statusCode == null
           ? const NoInternetException()
-          : const ServerException('Authentication service unavailable'); // check-ignore
+          : const ServerException(
+              'Authentication service unavailable',
+            ); // check-ignore
     }
 
     final msg = e.message.toLowerCase();
@@ -393,7 +393,9 @@ class AuthRemoteDataSource {
     if (msg.contains('api key') ||
         msg.contains('invalid jwt') ||
         msg.contains('signature')) {
-      return const ServerException('Authentication service configuration error'); // check-ignore
+      return const ServerException(
+        'Authentication service configuration error',
+      ); // check-ignore
     }
 
     if (msg.contains('invalid') || msg.contains('credentials')) {
@@ -402,7 +404,9 @@ class AuthRemoteDataSource {
     if (msg.contains('rate') || msg.contains('limit')) {
       return const RateLimitedException();
     }
-    return const ServerException('Authentication service unavailable'); // check-ignore
+    return const ServerException(
+      'Authentication service unavailable',
+    ); // check-ignore
   }
 
   AppException _mapRpcException(PostgrestException e) {
