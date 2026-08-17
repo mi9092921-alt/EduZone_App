@@ -112,7 +112,7 @@ GRANT SELECT ON public.user_validity_cache TO authenticated, service_role;
 GRANT SELECT ON public.mv_course_stats TO authenticated, service_role, anon;
 
 -- Mutation grants (RLS still controls who can do what)
-GRANT INSERT, UPDATE, DELETE ON public.users                     TO authenticated;
+GRANT INSERT, DELETE ON public.users                             TO authenticated;
 GRANT INSERT, UPDATE, DELETE ON public.courses                   TO authenticated;
 GRANT INSERT, UPDATE, DELETE ON public.course_prerequisites      TO authenticated;
 GRANT INSERT, UPDATE, DELETE ON public.course_learning_objectives TO authenticated;
@@ -139,6 +139,9 @@ REVOKE DELETE ON public.todos FROM authenticated;
 REVOKE UPDATE, DELETE ON public.activity_logs FROM authenticated;
 REVOKE UPDATE, DELETE ON public.warnings FROM authenticated;
 REVOKE UPDATE ON public.users FROM authenticated;
+-- Backward compatibility for released clients. RLS still limits the row to
+-- the current user, and column privileges limit the mutation to telemetry.
+GRANT UPDATE (last_login, last_seen_at) ON public.users TO authenticated;
 REVOKE ALL ON public.activity_log_queue FROM anon, authenticated;
 REVOKE ALL ON internal.job_queue FROM anon, authenticated, public;
 REVOKE ALL ON audit.slow_query_log FROM anon, authenticated, public;
@@ -306,6 +309,9 @@ GRANT EXECUTE ON FUNCTION public.logout_current_user() TO authenticated, service
 -- can call it, anon and PUBLIC cannot.
 REVOKE ALL ON FUNCTION public.bind_device_for_current_user(text, jsonb, text, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.bind_device_for_current_user(text, jsonb, text, text) TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.record_current_user_activity(boolean, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.record_current_user_activity(boolean, text) TO authenticated, service_role;
 
 REVOKE EXECUTE ON FUNCTION public.validate_user_session() FROM anon;
 GRANT EXECUTE ON FUNCTION public.validate_user_session() TO authenticated, service_role;

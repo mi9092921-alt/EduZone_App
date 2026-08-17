@@ -2150,6 +2150,16 @@ CREATE POLICY sessions_admin_all ON public.sessions
 
 DROP POLICY IF EXISTS devices_admin_all ON public.devices;
 
+DROP POLICY IF EXISTS devices_select_own ON public.devices;
+
+CREATE POLICY devices_select_own ON public.devices
+  FOR SELECT TO authenticated
+  USING (
+    user_id = (select auth.uid())
+    AND tenant_id = public.get_current_tenant_id()
+    AND is_active = true
+  );
+
 CREATE POLICY devices_admin_all ON public.devices
   FOR ALL TO authenticated
   USING (

@@ -5680,6 +5680,55 @@ EXCEPTION
 END;
 $$;
 
+-- Client-safe activity heartbeat. Flutter must not receive direct UPDATE on
+-- public.users; this SECURITY DEFINER function updates only the caller's own
+-- telemetry fields, and optionally the already-bound device heartbeat.
+CREATE OR REPLACE FUNCTION public.record_current_user_activity(
+  p_record_login boolean DEFAULT false,
+  p_device_id text DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_tenant_id uuid;
+BEGIN
+  IF v_uid IS NULL OR NOT public.validate_user_session() THEN
+    RAISE EXCEPTION 'AUTH_REQUIRED';
+  END IF;
+
+  SELECT tenant_id
+    INTO v_tenant_id
+    FROM public.users
+   WHERE id = v_uid
+     AND deleted_at IS NULL;
+
+  IF v_tenant_id IS NULL THEN
+    RAISE EXCEPTION 'AUTH_REQUIRED';
+  END IF;
+
+  UPDATE public.users
+     SET last_seen_at = pg_catalog.now(),
+         last_login = CASE
+           WHEN p_record_login THEN pg_catalog.now()
+           ELSE last_login
+         END
+   WHERE id = v_uid
+     AND tenant_id = v_tenant_id;
+
+  IF p_device_id IS NOT NULL THEN
+    UPDATE public.devices
+       SET last_seen = pg_catalog.now()
+     WHERE user_id = v_uid
+       AND tenant_id = v_tenant_id
+       AND device_id = p_device_id
+       AND is_active = true;
+  END IF;
+END;
+$$;
+
 -- AUTHZ-STUDENT-01: student-only application access is decided server-side.
 CREATE OR REPLACE FUNCTION public.check_user_access()
 RETURNS jsonb

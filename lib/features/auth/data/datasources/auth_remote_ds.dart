@@ -3,7 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/supabase_client.dart';
-import '../../../../shared/utils/global_error_handler.dart';
 import '../../domain/entities/app_user.dart';
 import '../../domain/entities/bind_device_result.dart';
 import '../../domain/entities/user_access.dart';
@@ -103,28 +102,10 @@ class AuthRemoteDataSource {
         throw const ServerException('User profile not found'); // check-ignore
       }
 
-      // Update last_login. This is non-critical bookkeeping/telemetry
-      // (phase E, not phase C security-critical device binding) -- per
-      // project policy it must never be able to fail login. However
-      // AUTH-BUG-01 found this PATCH silently swallowing its error
-      // entirely (`catchError((_) {})`), which hid real failures (e.g.
-      // the same RLS-recursion 42P17 that was breaking
-      // users_update_policy) with no trace anywhere, including Sentry.
-      // Keep the exact same "never throw into login()" contract, but
-      // stop discarding the failure: log it so a real backend problem
-      // here is still visible.
-      await _client
-          .from('users')
-          .update({
-            'last_login': DateTime.now().toIso8601String(),
-            'last_seen_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', response.user!.id)
-          .then((_) {})
-          .catchError((Object e, StackTrace st) {
-            GlobalErrorHandler.logError(e, st);
-            debugPrint('[Auth] last_login update failed: ${e.runtimeType}');
-          });
+      // Best-effort telemetry. Authenticated clients intentionally do not
+      // have direct UPDATE on public.users, so this goes through a narrowly
+      // scoped SECURITY DEFINER RPC.
+      await _recordCurrentUserActivity(recordLogin: true);
 
       return _mapUserData(userData);
     } on AuthException catch (e) {
@@ -153,23 +134,8 @@ class AuthRemoteDataSource {
     required String tenantId,
     String? deviceFingerprint,
   }) async {
-    final now = DateTime.now().toIso8601String();
-
     try {
-      // 1. Update users table
-      await _client
-          .from('users')
-          .update({'last_seen_at': now})
-          .eq('id', userId);
-
-      // 2. Update devices table if fingerprint provided
-      if (deviceFingerprint != null) {
-        await _client
-            .from('devices')
-            .update({'last_seen': now})
-            .eq('user_id', userId)
-            .eq('device_id', deviceFingerprint);
-      }
+      await _recordCurrentUserActivity(deviceFingerprint: deviceFingerprint);
     } catch (e) {
       debugPrint('[Auth] Sync activity error: ${e.runtimeType}');
     }
@@ -309,6 +275,23 @@ class AuthRemoteDataSource {
 
   // ─── Helpers ──────────────────────────────────────────────────
 
+  Future<void> _recordCurrentUserActivity({
+    bool recordLogin = false,
+    String? deviceFingerprint,
+  }) async {
+    try {
+      await _client.rpc(
+        'record_current_user_activity',
+        params: {
+          'p_record_login': recordLogin,
+          'p_device_id': deviceFingerprint,
+        },
+      );
+    } catch (e) {
+      debugPrint('[Auth] Activity telemetry failed: ${e.runtimeType}');
+    }
+  }
+
   AppUser _mapUserData(Map<String, dynamic> data) {
     String? firstName = data['first_name'] as String?;
     String? lastName = data['last_name'] as String?;
@@ -329,21 +312,6 @@ class AuthRemoteDataSource {
                 ? fullMetaName?.split(' ').last
                 : null);
 
-        // Fire-and-forget background sync to database
-        final updates = <String, dynamic>{};
-        if (firstName != null) updates['first_name'] = firstName;
-        if (lastName != null) updates['last_name'] = lastName;
-
-        _client
-            .from('users')
-            .update(updates)
-            .eq('id', authUser.id)
-            .then((_) {
-              /* Log success or ignore */
-            })
-            .catchError((_) {
-              /* Ignore */
-            });
       }
     }
 
