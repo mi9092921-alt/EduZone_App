@@ -51,26 +51,10 @@ ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenants FORCE ROW LEVEL SECURITY;
 
 -- Own-tenant read
-DROP POLICY IF EXISTS tenants_own_select ON public.tenants;
-
-CREATE POLICY tenants_own_select ON public.tenants
-  FOR SELECT TO authenticated
-  USING (id = public.get_current_tenant_id());
 
 -- Super-admin read-all
-DROP POLICY IF EXISTS tenants_superadmin_select ON public.tenants;
-
-CREATE POLICY tenants_superadmin_select ON public.tenants
-  FOR SELECT TO authenticated
-  USING (public.is_current_user_super_admin_lite());
 
 -- Super-admin full write
-DROP POLICY IF EXISTS tenants_superadmin_all ON public.tenants;
-
-CREATE POLICY tenants_superadmin_all ON public.tenants
-  FOR ALL TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
 
 -- Anon: no access
 DROP POLICY IF EXISTS tenants_anon_deny ON public.tenants;
@@ -102,41 +86,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 -- the users profile PATCH, etc.). See also public.user_roles below,
 -- which has the identical pattern and must stay un-forced for the
 -- same reason.
-DROP POLICY IF EXISTS users_select_policy ON public.users;
 
-CREATE POLICY users_select_policy ON public.users
-  FOR SELECT TO authenticated
-  USING (
-    deleted_at IS NULL
-    AND (
-      public.is_admin_with_session_validation()
-      OR id = (select auth.uid())
-      OR (
-        tenant_id = public.get_current_tenant_id()
-        AND EXISTS (
-          SELECT 1
-          FROM public.courses c
-          JOIN public.enrollments e ON e.course_id = c.id
-          WHERE c.teacher_id = (select auth.uid())
-            AND e.user_id = users.id
-            AND c.tenant_id = public.get_current_tenant_id()
-            AND e.status = 'active'
-        )
-      )
-    )
-  );
-
-DROP POLICY IF EXISTS users_update_policy ON public.users;
-
-CREATE POLICY users_update_policy ON public.users
-  FOR UPDATE
-  USING (
-    public.validate_user_session()
-    AND (
-      id = (select auth.uid())
-      OR public.is_admin_with_session_validation()
-    )
-  );
 
 DROP POLICY IF EXISTS users_delete_policy ON public.users;
 
@@ -153,17 +103,6 @@ ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
 -- is_admin_with_session_validation() -- which includes the
 -- bind_device_for_current_user() login step. RLS remains fully
 -- ENABLEd and enforced for anon/authenticated either way.
-DROP POLICY IF EXISTS user_roles_select_policy ON public.user_roles;
-
-CREATE POLICY user_roles_select_policy ON public.user_roles
-  FOR SELECT TO authenticated
-  USING (
-    public.validate_user_session()
-    AND (
-      user_id = (select auth.uid())
-      OR public.is_admin_with_session_validation()
-    )
-  );
 
 DROP POLICY IF EXISTS user_roles_admin_all ON public.user_roles;
 
@@ -179,113 +118,21 @@ DROP POLICY IF EXISTS tenant_settings_select ON public.tenant_settings;
 CREATE POLICY tenant_settings_select ON public.tenant_settings
   FOR SELECT TO authenticated USING (tenant_id = public.get_current_tenant_id());
 
-DROP POLICY IF EXISTS tenant_settings_admin_all ON public.tenant_settings;
 
-CREATE POLICY tenant_settings_admin_all ON public.tenant_settings
-  FOR ALL TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
-
-DROP POLICY IF EXISTS security_settings_admin_all ON public.security_settings;
-
-CREATE POLICY security_settings_admin_all ON public.security_settings
-  FOR ALL TO authenticated
-  USING (public.user_has_permission((select auth.uid()), 'settings.write'::text, public.get_current_tenant_id()))
-  WITH CHECK (
-    tenant_id = public.assert_tenant()
-    AND public.user_has_permission((select auth.uid()), 'settings.write'::text, public.get_current_tenant_id())
-  );
 
 ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.courses FORCE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS courses_select_policy ON public.courses;
 
-CREATE POLICY courses_select_policy ON public.courses
-  FOR SELECT
-  USING (
-    deleted_at IS NULL
-    AND (
-      status = 'published'
-      OR (
-        public.validate_user_session()
-        AND tenant_id = public.get_current_tenant_id()
-        AND (
-          public.is_admin_with_session_validation()
-          OR teacher_id = (select auth.uid())
-          OR public.has_course_access(id)
-          OR public.user_has_permission(
-            public.get_auth_user_id(),
-            'courses.read'::text,
-            tenant_id
-          )
-        )
-      )
-    )
-  );
-
-DROP POLICY IF EXISTS courses_admin_all ON public.courses;
-
-CREATE POLICY courses_admin_all ON public.courses
-  FOR ALL TO authenticated
-  USING (
-    public.is_admin_with_session_validation()
-    AND deleted_at IS NULL
-  )
-  WITH CHECK (
-    public.is_admin_with_session_validation()
-    AND deleted_at IS NULL
-  );
 
 ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.enrollments FORCE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS enrollments_select_policy ON public.enrollments;
 
-CREATE POLICY enrollments_select_policy ON public.enrollments
-  FOR SELECT TO authenticated
-  USING (
-    deleted_at IS NULL
-    AND tenant_id = public.get_current_tenant_id()
-    AND (
-      user_id = (select auth.uid())
-      OR public.is_admin_with_session_validation()
-      OR EXISTS (
-        SELECT 1
-        FROM public.courses c
-        WHERE c.id = enrollments.course_id
-          AND c.tenant_id = enrollments.tenant_id
-          AND c.teacher_id = (select auth.uid())
-      )
-    )
-  );
 
-DROP POLICY IF EXISTS enrollments_insert_policy ON public.enrollments;
 
-CREATE POLICY enrollments_insert_policy ON public.enrollments
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    public.is_admin_with_session_validation()
-    AND tenant_id = public.assert_tenant()
-    AND deleted_at IS NULL
-  );
-
-DROP POLICY IF EXISTS enrollments_update_policy ON public.enrollments;
-
-CREATE POLICY enrollments_update_policy ON public.enrollments
-  FOR UPDATE
-  USING (
-    (user_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-    AND deleted_at IS NULL
-  );
-
-DROP POLICY IF EXISTS enrollments_delete_policy ON public.enrollments;
-
-CREATE POLICY enrollments_delete_policy ON public.enrollments
-  FOR DELETE
-  USING (false);
 
 ALTER TABLE public.user_progress ENABLE ROW LEVEL SECURITY;
 
@@ -311,18 +158,6 @@ CREATE POLICY user_progress_select_policy ON public.user_progress
     )
   );
 
-DROP POLICY IF EXISTS user_progress_all_policy ON public.user_progress;
-
-CREATE POLICY user_progress_all_policy ON public.user_progress
-  FOR ALL TO authenticated
-  USING (
-    (user_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-    AND deleted_at IS NULL
-  )
-  WITH CHECK (
-    (user_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-    AND deleted_at IS NULL
-  );
 
 ALTER TABLE public.session_locks ENABLE ROW LEVEL SECURITY;
 
@@ -482,66 +317,14 @@ CREATE POLICY schema_migrations_admin ON public.schema_migrations
   USING (public.is_admin_with_session_validation())
   WITH CHECK (public.is_admin_with_session_validation());
 
-DROP POLICY IF EXISTS tenants_select ON public.tenants;
 
-CREATE POLICY tenants_select ON public.tenants
-  FOR SELECT TO authenticated
-  USING (
-    deleted_at IS NULL
-    AND (id = public.get_current_tenant_id() OR public.is_admin_with_session_validation())
-  );
-
-DROP POLICY IF EXISTS tenants_admin_all ON public.tenants;
-
-CREATE POLICY tenants_admin_all ON public.tenants
-  FOR ALL TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
 
 DROP POLICY IF EXISTS users_select ON public.users;
 
-CREATE POLICY users_self ON public.users
-  FOR SELECT TO authenticated
-  USING (id = public.get_auth_user_id() AND deleted_at IS NULL);
 
-CREATE POLICY users_teacher_students ON public.users
-  FOR SELECT TO authenticated
-  USING (
-    users.tenant_id = public.get_current_tenant_id() AND
-    EXISTS (
-      SELECT 1 FROM public.courses c
-      JOIN public.enrollments e ON e.course_id = c.id
-      WHERE c.teacher_id = public.get_auth_user_id()
-        AND e.user_id = users.id
-        AND c.tenant_id = public.get_current_tenant_id()
-        AND e.status = 'active'
-    )
-  );
 
-CREATE POLICY users_admin_select ON public.users
-  FOR SELECT TO authenticated
-  USING (public.is_admin_with_session_validation());
 
-DROP POLICY IF EXISTS users_update_self ON public.users;
 
-CREATE POLICY users_update_self ON public.users
-  FOR UPDATE TO authenticated
-  USING (id = (select auth.uid()) AND deleted_at IS NULL)
-  WITH CHECK (
-    id = (select auth.uid())
-    AND tenant_id = public.get_current_tenant_id()
-    AND primary_role = (SELECT primary_role FROM public.users WHERE id = (select auth.uid()))
-  );
-
-DROP POLICY IF EXISTS users_admin_all ON public.users;
-
-CREATE POLICY users_admin_all ON public.users
-  FOR ALL TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (
-    public.is_admin_with_session_validation()
-    AND (tenant_id = public.get_current_tenant_id())
-  );
 
 DROP POLICY IF EXISTS roles_select ON public.roles;
 
@@ -549,12 +332,6 @@ CREATE POLICY roles_select ON public.roles
   FOR SELECT TO authenticated
   USING (tenant_id = public.system_tenant_id() OR tenant_id = public.get_current_tenant_id() OR public.is_current_user_super_admin_lite());
 
-DROP POLICY IF EXISTS roles_admin_all ON public.roles;
-
-CREATE POLICY roles_admin_all ON public.roles
-  FOR ALL TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
 
 DROP POLICY IF EXISTS permissions_select ON public.permissions;
 
@@ -572,12 +349,6 @@ CREATE POLICY permissions_select ON public.permissions
     )
   );
 
-DROP POLICY IF EXISTS permissions_super_admin_all ON public.permissions;
-
-CREATE POLICY permissions_super_admin_all ON public.permissions
-  FOR ALL TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
 
 DROP POLICY IF EXISTS role_permissions_select ON public.role_permissions;
 
@@ -591,35 +362,11 @@ CREATE POLICY role_permissions_select ON public.role_permissions
     )
   );
 
-DROP POLICY IF EXISTS role_permissions_admin_all ON public.role_permissions;
 
-CREATE POLICY role_permissions_admin_all ON public.role_permissions
-  FOR ALL TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
 
-DROP POLICY IF EXISTS user_roles_select ON public.user_roles;
-
-CREATE POLICY user_roles_select ON public.user_roles
-  FOR SELECT TO authenticated
-  USING (
-    user_id = public.get_auth_user_id()
-    OR public.is_admin_with_session_validation()
-  );
-
-CREATE POLICY user_roles_admin_all ON public.user_roles
-  FOR ALL TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
 
 DROP POLICY IF EXISTS settings_select ON public.settings_kv;
 
-DROP POLICY IF EXISTS settings_admin_all ON public.settings_kv;
-
-CREATE POLICY settings_admin_all ON public.settings_kv
-  FOR ALL TO authenticated
-  USING (public.user_has_permission((select auth.uid()), 'settings.write'::text, public.get_current_tenant_id()))
-  WITH CHECK (public.user_has_permission((select auth.uid()), 'settings.write'::text, public.get_current_tenant_id()));
 
 DROP POLICY IF EXISTS settings_cache_select ON public.settings_cache;
 
@@ -633,12 +380,6 @@ CREATE POLICY settings_cache_select ON public.settings_cache
     )
   );
 
-DROP POLICY IF EXISTS admin_only_all ON public.cache_invalidation_queue;
-
-CREATE POLICY admin_only_all ON public.cache_invalidation_queue
-  FOR ALL TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
 
 DROP POLICY IF EXISTS feature_flags_select ON public.feature_flags;
 
@@ -649,12 +390,6 @@ CREATE POLICY feature_flags_select ON public.feature_flags
     OR public.user_has_permission((select auth.uid()), 'feature_flags.manage'::text, public.get_current_tenant_id())
   );
 
-DROP POLICY IF EXISTS feature_flags_admin_all ON public.feature_flags;
-
-CREATE POLICY feature_flags_admin_all ON public.feature_flags
-  FOR ALL TO authenticated
-  USING (public.user_has_permission((select auth.uid()), 'feature_flags.manage'::text, public.get_current_tenant_id()))
-  WITH CHECK (public.user_has_permission((select auth.uid()), 'feature_flags.manage'::text, public.get_current_tenant_id()));
 
 DROP POLICY IF EXISTS tenant_feature_flags_select ON public.tenant_feature_flags;
 
@@ -662,18 +397,6 @@ CREATE POLICY tenant_feature_flags_select ON public.tenant_feature_flags
   FOR SELECT TO authenticated
   USING (tenant_id = public.get_current_tenant_id());
 
-DROP POLICY IF EXISTS tenant_feature_flags_manage ON public.tenant_feature_flags;
-
-CREATE POLICY tenant_feature_flags_manage ON public.tenant_feature_flags
-  FOR ALL TO authenticated
-  USING (
-    tenant_id = public.get_current_tenant_id()
-    AND public.user_has_permission((select auth.uid()), 'feature_flags.manage'::text, public.get_current_tenant_id())
-  )
-  WITH CHECK (
-    tenant_id = public.get_current_tenant_id()
-    AND public.user_has_permission((select auth.uid()), 'feature_flags.manage'::text, public.get_current_tenant_id())
-  );
 
 DROP POLICY IF EXISTS feature_flag_roles_select ON public.feature_flag_roles;
 
@@ -695,23 +418,6 @@ CREATE POLICY feature_flag_users_select ON public.feature_flag_users
   FOR SELECT TO authenticated
   USING (user_id = (select auth.uid()) OR public.is_admin_with_session_validation());
 
-DROP POLICY IF EXISTS courses_select ON public.courses;
-
-CREATE POLICY courses_select ON public.courses
-  FOR SELECT TO authenticated
-  USING (
-    public.is_admin_with_session_validation()
-    OR (
-      tenant_id = public.get_current_tenant_id()
-      AND deleted_at IS NULL
-      AND (
-        status = 'published'
-        OR teacher_id = public.get_auth_user_id()
-        OR public.has_course_access(id)
-        OR public.user_has_permission(public.get_auth_user_id(), 'courses.read'::text, tenant_id)
-      )
-    )
-  );
 
 DROP POLICY IF EXISTS courses_admin_teacher_all ON public.courses;
 
@@ -725,49 +431,9 @@ DROP POLICY IF EXISTS courses_admin_update ON public.courses;
 
 DROP POLICY IF EXISTS courses_admin_delete ON public.courses;
 
-CREATE POLICY courses_teacher_insert ON public.courses
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    public.is_user_valid_cached(public.get_auth_user_id(), public.get_current_tenant_id())
-    AND tenant_id = public.assert_tenant()
-    AND teacher_id = public.get_auth_user_id()
-    AND deleted_at IS NULL
-  );
 
-CREATE POLICY courses_teacher_update ON public.courses
-  FOR UPDATE TO authenticated
-  USING (
-    public.is_user_valid_cached(public.get_auth_user_id(), public.get_current_tenant_id())
-    AND tenant_id = public.get_current_tenant_id()
-    AND deleted_at IS NULL
-    AND teacher_id = public.get_auth_user_id()
-  )
-  WITH CHECK (
-    public.is_user_valid_cached(public.get_auth_user_id(), public.get_current_tenant_id())
-    AND
-    tenant_id = public.assert_tenant()
-    AND deleted_at IS NULL
-    AND teacher_id = public.get_auth_user_id()
-  );
 
-CREATE POLICY courses_admin_insert ON public.courses
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    public.is_admin_with_session_validation()
-    AND tenant_id = public.assert_tenant()
-    AND deleted_at IS NULL
-  );
 
-CREATE POLICY courses_admin_update ON public.courses
-  FOR UPDATE TO authenticated
-  USING (
-    public.is_admin_with_session_validation()
-    AND tenant_id = public.get_current_tenant_id()
-  )
-  WITH CHECK (
-    public.is_admin_with_session_validation()
-    AND tenant_id = public.assert_tenant()
-  );
 
 CREATE POLICY courses_admin_delete ON public.courses
   FOR DELETE TO authenticated
@@ -856,72 +522,9 @@ DROP POLICY IF EXISTS sections_admin_update ON public.sections;
 
 DROP POLICY IF EXISTS sections_admin_delete ON public.sections;
 
-CREATE POLICY sections_teacher_insert ON public.sections
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    tenant_id = public.assert_tenant()
-    AND deleted_at IS NULL
-    AND EXISTS (
-      SELECT 1
-      FROM public.courses c
-      WHERE c.id = course_id
-        AND c.tenant_id = public.assert_tenant()
-        AND c.teacher_id = (select auth.uid())
-    )
-  );
 
-CREATE POLICY sections_teacher_update ON public.sections
-  FOR UPDATE TO authenticated
-  USING (
-    public.is_user_valid_cached((select auth.uid()), public.get_current_tenant_id())
-    AND tenant_id = public.get_current_tenant_id()
-    AND deleted_at IS NULL
-    AND EXISTS (
-      SELECT 1 FROM public.courses c
-      WHERE c.id = course_id
-        AND c.tenant_id = public.get_current_tenant_id()
-        AND c.teacher_id = (select auth.uid())
-    )
-  )
-  WITH CHECK (
-    tenant_id = public.assert_tenant()
-    AND deleted_at IS NULL
-    AND
-    EXISTS (
-      SELECT 1 FROM public.courses c
-      WHERE c.id = course_id
-        AND c.tenant_id = public.assert_tenant()
-        AND c.teacher_id = (select auth.uid())
-    )
-  );
 
-CREATE POLICY sections_admin_insert ON public.sections
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    public.is_admin_with_session_validation()
-    AND tenant_id = public.assert_tenant()
-    AND EXISTS (
-      SELECT 1 FROM public.courses c
-      WHERE c.id = course_id
-        AND c.tenant_id = public.assert_tenant()
-    )
-  );
 
-CREATE POLICY sections_admin_update ON public.sections
-  FOR UPDATE TO authenticated
-  USING (
-    public.is_admin_with_session_validation()
-    AND tenant_id = public.get_current_tenant_id()
-  )
-  WITH CHECK (
-    public.is_admin_with_session_validation()
-    AND tenant_id = public.assert_tenant()
-    AND EXISTS (
-      SELECT 1 FROM public.courses c
-      WHERE c.id = course_id
-        AND c.tenant_id = public.assert_tenant()
-    )
-  );
 
 CREATE POLICY sections_admin_delete ON public.sections
   FOR DELETE TO authenticated
@@ -1027,37 +630,8 @@ CREATE POLICY lesson_contents_select ON public.lesson_contents
     )
   );
 
-DROP POLICY IF EXISTS lesson_contents_admin_teacher_all ON public.lesson_contents;
-
-CREATE POLICY lesson_contents_admin_teacher_all ON public.lesson_contents
-  FOR ALL TO authenticated
-  USING (
-    public.is_user_valid_cached((select auth.uid()), public.get_current_tenant_id())
-    AND tenant_id = public.get_current_tenant_id()
-    AND EXISTS (
-      SELECT 1 FROM public.courses c
-      WHERE c.id = lesson_contents.course_id
-        AND c.tenant_id = lesson_contents.tenant_id
-        AND (c.teacher_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-    )
-  )
-  WITH CHECK (
-    tenant_id = public.assert_tenant()
-    AND
-    EXISTS (
-      SELECT 1 FROM public.courses c
-      WHERE c.id = lesson_contents.course_id
-        AND c.tenant_id = public.assert_tenant()
-        AND (c.teacher_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-    )
-  );
 
 -- RLS Consolidated from Phase 4
-DROP POLICY IF EXISTS enrollments_self_all ON public.enrollments;
-CREATE POLICY enrollments_self_all ON public.enrollments
-  FOR ALL TO authenticated
-  USING (user_id = public.get_auth_user_id() AND tenant_id = public.get_current_tenant_id())
-  WITH CHECK (user_id = public.get_auth_user_id() AND tenant_id = public.assert_tenant());
 
 DROP POLICY IF EXISTS enrollments_teacher_select ON public.enrollments;
 CREATE POLICY enrollments_teacher_select ON public.enrollments
@@ -1070,11 +644,6 @@ CREATE POLICY enrollments_teacher_select ON public.enrollments
     )
   );
 
-DROP POLICY IF EXISTS user_progress_self_all ON public.user_progress;
-CREATE POLICY user_progress_self_all ON public.user_progress
-  FOR ALL TO authenticated
-  USING (user_id = (select auth.uid()) AND tenant_id = public.get_current_tenant_id())
-  WITH CHECK (user_id = (select auth.uid()) AND tenant_id = public.assert_tenant());
 
 DROP POLICY IF EXISTS user_access_cache_deny_all ON private.user_access_cache;
 CREATE POLICY user_access_cache_deny_all ON private.user_access_cache
@@ -1083,25 +652,7 @@ CREATE POLICY user_access_cache_deny_all ON private.user_access_cache
   WITH CHECK (false);
 
 -- devices & push_tokens: mutation via RPC only
-DROP POLICY IF EXISTS devices_select ON public.devices;
-CREATE POLICY devices_select ON public.devices
-  FOR SELECT TO authenticated
-  USING (
-    tenant_id = public.get_current_tenant_id()
-    AND (user_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-  );
 
-DROP POLICY IF EXISTS sessions_access ON public.sessions;
-CREATE POLICY sessions_access ON public.sessions
-  FOR ALL TO authenticated
-  USING (
-    tenant_id = public.get_current_tenant_id()
-    AND (user_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-  )
-  WITH CHECK (
-    tenant_id = public.assert_tenant()
-    AND (user_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-  );
 
 DROP POLICY IF EXISTS video_views_access ON public.video_views;
 
@@ -1252,18 +803,6 @@ CREATE POLICY notifications_select ON public.notifications
     )
   );
 
-DROP POLICY IF EXISTS notifications_admin_write ON public.notifications;
-
-CREATE POLICY notifications_admin_write ON public.notifications
-  FOR ALL TO authenticated
-  USING (
-    tenant_id = public.get_current_tenant_id()
-    AND public.user_has_permission((select auth.uid()), 'notifications.send'::text, tenant_id)
-  )
-  WITH CHECK (
-    tenant_id = public.assert_tenant()
-    AND public.user_has_permission((select auth.uid()), 'notifications.send'::text, tenant_id)
-  );
 
 DROP POLICY IF EXISTS notification_targets_select ON public.notification_targets;
 
@@ -1322,12 +861,6 @@ CREATE POLICY user_access_rules_admin ON public.user_access_rules
     AND public.is_admin_with_session_validation()
   );
 
-DROP POLICY IF EXISTS rate_limit_rules_admin ON public.rate_limit_rules;
-
-CREATE POLICY rate_limit_rules_admin ON public.rate_limit_rules
-  FOR ALL TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
 
 DROP POLICY IF EXISTS rate_limits_admin ON public.rate_limits;
 
@@ -1369,14 +902,6 @@ CREATE POLICY lesson_access_log_insert_deny ON audit.lesson_access_log
   WITH CHECK (false);
 
 -- HIGH-06: Add RLS policies for devices and sessions
-DROP POLICY IF EXISTS devices_select_policy ON public.devices;
-
-CREATE POLICY devices_select_policy ON public.devices
-  FOR SELECT TO authenticated
-  USING (
-    public.validate_user_session()
-    AND (user_id = (select auth.uid()) OR public.is_admin_with_session_validation())
-  );
 
 DROP POLICY IF EXISTS sessions_select_policy ON public.sessions;
 
@@ -1908,11 +1433,6 @@ CREATE POLICY users_update_merged ON public.users
 DROP POLICY IF EXISTS users_update_policy ON public.users;
 DROP POLICY IF EXISTS users_update_self ON public.users;
 
-DROP POLICY IF EXISTS tenants_write_merged ON public.tenants;
-CREATE POLICY tenants_write_merged ON public.tenants
-  FOR ALL TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
 
 DROP POLICY IF EXISTS tenants_admin_all ON public.tenants;
 DROP POLICY IF EXISTS tenants_superadmin_all ON public.tenants;
@@ -1922,28 +1442,12 @@ DROP POLICY IF EXISTS tenants_superadmin_all ON public.tenants;
 -- Sessions: admin can see all active sessions
 DROP POLICY IF EXISTS sessions_access ON public.sessions;
 
-DROP POLICY IF EXISTS sessions_admin_all ON public.sessions;
-
-CREATE POLICY sessions_admin_all ON public.sessions
-  FOR ALL TO authenticated
-  USING (
-    public.is_admin_with_session_validation()
-    OR (tenant_id = public.get_current_tenant_id() AND public.is_current_user_admin_lite())
-  );
 
 -- Devices: admin can see all devices
 DROP POLICY IF EXISTS devices_select ON public.devices;
 
 DROP POLICY IF EXISTS devices_select_policy ON public.devices;
 
-DROP POLICY IF EXISTS devices_admin_all ON public.devices;
-
-CREATE POLICY devices_admin_all ON public.devices
-  FOR ALL TO authenticated
-  USING (
-    public.is_admin_with_session_validation()
-    OR (tenant_id = public.get_current_tenant_id() AND public.is_current_user_admin_lite())
-  );
 
 -- Location logs: super admin cross-tenant, admin tenant-scoped
 DROP POLICY IF EXISTS location_logs_select ON public.user_location_logs;
@@ -2028,13 +1532,6 @@ DROP POLICY IF EXISTS feature_flags_admin_all ON public.feature_flags;
 DROP POLICY IF EXISTS feature_flags_admin_insert ON public.feature_flags;
 DROP POLICY IF EXISTS feature_flags_admin_update ON public.feature_flags;
 DROP POLICY IF EXISTS feature_flags_admin_delete ON public.feature_flags;
-CREATE POLICY feature_flags_admin_insert ON public.feature_flags FOR INSERT TO authenticated
-  WITH CHECK (public.user_has_permission((select auth.uid()), 'feature_flags.manage'::text, public.get_current_tenant_id()));
-CREATE POLICY feature_flags_admin_update ON public.feature_flags FOR UPDATE TO authenticated
-  USING (public.user_has_permission((select auth.uid()), 'feature_flags.manage'::text, public.get_current_tenant_id()))
-  WITH CHECK (public.user_has_permission((select auth.uid()), 'feature_flags.manage'::text, public.get_current_tenant_id()));
-CREATE POLICY feature_flags_admin_delete ON public.feature_flags FOR DELETE TO authenticated
-  USING (public.user_has_permission((select auth.uid()), 'feature_flags.manage'::text, public.get_current_tenant_id()));
 
 DROP POLICY IF EXISTS lesson_contents_admin_teacher_all ON public.lesson_contents;
 DROP POLICY IF EXISTS lesson_contents_admin_teacher_insert ON public.lesson_contents;
@@ -2111,13 +1608,6 @@ DROP POLICY IF EXISTS permissions_super_admin_all ON public.permissions;
 DROP POLICY IF EXISTS permissions_super_admin_insert ON public.permissions;
 DROP POLICY IF EXISTS permissions_super_admin_update ON public.permissions;
 DROP POLICY IF EXISTS permissions_super_admin_delete ON public.permissions;
-CREATE POLICY permissions_super_admin_insert ON public.permissions FOR INSERT TO authenticated
-  WITH CHECK (public.is_admin_with_session_validation());
-CREATE POLICY permissions_super_admin_update ON public.permissions FOR UPDATE TO authenticated
-  USING (public.is_admin_with_session_validation())
-  WITH CHECK (public.is_admin_with_session_validation());
-CREATE POLICY permissions_super_admin_delete ON public.permissions FOR DELETE TO authenticated
-  USING (public.is_admin_with_session_validation());
 
 DROP POLICY IF EXISTS role_permissions_admin_all ON public.role_permissions;
 DROP POLICY IF EXISTS role_permissions_admin_insert ON public.role_permissions;

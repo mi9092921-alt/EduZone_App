@@ -339,38 +339,6 @@ AS $$
 $$;
 
 -- CRIT-01: Strict tenant matching helper
-CREATE OR REPLACE FUNCTION public.tenant_matches_jwt(p_tenant_id uuid)
-RETURNS boolean
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER SET search_path = public, pg_temp
-AS $$
-BEGIN
-  IF auth.role() <> 'service_role'
-     AND NOT public.validate_user_session() THEN
-    RETURN false;
-  END IF;
-
-  RETURN EXISTS (
-    SELECT 1
-    FROM public.users u
-    WHERE u.id = auth.uid()
-      AND u.tenant_id = p_tenant_id
-      AND u.deleted_at IS NULL
-      AND u.account_status = 'active'
-  )
-  OR EXISTS (
-    SELECT 1
-    FROM public.user_roles ur
-    JOIN public.roles r ON r.id = ur.role_id
-    WHERE ur.user_id = auth.uid()
-      AND ur.tenant_id = p_tenant_id
-      AND ur.is_active = true
-      AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
-      AND r.name IN ('admin', 'super_admin', 'tenant_admin')
-  );
-END;
-$$;
 
 -- =============================================================================
 -- AUTH-REV-02: Supabase Auth-session revocation boundary.
@@ -717,42 +685,6 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.user_has_permission(
-  p_user_id uuid,
-  p_permission text,
-  p_tenant_id uuid DEFAULT NULL
-)
-RETURNS boolean
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER SET search_path = public, pg_temp
-AS $$
-BEGIN
-  RETURN (
-    -- 1. Permission cache (fast path)
-    EXISTS (
-      SELECT 1 FROM public.user_permission_cache pc
-      WHERE pc.user_id         = p_user_id
-        AND pc.permission_name = p_permission
-        AND pc.tenant_id       = coalesce(p_tenant_id, public.system_tenant_id())
-        AND (pc.expires_at IS NULL OR pc.expires_at > pg_catalog.now())
-    )
-    OR
-    -- 2. RBAC source of truth (no primary_role shortcut)
-    EXISTS (
-      SELECT 1
-      FROM public.user_roles     ur
-      JOIN public.role_permissions rp ON rp.role_id = ur.role_id
-      JOIN public.permissions     pm ON pm.id       = rp.permission_id
-      WHERE ur.user_id  = p_user_id
-        AND ur.is_active
-        AND pm.name     = p_permission
-        AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
-        AND ur.tenant_id = coalesce(p_tenant_id, public.system_tenant_id())
-    )
-  );
-END;
-$$;
 
 CREATE OR REPLACE FUNCTION public.get_valid_constant_values(p_category text)
 RETURNS text[]
@@ -971,27 +903,6 @@ $$;
 
 
 -- LOW-04 FIX: Feature flag status check for specific user
-CREATE OR REPLACE FUNCTION public.is_feature_enabled_for_user(
-  p_flag_key text,
-  p_user_id uuid
-)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER SET search_path = public, pg_temp
-AS $$
-  SELECT COALESCE(
-    (
-      SELECT is_enabled 
-      FROM public.feature_flags ff
-      WHERE ff.key = p_flag_key
-        AND is_enabled = true
-        AND rollout_pct > 0
-        AND (abs(hashtext(p_user_id::text)) % 100) < rollout_pct
-    ) IS NOT NULL,
-    false
-  );
-$$;
 
 CREATE OR REPLACE FUNCTION public.is_user_valid_cached(p_user_id uuid, p_tenant_id uuid)
 RETURNS boolean
@@ -1970,109 +1881,6 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.check_user_access()
-RETURNS jsonb
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER SET search_path = public, pg_temp
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-  v_user public.users%ROWTYPE;
-  v_maintenance_excluded_roles text[] := ARRAY[]::text[];
-  v_maintenance_excluded_users uuid[] := ARRAY[]::uuid[];
-BEGIN
-  IF v_uid IS NULL THEN
-    RETURN jsonb_build_object('allowed', false, 'reason', 'unauthenticated');
-  END IF;
-
-  SELECT * INTO v_user
-  FROM public.users
-  WHERE id = v_uid;
-
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('allowed', false, 'reason', 'user_not_found');
-  END IF;
-
-  IF v_user.deleted_at IS NOT NULL THEN
-    RETURN jsonb_build_object(
-      'allowed', false,
-      'reason', 'deleted',
-      'token_version', v_user.token_version
-    );
-  END IF;
-
-  IF v_user.account_status <> 'active' THEN
-    RETURN jsonb_build_object(
-      'allowed', false,
-      'reason', 'account_' || v_user.account_status,
-      'message', v_user.lock_reason,
-      'until', v_user.suspension_until,
-      'suspensionUntil', v_user.suspension_until,
-      'token_version', v_user.token_version
-    );
-  END IF;
-
-  IF NOT public.validate_user_session() THEN
-    RETURN jsonb_build_object(
-      'allowed', false,
-      'reason', 'token_version_mismatch',
-      'token_version', v_user.token_version
-    );
-  END IF;
-
-  IF coalesce((public.get_setting('maintenance_mode') #>> '{}')::boolean, false) THEN
-    SELECT coalesce(array_agg(value), ARRAY[]::text[])
-    INTO v_maintenance_excluded_roles
-    FROM jsonb_array_elements_text(
-      CASE
-        WHEN jsonb_typeof(public.get_setting('maintenance_excluded_roles')) = 'array'
-        THEN public.get_setting('maintenance_excluded_roles')
-        ELSE '[]'::jsonb
-      END
-    ) AS value;
-
-    SELECT coalesce(array_agg(value::uuid), ARRAY[]::uuid[])
-    INTO v_maintenance_excluded_users
-    FROM jsonb_array_elements_text(
-      CASE
-        WHEN jsonb_typeof(public.get_setting('maintenance_excluded_users')) = 'array'
-        THEN public.get_setting('maintenance_excluded_users')
-        ELSE '[]'::jsonb
-      END
-    ) AS value;
-
-    IF NOT (
-      v_user.primary_role = ANY(v_maintenance_excluded_roles)
-      OR v_user.id = ANY(v_maintenance_excluded_users)
-    ) THEN
-      RETURN jsonb_build_object(
-        'allowed', false,
-        'reason', 'maintenance_mode',
-        'message', public.get_setting('maintenance_message') #>> '{}',
-        'ends_at', public.get_setting('maintenance_ends_at') #>> '{}',
-        'token_version', v_user.token_version
-      );
-    END IF;
-  END IF;
-
-  IF coalesce((public.get_setting('app_locked') #>> '{}')::boolean, false) THEN
-    RETURN jsonb_build_object(
-      'allowed', false,
-      'reason', 'app_locked',
-      'message', public.get_setting('app_lock_message') #>> '{}',
-      'token_version', v_user.token_version
-    );
-  END IF;
-
-  RETURN jsonb_build_object(
-    'allowed', true,
-    'tenant_id', v_user.tenant_id,
-    'role', v_user.primary_role,
-    'token_version', v_user.token_version
-  );
-END;
-$$;
 
 CREATE OR REPLACE FUNCTION public.check_rate_limit(
   p_action text,

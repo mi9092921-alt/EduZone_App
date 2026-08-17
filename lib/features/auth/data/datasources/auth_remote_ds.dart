@@ -3,12 +3,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/supabase_client.dart';
+import '../../../../shared/utils/global_error_handler.dart';
 import '../../domain/entities/app_user.dart';
 import '../../domain/entities/bind_device_result.dart';
 import '../../domain/entities/user_access.dart';
 import '../../domain/enums/account_status.dart';
 import '../../domain/enums/user_role.dart';
-import '../../../../shared/utils/global_error_handler.dart';
 
 /// Remote data source for all auth-related Supabase operations.
 ///
@@ -462,19 +462,19 @@ class AuthRemoteDataSource {
     // must never be confused with InvalidCredentialsException, which is
     // only ever thrown from the signInWithPassword() catch above.
     if (e.code == 'PGRST202' || e.code == '404') {
-      return ServerException(
+      return const ServerException(
         'RPC contract/deployment failure: function not found in schema cache', // check-ignore
         'RPC_NOT_FOUND', // check-ignore
       );
     }
     if (e.code == '42501') {
-      return ServerException(
+      return const ServerException(
         'RPC rejected: permission denied (missing EXECUTE grant)', // check-ignore
         'RPC_PERMISSION_DENIED', // check-ignore
       );
     }
     if (e.code == '42P17') {
-      return ServerException(
+      return const ServerException(
         'RPC rejected: infinite recursion detected in an RLS policy', // check-ignore
         'RPC_RLS_RECURSION', // check-ignore
       );

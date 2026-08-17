@@ -82,7 +82,7 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
             learning_objectives:course_learning_objectives(id, objective, order_index),
             prerequisites:course_prerequisites!course_prerequisites_course_tenant_fkey(
               prerequisite_course_id,
-              prerequisite_course:courses!prerequisite_course_id(title)
+              prerequisite_course:courses!course_prerequisites_prereq_tenant_fkey(title)
             ),
             sections(
               id,
