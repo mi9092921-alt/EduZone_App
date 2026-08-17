@@ -1383,7 +1383,208 @@ BEGIN
   );
 END $$;
 
--- Display Results (includes Check 26 above)
+-- Check 27: No leftover duplicate/legacy CREATE FUNCTION definitions.
+-- A duplicate exact-signature definition means an old "generation" of a
+-- function's logic was left in the source and only wins/loses based on
+-- statement order (CREATE OR REPLACE silently shadows the earlier one).
+-- is_feature_enabled(text, uuid) previously had two identical-signature
+-- definitions (an old direct-query implementation with no tenant-isolation
+-- check, silently shadowed by the canonical evaluate_feature_flag()-backed
+-- one); this checks the specific function group by name AND full argument
+-- type list, so legitimate overloads (different argument lists) never fail.
+DO $$
+DECLARE
+  v_dupes text[];
+BEGIN
+  SELECT array_agg(sig ORDER BY sig)
+    INTO v_dupes
+  FROM (
+    SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS sig,
+           COUNT(*) AS c
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname IN ('public', 'private', 'internal', 'maintenance', 'audit')
+    GROUP BY n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)
+    HAVING COUNT(*) > 1
+  ) d
+  WHERE d.c > 1;
+
+  INSERT INTO validation_results VALUES (
+    'No Duplicate Exact-Signature Function Definitions',
+    CASE WHEN v_dupes IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: identical-signature CREATE FUNCTION appears more than once '
+        || '(only the last CREATE OR REPLACE survives; earlier ones are dead '
+        || 'legacy code that must be deleted from source): ' || array_to_string(v_dupes, '; '),
+      'Every function name+signature pair has exactly one definition'
+    )
+  );
+END $$;
+
+-- Check 28: Overloaded functions must not create positional-call ambiguity.
+-- Postgres allows multiple functions sharing a name as long as argument
+-- lists differ, but if one overload's required-argument type prefix matches
+-- another overload's full (or default-padded) argument list, a positional
+-- or partially-named call becomes ambiguous ("function ... is not unique").
+-- This is a real defect distinct from exact-duplicate definitions (Check 27):
+-- both bodies survive, but calling the function can error at runtime.
+-- Known outstanding case at time of writing: public.get_course_stats has a
+-- 3-optional-argument jsonb-summary overload and a 1-required-argument
+-- per-course TABLE overload; calling get_course_stats(<uuid>) is ambiguous.
+-- Neither overload is currently GRANTed to `authenticated` (see
+-- 10_permissions.sql), so it is not client-reachable today, but it must be
+-- resolved (by renaming one overload) before either is ever granted.
+DO $$
+DECLARE
+  v_ambiguous text[];
+BEGIN
+  SELECT array_agg(DISTINCT (a.nspname || '.' || a.proname) ORDER BY (a.nspname || '.' || a.proname))
+    INTO v_ambiguous
+  FROM (
+    SELECT n.nspname, p.proname, p.oid,
+           p.pronargs - p.pronargdefaults AS min_args,
+           p.pronargs AS max_args,
+           p.proargtypes::oid[] AS argtypes
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname IN ('public', 'private', 'internal', 'maintenance', 'audit')
+  ) a
+  JOIN (
+    SELECT n.nspname, p.proname, p.oid,
+           p.pronargs - p.pronargdefaults AS min_args,
+           p.pronargs AS max_args,
+           p.proargtypes::oid[] AS argtypes
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname IN ('public', 'private', 'internal', 'maintenance', 'audit')
+  ) b
+    ON a.nspname = b.nspname
+   AND a.proname = b.proname
+   AND a.oid < b.oid
+  WHERE
+    -- some argument count N exists that both signatures could satisfy
+    GREATEST(a.min_args, b.min_args) <= LEAST(a.max_args, b.max_args)
+    -- and the argument types agree over that shared prefix
+    AND a.argtypes[0:LEAST(a.min_args, b.min_args) - 1]
+      = b.argtypes[0:LEAST(a.min_args, b.min_args) - 1];
+
+  INSERT INTO validation_results VALUES (
+    'No Ambiguous Overloaded Function Signatures',
+    CASE WHEN v_ambiguous IS NULL THEN 'PASS' ELSE 'WARN' END,
+    COALESCE(
+      'Overload signature collision (a call could resolve to more than one '
+        || 'definition) in: ' || array_to_string(v_ambiguous, ', ')
+        || ' -- rename one overload or make the argument lists mutually exclusive',
+      'No overloaded function has a positionally-ambiguous call signature'
+    )
+  );
+END $$;
+
+-- Check 29: No duplicate RLS policy names, and no "old name + new name"
+-- pair of policies left covering the same table/command/role combination
+-- (the CREATE POLICY old -> DROP POLICY old -> CREATE POLICY merged pattern
+-- this cleanup targeted). Postgres itself forbids two policies with the
+-- identical name on one table, so the real risk is two *differently named*
+-- policies left active for the same table+command+role -- i.e. the DROP
+-- for the old name was forgotten. This flags that overlap for manual review.
+DO $$
+DECLARE
+  v_overlap text[];
+BEGIN
+  SELECT array_agg(DISTINCT (schemaname || '.' || tablename || ' [' || cmd || ']') ORDER BY 1)
+    INTO v_overlap
+  FROM (
+    SELECT schemaname, tablename, cmd, roles, policyname,
+           COUNT(*) OVER (PARTITION BY schemaname, tablename, cmd, roles) AS c
+    FROM pg_policies
+    WHERE schemaname = 'public'
+  ) x
+  WHERE x.c > 1;
+
+  INSERT INTO validation_results VALUES (
+    'No Overlapping/Legacy RLS Policies Per Table+Command+Role',
+    CASE WHEN v_overlap IS NULL THEN 'PASS' ELSE 'WARN' END,
+    COALESCE(
+      'More than one active policy covers the same table/command/role '
+        || 'combination -- verify this is an intentional multi-policy design '
+        || '(policies OR together) and not a forgotten legacy name: '
+        || array_to_string(v_overlap, ', '),
+      'Every table+command+role combination is covered by exactly one policy'
+    )
+  );
+END $$;
+
+-- Check 30: Any SECURITY DEFINER helper reachable from a users/user_roles
+-- policy that itself queries users/user_roles must remain SECURITY DEFINER
+-- with a safe search_path (the mechanism that prevents 42P17 on those two
+-- tables). If such a helper is ever changed to SECURITY INVOKER, the next
+-- policy evaluation on users/user_roles will recurse into itself.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(DISTINCT (n.nspname || '.' || p.proname) ORDER BY 1)
+    INTO v_bad
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname IN (
+      'is_admin_with_session_validation', 'assert_tenant',
+      'is_current_user_super_admin', 'is_current_user_admin',
+      'validate_user_session', 'user_has_permission',
+      'get_current_tenant_id', 'is_user_valid_cached', 'get_auth_user_id'
+    )
+    AND (
+      pg_get_functiondef(p.oid) ILIKE '%public.users%'
+      OR pg_get_functiondef(p.oid) ILIKE '%public.user_roles%'
+    )
+    AND (
+      NOT p.prosecdef
+      OR pg_get_functiondef(p.oid) !~* 'SET\s+search_path\s*='
+    );
+
+  INSERT INTO validation_results VALUES (
+    'RLS Recursion Guards Remain SECURITY DEFINER With Safe search_path',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: these helper functions query users/user_roles but are no '
+        || 'longer SECURITY DEFINER with a locked search_path -- policies on '
+        || 'users/user_roles that call them will recurse (42P17) on next use: '
+        || array_to_string(v_bad, ', '),
+      'All users/user_roles-touching policy helpers remain SECURITY DEFINER with a safe search_path'
+    )
+  );
+END $$;
+
+-- Check 31: No RLS policy uses USING (true) or WITH CHECK (true) as a
+-- workaround for a recursion or permission error. This is an outright ban,
+-- not a heuristic -- any such policy on a client-reachable table is
+-- treated as a critical failure regardless of table sensitivity.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(DISTINCT (schemaname || '.' || tablename || '/' || policyname) ORDER BY 1)
+    INTO v_bad
+  FROM pg_policies
+  WHERE schemaname = 'public'
+    AND (
+      regexp_replace(coalesce(qual, ''), '\s+', '', 'g') = 'true'
+      OR regexp_replace(coalesce(with_check, ''), '\s+', '', 'g') = 'true'
+    );
+
+  INSERT INTO validation_results VALUES (
+    'No USING(true)/WITH CHECK(true) RLS Bypass Workarounds',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: policy uses an unconditional true, defeating RLS: '
+        || array_to_string(v_bad, ', '),
+      'No policy uses an unconditional USING(true)/WITH CHECK(true)'
+    )
+  );
+END $$;
+
+-- Display Results (includes Checks 27-31 above)
 SELECT * FROM validation_results ORDER BY check_name;
 
 -- Summary

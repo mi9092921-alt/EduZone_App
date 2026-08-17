@@ -1422,7 +1422,11 @@ CREATE POLICY users_update_merged ON public.users
     OR (
       id = (select auth.uid())
       AND tenant_id = public.assert_tenant()
-      AND primary_role = public.get_own_primary_role()
+      AND primary_role = (
+        SELECT primary_role
+        FROM public.users
+        WHERE id = (select auth.uid())
+      )
     )
   );
 
@@ -2300,4 +2304,3 @@ WITH CHECK (
     tenant_id
   )
 );
-
