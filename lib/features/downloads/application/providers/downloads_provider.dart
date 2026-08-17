@@ -262,6 +262,44 @@ class DownloadsNotifier extends _$DownloadsNotifier {
   }
 }
 
+// ─── Session cleanup ─────────────────────────────────────────────────────────
+
+/// Invalidates every user-scoped provider owned by the `downloads` feature.
+/// Called by [Auth.logout]. When you add a new user-scoped provider to this
+/// file, add it here too.
+///
+/// [downloadsProvider] and [totalStorageUsedProvider] are declared
+/// `keepAlive: true` and cache the previous account's downloaded-lesson list
+/// (titles, course names, video URLs) and storage total in memory. Neither
+/// was previously invalidated anywhere in the codebase — including here,
+/// this feature was entirely absent from `invalidateAllUserScopedProviders`
+/// (lib/app/session/session_invalidation.dart) — so a second account
+/// signing in on the same device without a full app restart could see the
+/// first account's in-memory download list on the Downloads screen before
+/// any explicit refresh occurred. This is a direct violation of the
+/// project's account-isolation requirement (EduZone_Offline_Download_
+/// Security_Trusted_Playback_Architecture.md, P6.20 "Account Switching":
+/// "we want to prevent User B from seeing User A's offline videos") and of
+/// the general auth-cache-isolation rule that user-scoped caches must not
+/// survive logout.
+///
+/// [downloadRepositoryProvider] (and the service/data-source providers it
+/// composes: [encryptionServiceProvider], [downloadManagerProvider],
+/// [downloadLocalDataSourceProvider], [downloadRemoteDataSourceProvider])
+/// is deliberately NOT invalidated here. It owns the single long-lived
+/// [DownloadRepositoryImpl] broadcast change stream that
+/// [DownloadsNotifier.build] subscribes to and that in-flight background
+/// downloads depend on; tearing it down on logout would cancel downloads
+/// that are still actively writing to disk. Persisted on-disk entitlement
+/// (license/key/file) isolation across accounts is already handled
+/// separately and unconditionally by `OfflineAccountGuard` at the next
+/// login (see `Auth.login` in auth_provider.dart), independent of this
+/// in-memory cache invalidation.
+void invalidateDownloadsProviders(Ref ref) {
+  ref.invalidate(downloadsProvider);
+  ref.invalidate(totalStorageUsedProvider);
+}
+
 // ─── Download Progress Provider ───────────────────────────────────────────────
 
 /// Stream provider for watching download progress.

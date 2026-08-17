@@ -328,7 +328,22 @@ Future<List<Course>> savedCourses(Ref ref) async {
 /// Invalidates every user-scoped provider owned by the `courses` feature.
 /// Called by [Auth.logout]. When you add a new user-scoped provider to this
 /// file, add it here too.
+///
+/// [bookmarkedCoursesProvider] and [courseProgressProvider] are declared
+/// `keepAlive: true` (see their doc comments) so, unlike the plain
+/// `@riverpod` providers below them, they are NOT torn down automatically
+/// when their last widget listener drops off. Without an explicit
+/// invalidation here, either would keep serving the previous account's
+/// bookmarks/progress out of memory to whichever account signs in next on
+/// the same device/session — a direct violation of the project's
+/// auth-cache-isolation requirement (EduZone_Authentication_Session_
+/// Security_Architecture.md, "Auth Cache Isolation"): "After logout, User
+/// A private cache must not leak to User B." `courseProgressProvider` is a
+/// family; invalidating the family provider itself (no argument) clears
+/// every cached courseId instance.
 void invalidateCoursesProviders(Ref ref) {
   ref.invalidate(myCoursesProvider);
   ref.invalidate(coursesRemoteDataSourceProvider);
+  ref.invalidate(bookmarkedCoursesProvider);
+  ref.invalidate(courseProgressProvider);
 }
