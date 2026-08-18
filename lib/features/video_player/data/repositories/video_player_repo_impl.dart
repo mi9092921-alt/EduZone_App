@@ -1,5 +1,4 @@
 import 'package:fpdart/fpdart.dart';
-import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
 import '../../domain/entities/lesson_progress_sync_item.dart';
 import '../../domain/repositories/video_player_repository.dart';
@@ -32,10 +31,8 @@ class VideoPlayerRepositoryImpl implements VideoPlayerRepository {
           watchTimeSec: watchTimeSec,
         ),
       ]);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -46,10 +43,8 @@ class VideoPlayerRepositoryImpl implements VideoPlayerRepository {
     try {
       await remoteDataSource.syncProgressBatch(items);
       return const Right(null);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 

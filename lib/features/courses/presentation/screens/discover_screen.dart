@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/components/course_card.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../application/providers/courses_provider.dart';
 import '../../domain/entities/course.dart';
 
@@ -366,7 +367,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.xl),
               child: Text(
-                l10n.errorLoading(error.toString()),
+                ErrorHandler.getMessage(context, error),
                 textAlign: TextAlign.center,
               ),
             ),

@@ -1,4 +1,5 @@
 import 'package:app/core/error/exceptions.dart';
+import 'package:app/core/error/failures.dart';
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/shared/utils/app_snackbar.dart';
 import 'package:app/shared/utils/error_handler.dart';
@@ -37,6 +38,25 @@ void main() {
       final l10n = AppLocalizations.of(localizedContext)!;
 
       final message = ErrorHandler.getMessage(localizedContext, const NoInternetException());
+
+      expect(message, l10n.errorNetwork);
+    });
+
+    testWidgets('maps RequestTimeoutException to the network error message', (tester) async {
+      await tester.pumpWidget(buildLocalizedApp());
+      final l10n = AppLocalizations.of(localizedContext)!;
+
+      final message = ErrorHandler.getMessage(localizedContext, const RequestTimeoutException());
+
+      expect(message, l10n.errorNetwork);
+    });
+
+    testWidgets('unwraps a Failure thrown directly (e.g. from notifications_provider) '
+        'and classifies it the same as the exception it was derived from', (tester) async {
+      await tester.pumpWidget(buildLocalizedApp());
+      final l10n = AppLocalizations.of(localizedContext)!;
+
+      final message = ErrorHandler.getMessage(localizedContext, const NetworkFailure());
 
       expect(message, l10n.errorNetwork);
     });

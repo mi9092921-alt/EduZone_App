@@ -1,5 +1,4 @@
 import 'package:fpdart/fpdart.dart';
-import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
 import '../../domain/entities/app_notification.dart';
 import '../../domain/repositories/notifications_repository.dart';
@@ -21,10 +20,8 @@ class NotificationsRepositoryImpl implements NotificationsRepository {
             .map((json) => AppNotification.fromJson(_normalizeJson(json)))
             .toList(),
       );
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -42,10 +39,8 @@ class NotificationsRepositoryImpl implements NotificationsRepository {
     try {
       await remoteDataSource.markAsRead(notificationId);
       return const Right(null);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -54,10 +49,8 @@ class NotificationsRepositoryImpl implements NotificationsRepository {
     try {
       await remoteDataSource.markAllAsRead(userId);
       return const Right(null);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 }

@@ -25,6 +25,7 @@ abstract final class AuthErrorPolicy {
   /// restricted state on a network blip.
   static bool isTransient(Object error) {
     if (error is NoInternetException ||
+        error is RequestTimeoutException ||
         error is TimeoutException ||
         error is SocketException) {
       return true;
@@ -54,6 +55,7 @@ abstract final class AuthErrorPolicy {
     if (e is InvalidCredentialsException) return 'errorAuth';
     if (e is EmailNotConfirmedException) return 'errorEmailNotConfirmed';
     if (e is NoInternetException) return 'errorNetwork';
+    if (e is RequestTimeoutException) return 'errorNetwork';
     if (e is RateLimitedException) {
       return 'errorRateLimit:${e.retryAfterSeconds}';
     }

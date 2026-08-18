@@ -9,6 +9,7 @@ import '../../../../shared/components/course_card.dart';
 import '../../../../shared/cross_feature/auth_shared.dart';
 import '../../../../shared/cross_feature/notifications_shared.dart';
 import '../../../../shared/cross_feature/todo_shared.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../../auth/domain/entities/auth_state.dart';
 import '../../../auth/domain/entities/update_info.dart';
 import '../../../todo/domain/entities/todo_item.dart';
@@ -201,7 +202,7 @@ class _RecentCoursesSection extends ConsumerWidget {
               isFullPage: false,
               icon: Icons.error_outline_rounded,
               title: l10n.failedToLoadCourses,
-              description: l10n.errorLoading(err.toString()),
+              description: ErrorHandler.getMessage(context, err),
               actionLabel: l10n.retryButton,
               onActionPressed: () => ref.invalidate(recentCoursesProvider),
             ),
@@ -288,7 +289,7 @@ class _DailyTasksSection extends ConsumerWidget {
             isFullPage: false,
             icon: Icons.error_outline_rounded,
             title: l10n.errorLoadingTasks,
-            description: l10n.errorLoading(err.toString()),
+            description: ErrorHandler.getMessage(context, err),
             actionLabel: l10n.retryButton,
             onActionPressed: () {
               ref.invalidate(recentTodosProvider);

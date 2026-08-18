@@ -1,6 +1,5 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../domain/entities/todo_item.dart';
@@ -27,10 +26,8 @@ class TodoRepositoryImpl implements TodoRepository {
       }
       final todos = await remoteDataSource.fetchTodos(userId);
       return Right(todos);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure('Unexpected error: $e')); // check-ignore
+      return Left(failureFromError(e));
     }
   }
 
@@ -42,10 +39,8 @@ class TodoRepositoryImpl implements TodoRepository {
     try {
       await remoteDataSource.toggleTodoStatus(todoId, isCompleted);
       return const Right(null);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure('Unexpected error: $e')); // check-ignore
+      return Left(failureFromError(e));
     }
   }
 
@@ -54,10 +49,8 @@ class TodoRepositoryImpl implements TodoRepository {
     try {
       await remoteDataSource.addTodo(todo);
       return const Right(null);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure('Unexpected error: $e')); // check-ignore
+      return Left(failureFromError(e));
     }
   }
 
@@ -66,10 +59,8 @@ class TodoRepositoryImpl implements TodoRepository {
     try {
       await remoteDataSource.updateTodo(todo);
       return const Right(null);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure('Unexpected error: $e')); // check-ignore
+      return Left(failureFromError(e));
     }
   }
 
@@ -78,10 +69,8 @@ class TodoRepositoryImpl implements TodoRepository {
     try {
       await remoteDataSource.deleteTodo(todoId);
       return const Right(null);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure('Unexpected error: $e')); // check-ignore
+      return Left(failureFromError(e));
     }
   }
 }

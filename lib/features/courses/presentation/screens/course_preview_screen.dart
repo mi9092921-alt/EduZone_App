@@ -7,6 +7,7 @@ import '../../../../core/logging/domain/app_event.dart';
 import '../../../../core/logging/logging_providers.dart';
 import '../../../../design_system/design_system.dart';
 import '../../../../shared/cross_feature/auth_shared.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../../../shared/widgets/app_course_thumbnail.dart';
 import '../../../../shared/widgets/collapsing_tab_bar_delegate.dart';
 import '../../../auth/domain/entities/auth_state.dart';
@@ -17,7 +18,6 @@ import '../widgets/bookmark_button.dart';
 import '../widgets/course_about_tab_content.dart';
 import '../widgets/course_curriculum_preview.dart';
 import '../widgets/course_enroll_price_row.dart';
-
 
 class CoursePreviewScreen extends ConsumerStatefulWidget {
   final String courseId;
@@ -160,7 +160,7 @@ class _CoursePreviewScreenState extends ConsumerState<CoursePreviewScreen>
                 Icon(Icons.error_outline_rounded, color: ds.error, size: 48),
                 const SizedBox(height: AppSpacing.md),
                 Text(
-                  l10n.errorLoading(err.toString()),
+                  ErrorHandler.getMessage(context, err),
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: ds.textSecondary,
                   ),

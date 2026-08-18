@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/exceptions.dart';
+import '../../../../core/network/network_exception_mapper.dart';
+import '../../../../core/network/network_guard.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../domain/entities/lesson_progress_sync_item.dart';
 
@@ -35,39 +37,40 @@ class VideoPlayerRemoteDataSource {
   Future<void> syncProgressBatch(List<LessonProgressSyncItem> items) async {
     if (items.isEmpty) return;
 
-    try {
-      final userId = _client.auth.currentUser?.id;
-      if (userId == null) throw const ServerException('User not authenticated'); // check-ignore
+    return NetworkGuard.write(() async {
+      try {
+        final userId = _client.auth.currentUser?.id;
+        if (userId == null) throw const ServerException('User not authenticated'); // check-ignore
 
-      final tenantId = await _resolveTenantId(items);
-      final now = DateTime.timestamp().toIso8601String();
-      final rows = items
-          .map(
-            (item) => {
-              'user_id': userId,
-              'course_id': item.courseId,
-              'lesson_id': item.lessonId,
-              'tenant_id': tenantId,
-              'completed': item.completed,
-              'progress_pct': item.progressPct,
-              if (item.completed) 'completed_at': now,
-              if (item.watchTimeSec != null) 'watch_time_sec': item.watchTimeSec,
-              'last_watched': now,
-            },
-          )
-          .toList(growable: false);
+        final tenantId = await _resolveTenantId(items);
+        final now = DateTime.timestamp().toIso8601String();
+        final rows = items
+            .map(
+              (item) => {
+                'user_id': userId,
+                'course_id': item.courseId,
+                'lesson_id': item.lessonId,
+                'tenant_id': tenantId,
+                'completed': item.completed,
+                'progress_pct': item.progressPct,
+                if (item.completed) 'completed_at': now,
+                if (item.watchTimeSec != null) 'watch_time_sec': item.watchTimeSec,
+                'last_watched': now,
+              },
+            )
+            .toList(growable: false);
 
-      await _client.from('user_progress').upsert(
-            rows,
-            onConflict: 'user_id,course_id,lesson_id',
-          );
-
-    } on PostgrestException catch (e) {
-      throw ServerException(e.message);
-    } catch (e) {
-      if (e is ServerException) rethrow;
-      throw ServerException(e.toString());
-    }
+        await _client.from('user_progress').upsert(
+              rows,
+              onConflict: 'user_id,course_id,lesson_id',
+            );
+      } on PostgrestException catch (e) {
+        throw ServerException(e.message, e.code); // check-ignore
+      } catch (e) {
+        if (e is AppException) rethrow;
+        throw NetworkExceptionMapper.map(e);
+      }
+    });
   }
 
   Future<dynamic> _resolveTenantId(List<LessonProgressSyncItem> items) async {

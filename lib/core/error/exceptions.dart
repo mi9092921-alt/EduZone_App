@@ -47,6 +47,19 @@ class NoInternetException extends AppException {
     : super('No internet connection', code: 'network_error');
 }
 
+/// A network-bound operation (Postgrest/RPC/Auth/Storage call) did not
+/// complete within the client-side timeout budget (see
+/// `NetworkConfig`). Distinct from [NoInternetException] -- the device
+/// may well have connectivity, but the server/edge/CDN did not respond
+/// in time (slow network, congested endpoint, stalled TLS handshake).
+/// Kept as its own type (rather than folded into [ServerException]) so
+/// [NetworkRetry] can tell "worth retrying" apart from a definite server
+/// error without string-matching the message.
+class RequestTimeoutException extends AppException {
+  const RequestTimeoutException()
+    : super('Request timed out', code: 'request_timeout'); // check-ignore
+}
+
 /// User is not authenticated — session expired or missing.
 class UnauthenticatedException extends AppException {
   const UnauthenticatedException()

@@ -1,31 +1,49 @@
 import 'package:flutter/material.dart';
 import '../../core/error/exceptions.dart';
+import '../../core/error/failures.dart';
 import '../../core/l10n/arb/app_localizations.dart';
 import 'app_snackbar.dart';
 
 class ErrorHandler {
   ErrorHandler._();
 
-  /// Maps an [AppException] to a localized user-friendly message.
+  /// Maps an [AppException] (or a [Failure] thrown directly across an
+  /// `Either<Failure, T>` boundary -- see `notifications_provider.dart`)
+  /// to a localized user-friendly message.
   static String getMessage(BuildContext context, Object error) {
     final l10n = AppLocalizations.of(context);
     if (l10n == null) return error.toString();
 
-    if (error is InvalidCredentialsException) {
+    // Some providers re-throw the repository's `Failure` object directly
+    // (`throw failure;`) instead of reconstructing an `AppException`.
+    // Reconstruct it here so both call conventions classify identically
+    // instead of the `Failure` path silently falling through to
+    // `errorGeneric` regardless of whether it was actually a
+    // connectivity failure.
+    final classified = error is Failure ? error.toAppException() : error;
+
+    if (classified is InvalidCredentialsException) {
       return l10n.errorAuth;
-    } else if (error is NoInternetException) {
+    } else if (classified is NoInternetException) {
       return l10n.errorNetwork;
-    } else if (error is MaxDevicesReachedException) {
+    } else if (classified is RequestTimeoutException) {
+      // No dedicated l10n key yet (see Section 22 follow-up); a timed-out
+      // request reads to the user the same way "no internet" does --
+      // "try again" -- so reuse errorNetwork rather than leaking the raw
+      // internal message, matching the UnauthenticatedException fallback
+      // pattern below.
+      return l10n.errorNetwork;
+    } else if (classified is MaxDevicesReachedException) {
       return l10n.errorMaxDevices;
-    } else if (error is DeviceAlreadyBoundException) {
+    } else if (classified is DeviceAlreadyBoundException) {
       return l10n.errorDeviceBound;
-    } else if (error is RateLimitedException) {
-      return l10n.errorRateLimit((error.retryAfterSeconds / 60).ceil());
-    } else if (error is UnauthenticatedException) {
+    } else if (classified is RateLimitedException) {
+      return l10n.errorRateLimit((classified.retryAfterSeconds / 60).ceil());
+    } else if (classified is UnauthenticatedException) {
       return l10n.errorAuth; // Fallback to auth error
-    } else if (error is EmailNotConfirmedException) {
+    } else if (classified is EmailNotConfirmedException) {
       return l10n.errorEmailNotConfirmed;
-    } else if (error is ServerException) {
+    } else if (classified is ServerException) {
       // error.message is an internal, English-only diagnostic string set
       // in the data layer (see e.g. auth_remote_ds.dart) -- it's meant
       // for logs/debugging, not translated, and was never designed to be

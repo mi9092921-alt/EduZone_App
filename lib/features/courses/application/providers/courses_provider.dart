@@ -1,5 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../../../core/error/failures.dart';
 import '../../../../core/providers/storage_provider.dart';
 import '../../data/datasources/courses_remote_ds_impl.dart';
 import '../../data/repositories/courses_repo_impl.dart';
@@ -116,7 +117,7 @@ Future<List<CourseEnrollment>> myCourses(Ref ref) async {
   final result = await getMyCourses();
 
   return result.fold(
-    (failure) => throw Exception(failure.message),
+    (failure) => throw failure.toAppException(),
     (enrollments) => enrollments,
   );
 }
@@ -137,7 +138,7 @@ Future<Course> courseDetails(Ref ref, String courseId) async {
   final getCourseDetails = ref.watch(getCourseDetailsProvider);
   final result = await getCourseDetails(courseId);
   return result.fold(
-    (failure) => throw Exception(failure.message),
+    (failure) => throw failure.toAppException(),
     (course) => course,
   );
 }
@@ -147,7 +148,7 @@ Future<LessonContent> lessonContent(Ref ref, String lessonId) async {
   final getLessonContent = ref.watch(getLessonContentProvider);
   final result = await getLessonContent(lessonId);
   return result.fold(
-    (failure) => throw Exception(failure.message),
+    (failure) => throw failure.toAppException(),
     (content) => content,
   );
 }
@@ -198,7 +199,7 @@ class PublicCourses extends _$PublicCourses {
     final getPublicCourses = ref.watch(getPublicCoursesProvider);
     final result = await getPublicCourses();
     return result.fold(
-      (failure) => throw Exception(failure.message),
+      (failure) => throw failure.toAppException(),
       (courses) => PaginatedCoursesState(
         items: courses,
         loadedIds: courses.map((c) => c.id).toSet(),
@@ -252,7 +253,7 @@ Future<CourseEnrollment?> myCourseEnrollment(Ref ref, String courseId) async {
   final getMyCourseEnrollment = ref.watch(getMyCourseEnrollmentProvider);
   final result = await getMyCourseEnrollment(courseId);
   return result.fold(
-    (failure) => throw Exception(failure.message),
+    (failure) => throw failure.toAppException(),
     (enrollment) => enrollment,
   );
 }
@@ -267,7 +268,7 @@ Future<CourseProgressSummary> courseProgress(Ref ref, String courseId) async {
   final getCourseProgressSummary = ref.watch(getCourseProgressSummaryProvider);
   final result = await getCourseProgressSummary(courseId);
   return result.fold(
-    (failure) => throw Exception(failure.message),
+    (failure) => throw failure.toAppException(),
     (summary) => summary,
   );
 }
@@ -318,7 +319,7 @@ Future<List<Course>> savedCourses(Ref ref) async {
   final getCoursesByIds = ref.watch(getCoursesByIdsProvider);
   final result = await getCoursesByIds(bookmarkIds.toList());
   return result.fold(
-    (failure) => throw Exception(failure.message),
+    (failure) => throw failure.toAppException(),
     (courses) => courses,
   );
 }

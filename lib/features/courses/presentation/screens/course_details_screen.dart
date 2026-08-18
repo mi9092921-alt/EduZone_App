@@ -4,6 +4,7 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../../../shared/widgets/app_course_thumbnail.dart';
 import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/collapsing_tab_bar_delegate.dart';
@@ -68,7 +69,7 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
           error: (err, stack) => AppEmptyState(
             icon: Icons.error_outline_rounded,
             title: l10n.failedToLoadCourses,
-            description: l10n.errorLoading(err.toString()),
+            description: ErrorHandler.getMessage(context, err),
             actionLabel: l10n.retryButton,
             onActionPressed: () {
               ref.invalidate(courseDetailsProvider(widget.courseId));

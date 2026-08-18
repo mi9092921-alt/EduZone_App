@@ -1,5 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../../../core/error/failures.dart';
+
 import '../../data/datasources/home_remote_datasource_impl.dart';
 import '../../data/repositories/home_repo_impl.dart';
 import '../../domain/entities/home_course_summary.dart';
@@ -25,7 +27,7 @@ Future<ResumeLesson?> resumeLesson(Ref ref) async {
   final repository = ref.watch(homeRepositoryProvider);
   final result = await repository.getResumeLesson();
   return result.fold(
-    (failure) => throw Exception(failure.message),
+    (failure) => throw failure.toAppException(),
     (lesson) => lesson,
   );
 }
@@ -35,7 +37,7 @@ Future<List<HomeCourseSummary>> recentCourses(Ref ref) async {
   final repository = ref.watch(homeRepositoryProvider);
   final result = await repository.getRecentCourses();
   return result.fold(
-    (failure) => throw Exception(failure.message),
+    (failure) => throw failure.toAppException(),
     (courses) => courses,
   );
 }
@@ -45,7 +47,7 @@ Future<List<HomeTodoSummary>> recentTodos(Ref ref) async {
   final repository = ref.watch(homeRepositoryProvider);
   final result = await repository.getRecentTodos();
   return result.fold(
-    (failure) => throw Exception(failure.message),
+    (failure) => throw failure.toAppException(),
     (todos) => todos,
   );
 }

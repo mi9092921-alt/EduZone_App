@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../core/network/supabase_client.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../application/providers/notifications_provider.dart';
 import '../../domain/entities/app_notification.dart';
 import '../widgets/notification_tile.dart';
@@ -50,8 +51,6 @@ class NotificationsScreen extends ConsumerWidget {
     WidgetRef ref,
     AsyncValue<List<AppNotification>> notificationsAsync,
   ) {
-    final l10n = AppLocalizations.of(context)!;
-
     return notificationsAsync.when(
       data: (notifications) {
         final activeFilter = ref.watch(notificationFilterProvider);
@@ -104,7 +103,7 @@ class NotificationsScreen extends ConsumerWidget {
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.xl),
               child: Text(
-                l10n.errorLoading(e.toString()),
+                ErrorHandler.getMessage(context, e),
                 style: AppTextStyles.bodyMedium.copyWith(
                   color: Theme.of(context).colorScheme.error,
                 ),

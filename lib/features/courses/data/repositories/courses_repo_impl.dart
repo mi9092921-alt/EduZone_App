@@ -1,5 +1,4 @@
 import 'package:fpdart/fpdart.dart';
-import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/storage_service.dart';
@@ -32,10 +31,8 @@ class CoursesRepositoryImpl implements CoursesRepository {
     try {
       final enrollments = await remoteDataSource.getMyCourses();
       return Right(enrollments);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -44,10 +41,8 @@ class CoursesRepositoryImpl implements CoursesRepository {
     try {
       final course = await remoteDataSource.getCourseDetails(courseId);
       return Right(course);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -56,10 +51,8 @@ class CoursesRepositoryImpl implements CoursesRepository {
     try {
       final course = await remoteDataSource.getCourseOutline(courseId);
       return Right(course);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -68,10 +61,8 @@ class CoursesRepositoryImpl implements CoursesRepository {
     try {
       final result = await remoteDataSource.getMyCourseEnrollment(courseId);
       return Right(result);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -92,10 +83,8 @@ class CoursesRepositoryImpl implements CoursesRepository {
         watchTimeSec: watchTimeSec,
       );
       return const Right(null);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -110,10 +99,8 @@ class CoursesRepositoryImpl implements CoursesRepository {
         limit: limit,
       );
       return Right(courses);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -122,10 +109,8 @@ class CoursesRepositoryImpl implements CoursesRepository {
     try {
       final ids = await remoteDataSource.getUserSubscribedCourseIds();
       return Right(ids);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -134,10 +119,8 @@ class CoursesRepositoryImpl implements CoursesRepository {
     try {
       await remoteDataSource.enrollInCourse(courseId);
       return const Right(null);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -147,10 +130,8 @@ class CoursesRepositoryImpl implements CoursesRepository {
     try {
       final content = await remoteDataSource.getLessonContent(lessonId);
       return Right(content);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -161,10 +142,8 @@ class CoursesRepositoryImpl implements CoursesRepository {
       final summary =
           await remoteDataSource.getCourseProgressSummary(courseId);
       return Right(summary);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -214,10 +193,8 @@ class CoursesRepositoryImpl implements CoursesRepository {
       if (ids.isEmpty) return const Right([]);
       final courses = await remoteDataSource.getCoursesByIds(ids);
       return Right(courses);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 }

@@ -1,5 +1,4 @@
 import 'package:fpdart/fpdart.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/failures.dart';
 import '../../../courses/domain/entities/course.dart';
 import '../../domain/entities/home_course_summary.dart';
@@ -18,10 +17,8 @@ class HomeRepositoryImpl implements HomeRepository {
     try {
       final lesson = await remoteDataSource.getResumeLesson();
       return Right(lesson);
-    } on PostgrestException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -49,10 +46,8 @@ class HomeRepositoryImpl implements HomeRepository {
           )
           .toList();
       return Right(summaries);
-    } on PostgrestException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -74,10 +69,8 @@ class HomeRepositoryImpl implements HomeRepository {
           )
           .toList();
       return Right(summaries);
-    } on PostgrestException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(ServerFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 }
