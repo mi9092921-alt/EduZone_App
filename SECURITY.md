@@ -381,6 +381,49 @@ previous account on a shared device (if `OfflineAccountGuard`'s
 best-effort purge hasn't run yet) can't block a different, legitimately
 entitled account from starting its own download.
 
+## Logging and observability (Section 15)
+
+`lib/core/logging/` is the single event pipeline all activity/audit/crash
+telemetry flows through (`EventBus` → `EventDispatcher` →
+`ActivityHandler`/`AuditHandler`/`CrashHandler`). Three findings from an
+audit of this pipeline, all fixed:
+
+- **The client write path into `public.activity_log_queue` was completely
+  non-functional.** The table has `REVOKE ALL ... FROM anon,
+  authenticated` (`10_permissions.sql`) plus a deny-all RLS policy
+  (`09_rls.sql`), so the direct `.from('activity_log_queue').insert(...)`
+  the client used to perform always failed — no telemetry of any kind
+  ever reached the backend. The only legitimate client write path is the
+  `public.log_activity_async` RPC (`SECURITY DEFINER`, enforces
+  `p_user_id = auth.uid()`), which `LogRemoteDataSource` now calls.
+  **Residual, honestly-flagged gap**: that RPC requires an authenticated
+  `auth.uid()` matching the supplied `p_user_id`, so events fired before
+  sign-in (`userId == null`) will still fail server-side. This is not a
+  regression — nothing reached the backend before this fix either — but
+  it is not yet solved for the pre-login case.
+- **`AuditHandler` (auth-category + high/critical-risk events, AES-GCM
+  encrypted before leaving the device) used to fail *open***: if local
+  encryption threw, it shipped the event's plaintext `details` to
+  Supabase instead. It now fails *closed* — ships a redacted placeholder
+  on encryption failure, never the raw sensitive payload.
+- **`GlobalErrorHandler.logError()`** (the funnel for every uncaught
+  Flutter/platform error) used to `debugPrint` the full error object and
+  stack trace unconditionally, including in release builds (`debugPrint`
+  is not debug-gated by Flutter). Caught errors can embed backend
+  internals or signed-URL tokens in their message. Release builds now
+  only print `error.runtimeType` locally; Sentry still gets the full
+  diagnostic record.
+
+**Not done, and explicitly flagged rather than silently skipped**: Sentry
+`beforeSend`/`beforeBreadcrumb` scrubbing hooks as defense-in-depth on top
+of the above (`sendDefaultPii = false` and `SentryService.setUserContext`
+already send only an opaque user UUID, so this would be a second layer,
+not the only one). The exact `sentry_flutter: ^8.14.2` callback signature
+could not be confirmed without pub package access in this environment;
+adding it without verifying the signature risked shipping code that
+doesn't compile, which this project's "No Fake Completion" rule weighs
+worse than leaving the gap open and documented.
+
 ## What's verified — by the developer, not by this document's author
 
 This document was originally written entirely by static source inspection

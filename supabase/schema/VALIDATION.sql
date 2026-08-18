@@ -1593,7 +1593,68 @@ BEGIN
   );
 END $$;
 
--- Display Results (includes Checks 27-31 above)
+-- Check 32: Client observability write path (Section 15 / P15) is wired
+-- correctly end-to-end: `public.activity_log_queue` must stay unreachable
+-- directly (INSERT/SELECT/UPDATE/DELETE) by anon/authenticated -- it is an
+-- internal queue table, not a client-writable one -- while the two
+-- SECURITY DEFINER RPCs that are the only legitimate client write path
+-- into it, log_my_activity(text, jsonb) and
+-- log_activity_async(uuid, text, jsonb, inet, uuid, text, uuid), must be
+-- explicitly EXECUTE-granted to authenticated and NOT to anon. Before this
+-- check existed, neither RPC had an explicit grant at all and silently
+-- relied on PostgreSQL's implicit EXECUTE-TO-PUBLIC default; this guards
+-- against that regressing silently again, and against the direct-insert
+-- path (which the Flutter client used to call, and which is permanently
+-- blocked at the database layer) ever being re-opened by accident.
+DO $$
+DECLARE
+  v_table_open boolean;
+  v_rpc_auth boolean;
+  v_rpc_anon boolean;
+  v_rpc2_auth boolean;
+  v_rpc2_anon boolean;
+BEGIN
+  SELECT
+    has_table_privilege('anon', 'public.activity_log_queue', 'INSERT')
+    OR has_table_privilege('authenticated', 'public.activity_log_queue', 'INSERT')
+    OR has_table_privilege('anon', 'public.activity_log_queue', 'SELECT')
+    OR has_table_privilege('authenticated', 'public.activity_log_queue', 'SELECT')
+  INTO v_table_open;
+
+  SELECT has_function_privilege(
+    'authenticated', 'public.log_activity_async(uuid, text, jsonb, inet, uuid, text, uuid)', 'EXECUTE'
+  ) INTO v_rpc_auth;
+
+  SELECT has_function_privilege(
+    'anon', 'public.log_activity_async(uuid, text, jsonb, inet, uuid, text, uuid)', 'EXECUTE'
+  ) INTO v_rpc_anon;
+
+  SELECT has_function_privilege(
+    'authenticated', 'public.log_my_activity(text, jsonb)', 'EXECUTE'
+  ) INTO v_rpc2_auth;
+
+  SELECT has_function_privilege(
+    'anon', 'public.log_my_activity(text, jsonb)', 'EXECUTE'
+  ) INTO v_rpc2_anon;
+
+  INSERT INTO validation_results VALUES (
+    'Activity Log Write Path Is RPC-Only',
+    CASE
+      WHEN NOT v_table_open
+        AND v_rpc_auth AND NOT v_rpc_anon
+        AND v_rpc2_auth AND NOT v_rpc2_anon
+        THEN 'PASS'
+      ELSE 'FAIL'
+    END,
+    'activity_log_queue directly reachable by client role= ' || v_table_open
+      || ', log_activity_async(authenticated)= ' || v_rpc_auth
+      || ', log_activity_async(anon)= ' || v_rpc_anon
+      || ', log_my_activity(authenticated)= ' || v_rpc2_auth
+      || ', log_my_activity(anon)= ' || v_rpc2_anon
+  );
+END $$;
+
+-- Display Results (includes Checks 27-32 above)
 SELECT * FROM validation_results ORDER BY check_name;
 
 -- Summary

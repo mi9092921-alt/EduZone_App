@@ -25,13 +25,31 @@ class GlobalErrorHandler {
 
   /// Logs errors to the console and forwards to Sentry.
   static void logError(Object error, StackTrace? stack) {
-    debugPrint('--- [EduZone Error Log] ---');
-    debugPrint('Error type: ${error.runtimeType}');
-    debugPrint('Error: $error');
-    if (stack != null) {
-      debugPrint('StackTrace: \n$stack');
+    // This is the single funnel for every uncaught Flutter/platform error
+    // in the app (see [init] below), so `error` can be anything --
+    // including a PostgrestException/DioException whose message embeds
+    // backend internals or a full request URL (which, for a signed
+    // download URL, can carry an auth token in the query string; see
+    // the offline-security architecture's P6.26 "Secure Temporary URLs"
+    // requirement not to keep those in logs). `debugPrint` is NOT
+    // release-gated by Flutter -- it prints in release builds too -- so
+    // printing `error`/`stack` unconditionally would leak that content
+    // to the device console/logcat in production (Section 15: "Do not
+    // log ... raw sensitive backend payloads"). Sentry (below) remains
+    // the full, controlled diagnostic channel; the local console only
+    // ever gets the safe exception *type*, matching the pattern already
+    // used elsewhere in this codebase (e.g. fcm_service.dart).
+    if (kDebugMode) {
+      debugPrint('--- [EduZone Error Log] ---');
+      debugPrint('Error type: ${error.runtimeType}');
+      debugPrint('Error: $error');
+      if (stack != null) {
+        debugPrint('StackTrace: \n$stack');
+      }
+      debugPrint('---------------------------');
+    } else {
+      debugPrint('[EduZone] Unhandled error: ${error.runtimeType}');
     }
-    debugPrint('---------------------------');
 
     // Forward to Sentry (no-op if SDK not initialized / DSN empty)
     try {

@@ -26,8 +26,9 @@ class CrashHandler extends EventHandler {
   @override
   void handle(AppEvent event) {
     // Add to breadcrumb trail
+    final entitySuffix = event.entityId.isEmpty ? '' : ' (${event.entityId})';
     final breadcrumb =
-        '${event.activityType} @ ${event.timestamp.toIso8601String()}';
+        '${event.activityType}$entitySuffix @ ${event.timestamp.toIso8601String()}';
     _breadcrumbs.addLast(breadcrumb);
     if (_breadcrumbs.length > _maxBreadcrumbs) {
       _breadcrumbs.removeFirst();
@@ -45,11 +46,18 @@ class CrashHandler extends EventHandler {
       Sentry.addBreadcrumb(Breadcrumb(message: crumb));
     }
 
-    // Capture the error in Sentry
-    Sentry.captureException(
-      event.errorMessage,
-      stackTrace: event.stackTrace,
-    );
+    // `event.errorMessage` is always a short, already-sanitized string
+    // (e.g. produced by AuthErrorPolicy.mapExceptionToKey) -- never a
+    // real Throwable -- and `event.stackTrace` (when set) is a plain
+    // String, not a Dart StackTrace object. Passing a String as the
+    // `throwable` argument to Sentry.captureException() misrepresents
+    // it as an exception object, which produces malformed
+    // fingerprinting/grouping in Sentry (Section 15: "crash grouping")
+    // and duplicates the *real* exception + StackTrace that
+    // GlobalErrorHandler.logError() already reports for the underlying
+    // failure. captureMessage() is the correct API for a diagnostic
+    // string like this.
+    Sentry.captureMessage(event.errorMessage, level: SentryLevel.error);
 
     if (kDebugMode) {
       debugPrint('[CrashHandler] Error: ${event.errorMessage}');
@@ -66,4 +74,3 @@ class CrashHandler extends EventHandler {
   /// Get the current breadcrumb trail (for testing/debugging).
   List<String> get breadcrumbs => _breadcrumbs.toList();
 }
-

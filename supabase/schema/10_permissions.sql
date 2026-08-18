@@ -143,6 +143,26 @@ REVOKE UPDATE ON public.users FROM authenticated;
 -- the current user, and column privileges limit the mutation to telemetry.
 GRANT UPDATE (last_login, last_seen_at) ON public.users TO authenticated;
 REVOKE ALL ON public.activity_log_queue FROM anon, authenticated;
+
+-- Client observability write path (Section 15 / P15): the table above is
+-- deliberately unreachable from any client role, so `public.log_my_activity`
+-- and `public.log_activity_async` (both SECURITY DEFINER, both enforce
+-- `p_user_id = auth.uid()` / AUTH_REQUIRED server-side before writing --
+-- see supabase/schema/07_functions.sql) are the *only* client write path
+-- into it. Neither had an explicit REVOKE/GRANT pair, so both silently
+-- retained PostgreSQL's default EXECUTE-TO-PUBLIC grant instead of
+-- following this file's explicit least-privilege model -- close that gap
+-- explicitly rather than relying on the implicit default.
+REVOKE ALL ON FUNCTION public.log_my_activity(text, jsonb)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.log_my_activity(text, jsonb)
+  TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.log_activity_async(uuid, text, jsonb, inet, uuid, text, uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.log_activity_async(uuid, text, jsonb, inet, uuid, text, uuid)
+  TO authenticated, service_role;
+
 REVOKE ALL ON internal.job_queue FROM anon, authenticated, public;
 REVOKE ALL ON audit.slow_query_log FROM anon, authenticated, public;
 REVOKE ALL ON audit.lesson_state_transitions FROM anon, authenticated, public;

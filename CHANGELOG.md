@@ -8,6 +8,82 @@
 ## [Unreleased]
 
 ### Added / Fixed
+- **Security/Observability (Section 15 — Logging and Observability)**:
+  audited the entire client logging/observability pipeline and fixed four
+  genuine gaps:
+  - **Critical — the client observability pipeline was completely
+    non-functional.** `LogRemoteDataSource.syncBatch()`
+    (`lib/core/logging/data/log_remote_ds.dart`) called
+    `.from('activity_log_queue').insert(rows)` directly, but
+    `public.activity_log_queue` has `REVOKE ALL ... FROM anon,
+    authenticated` (`10_permissions.sql`) plus a
+    `FOR ALL TO public USING (false)` deny-all RLS policy
+    (`09_rls.sql`, "CRIT-05: Deny all PostgREST access to internal
+    tables"). Every flush from every client, forever, failed with a
+    permission error — meaning no activity or audit telemetry ever
+    reached the backend. Rewired the client to call the existing
+    `public.log_activity_async(p_user_id, p_type, p_details, p_ip,
+    p_device_id, p_risk_level, p_tenant_id)` RPC (SECURITY DEFINER,
+    validates `p_user_id = auth.uid()` server-side) instead, one call
+    per queued entry. Neither that RPC nor `public.log_my_activity`
+    had an explicit grant and were silently relying on PostgreSQL's
+    implicit EXECUTE-TO-PUBLIC default instead of this project's
+    explicit least-privilege model (`10_permissions.sql`) — added
+    explicit `REVOKE ALL ... FROM PUBLIC, anon, authenticated` +
+    `GRANT EXECUTE ... TO authenticated, service_role` for both, and a
+    new `VALIDATION.sql` Check 32 that guards this end-to-end (table
+    stays unreachable directly; both RPCs stay authenticated-only).
+    Known residual gap: `log_activity_async` requires
+    `p_user_id = auth.uid()`, so pre-login/anonymous events (e.g. an
+    `AppOpenedEvent` fired before sign-in) will still fail server-side
+    — same as every other event did before this fix, so not a
+    regression, but not yet solved either; flagged honestly rather
+    than silently claimed complete.
+  - **Fail-open plaintext leak in `AuditHandler`**
+    (`lib/core/logging/handlers/audit_handler.dart`): when AES-GCM
+    encryption of an auth/high-risk event's `details` failed, the old
+    fallback shipped `LogEntry.fromEvent(event)` — i.e. the actual
+    plaintext sensitive payload (access-denial reasons, device-bind
+    IDs, offline-playback-denial reasons) — to Supabase, defeating the
+    entire reason this handler exists. Now fails closed: on encryption
+    failure it ships a redacted placeholder (`_redacted: true`) instead,
+    keeping the event's type/category/risk/ids observable without ever
+    leaking the sensitive content in the clear.
+  - **Malformed Sentry reporting in `CrashHandler`**
+    (`lib/core/logging/handlers/crash_handler.dart`): called
+    `Sentry.captureException(event.errorMessage, stackTrace:
+    event.stackTrace)` with a `String` in both the "throwable" and
+    "stackTrace" slots (never a real `Throwable`/`StackTrace`),
+    corrupting Sentry's grouping/fingerprinting and duplicating the
+    real exception `GlobalErrorHandler.logError()` already reports
+    separately. Switched to `Sentry.captureMessage(event.errorMessage,
+    level: SentryLevel.error)`, the correct API for a diagnostic
+    string.
+  - **Raw exception/stack-trace leakage to production device logs in
+    `GlobalErrorHandler.logError()`**
+    (`lib/shared/utils/global_error_handler.dart`): this is the single
+    funnel for every uncaught Flutter/platform error, and it printed
+    the full error object + stack trace via `debugPrint`
+    unconditionally — including in release builds, since Flutter's
+    `debugPrint` is not debug-gated. Caught errors can embed backend
+    internals or request URLs with signed-URL tokens in their message.
+    Now gated behind `kDebugMode`; release builds print only the safe
+    `error.runtimeType`, matching the pattern already used elsewhere
+    in this codebase (e.g. `fcm_service.dart`). Sentry (the controlled,
+    scrubbed channel) still receives the full error + stack trace
+    either way.
+  Added `test/core/logging/handlers/audit_handler_test.dart` and
+  `crash_handler_test.dart` (the logging module had zero prior test
+  coverage) covering the fail-closed redaction behavior and breadcrumb
+  handling. Not independently re-verified with `flutter analyze`/
+  `flutter test`/a live Supabase instance in this session (no
+  Flutter/Dart toolchain, pub.dev, or Supabase network access available
+  in this environment) — statically inspected only. Sentry
+  `beforeSend`/`beforeBreadcrumb` scrubbing hooks were deliberately
+  **not** added: the exact `sentry_flutter: ^8.14.2` callback signature
+  could not be verified without pub package access in this sandbox, and
+  guessing it risked shipping code that doesn't compile — flagged as a
+  follow-up requiring a live environment.
 - **Security (Section 12 — Offline entitlement RPC volume / P6.25)**:
   `authorize_offline_download` and `revalidate_offline_entitlement`
   (`supabase/schema/07_functions.sql`) previously had no bound on how many

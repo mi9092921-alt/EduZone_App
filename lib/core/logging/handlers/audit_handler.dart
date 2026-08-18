@@ -53,13 +53,32 @@ class AuditHandler extends EventHandler {
       _queue.add(entry);
       _syncEngine.onEntryAdded();
     } catch (e) {
-      // Fallback: write unencrypted if encryption fails
+      // Fail-closed (Section 15 / Section 11 threat model): this handler
+      // only ever receives auth-category events or high/critical-risk
+      // events (see [shouldHandle]) -- e.g. AuthAccessDeniedEvent.reason,
+      // AuthDeviceBindEvent.bindDeviceId, offline-playback-denial
+      // reasons. If AES-GCM encryption fails we must NOT fall back to
+      // shipping that `details` payload to Supabase in plaintext; that
+      // would silently defeat the entire reason this handler encrypts
+      // in the first place. Instead we ship a redacted placeholder so
+      // the *fact* that a security-relevant event occurred (type,
+      // category, risk, user/device/tenant ids, timestamp) is still
+      // observable for ops, without ever leaking the sensitive
+      // `details` content in the clear. `isEncrypted` is left at its
+      // default `false` so this is never mistaken for a real
+      // ciphertext entry downstream.
       debugPrint(
-        '[AuditHandler] Encryption failed, writing unencrypted: '
-        '${e.runtimeType}',
+        '[AuditHandler] Encryption failed (${e.runtimeType}); '
+        'shipping redacted entry instead of plaintext.',
       );
-      final entry = LogEntry.fromEvent(event);
-      _queue.add(entry);
+      final redactedEntry = LogEntry.fromEvent(
+        event,
+        encryptedDetails: const {
+          '_redacted': true,
+          '_reason': 'encryption_unavailable',
+        },
+      );
+      _queue.add(redactedEntry);
       _syncEngine.onEntryAdded();
     }
   }
