@@ -50,6 +50,49 @@ Future<Task?> handleTokenRefresh(Task task) async {
 
     if (sourceUrl == null || sourceUrl.isEmpty) return null;
 
+    final freshUrl = await fetchFreshTrackUrl(
+          sourceUrl: sourceUrl,
+          qualityLabel: qualityLabel,
+          trackType: trackType,
+        ) ??
+        task.url;
+
+    if (kDebugMode) {
+      debugPrint(
+        '🔄 [handleTokenRefresh] Refreshed $trackType link for task ${task.taskId}',
+      );
+    }
+
+    return task.copyWith(url: freshUrl);
+  } catch (e, stack) {
+    if (kDebugMode) {
+      debugPrint('⚠️ [handleTokenRefresh] Link refresh failed: $e\n$stack');
+    }
+    return null;
+  }
+}
+
+/// Re-resolves a fresh, non-expired CDN URL for [trackType] ('video' or
+/// 'audio') from [sourceUrl] via the video-info Edge Function.
+///
+/// Used both by [handleTokenRefresh] (background_downloader's pre-attempt
+/// hook, on platforms/paths that route through it) and by
+/// [DownloadManager]'s Dio path when a download fails *partway through*
+/// with an authorization error that looks like link expiry — a Range GET
+/// against an already-expired signed URL fails identically no matter how
+/// many times it's retried verbatim, so recovering from it needs a fresh
+/// URL, not just a delay-and-retry (see `_looksLikeExpiredLinkError` and
+/// its use in `_downloadWithDio`).
+///
+/// Returns null (never throws) if no fresher URL could be resolved, so
+/// callers can fall back to their existing URL/error handling.
+@pragma('vm:entry-point')
+Future<String?> fetchFreshTrackUrl({
+  required String sourceUrl,
+  required String? qualityLabel,
+  required String trackType,
+}) async {
+  try {
     final client = await _supabaseClientForBackgroundCallback();
     final remoteDs = DownloadRemoteDataSource(client);
     final freshInfo = await remoteDs.getVideoInfo(sourceUrl);
@@ -64,23 +107,15 @@ Future<Task?> handleTokenRefresh(Task task) async {
     final selectedFormat =
         matchingFormats.isNotEmpty ? matchingFormats.first : null;
 
-    final freshUrl = trackType == 'audio'
-        ? (selectedFormat?.audioUrl ?? freshInfo.audio?.url ?? task.url)
+    return trackType == 'audio'
+        ? (selectedFormat?.audioUrl ?? freshInfo.audio?.url)
         : (selectedFormat?.videoUrl ??
             (freshInfo.formats.isNotEmpty
                 ? freshInfo.formats.first.videoUrl
-                : task.url));
-
-    if (kDebugMode) {
-      debugPrint(
-        '🔄 [handleTokenRefresh] Refreshed $trackType link for task ${task.taskId}',
-      );
-    }
-
-    return task.copyWith(url: freshUrl);
+                : null));
   } catch (e, stack) {
     if (kDebugMode) {
-      debugPrint('⚠️ [handleTokenRefresh] Link refresh failed: $e\n$stack');
+      debugPrint('⚠️ [fetchFreshTrackUrl] Link refresh failed: $e\n$stack');
     }
     return null;
   }
@@ -161,6 +196,18 @@ class DownloadManager {
     // "server closed the connection early" / empty stream body surface as
     // TimeoutException or StateError — both are worth retrying.
     return error is TimeoutException || error is StateError;
+  }
+
+  /// Whether [error] looks like a rejected/expired signed CDN URL (as
+  /// opposed to a genuine transient network error). Retrying the same URL
+  /// against this can't succeed — the fix is a fresh URL (see
+  /// `fetchFreshTrackUrl`), not a delay.
+  static bool _looksLikeExpiredLinkError(Object error) {
+    if (error is DioException && error.type == DioExceptionType.badResponse) {
+      final code = error.response?.statusCode;
+      return code == 401 || code == 403 || code == 410;
+    }
+    return false;
   }
 
   static Future<void> _delayBeforeRetry(int attempt) async {
@@ -864,7 +911,26 @@ class DownloadManager {
   }) async {
     final fallbackTask = await handleTokenRefresh(task);
     final fallbackUrl = fallbackTask?.url ?? task.url;
-    final effectiveUrl = fallbackUrl.isEmpty ? originalUrl : fallbackUrl;
+    var effectiveUrl = fallbackUrl.isEmpty ? originalUrl : fallbackUrl;
+
+    // Needed for the mid-transfer link-refresh-and-retry below: the same
+    // metaData handleTokenRefresh already reads to do its *pre-attempt*
+    // refresh.
+    String? sourceUrl;
+    String? qualityLabel;
+    var trackType = 'video';
+    try {
+      if (task is DownloadTask && task.metaData.isNotEmpty) {
+        final data = jsonDecode(task.metaData) as Map<String, dynamic>;
+        sourceUrl = data['sourceUrl'] as String?;
+        qualityLabel = data['qualityLabel'] as String?;
+        trackType = data['trackType'] as String? ?? 'video';
+      }
+    } catch (_) {
+      // metaData is only used for the optional link-refresh path below;
+      // a malformed value just means that path stays unavailable.
+    }
+
     final targetFile = File(savePath);
 
     if (!await targetFile.parent.exists()) {
@@ -879,19 +945,23 @@ class DownloadManager {
     }
 
     final dio = _dioFactory();
-    if (isSupabaseHost(effectiveUrl, configuredSupabaseUrl: AppConstants.supabaseUrl)) {
-      final certs = await _pinnedCertsLoader();
-      if (certs.isNotEmpty) {
-        applyCertificatePinning(dio, pinnedCertificatesPem: certs);
-      }
-    } else if (kDebugMode) {
-      debugPrint(
-        'ℹ️ [DownloadManager] URL domain (${Uri.tryParse(effectiveUrl)?.host}) is an external CDN. '
-        'Using standard TLS validation (Supabase pinning bypassed for external CDN).',
-      );
-    }
-    final usedParallelDownload = await _tryDownloadWithParallelRanges(
 
+    Future<void> applyPinningIfNeeded(String forUrl) async {
+      if (isSupabaseHost(forUrl, configuredSupabaseUrl: AppConstants.supabaseUrl)) {
+        final certs = await _pinnedCertsLoader();
+        if (certs.isNotEmpty) {
+          applyCertificatePinning(dio, pinnedCertificatesPem: certs);
+        }
+      } else if (kDebugMode) {
+        debugPrint(
+          'ℹ️ [DownloadManager] URL domain (${Uri.tryParse(forUrl)?.host}) is an external CDN. '
+          'Using standard TLS validation (Supabase pinning bypassed for external CDN).',
+        );
+      }
+    }
+
+    await applyPinningIfNeeded(effectiveUrl);
+    final usedParallelDownload = await _tryDownloadWithParallelRanges(
       dio: dio,
       url: effectiveUrl,
       savePath: savePath,
@@ -902,6 +972,7 @@ class DownloadManager {
     if (usedParallelDownload) return;
 
     var attempt = 0;
+    var linkRefreshUsed = false;
     while (true) {
       attempt++;
       try {
@@ -922,6 +993,32 @@ class DownloadManager {
         return;
       } catch (e) {
         if (cancelToken.isCancelled) rethrow;
+
+        if (!linkRefreshUsed &&
+            sourceUrl != null &&
+            sourceUrl.isNotEmpty &&
+            _looksLikeExpiredLinkError(e)) {
+          linkRefreshUsed = true;
+          final fresh = await fetchFreshTrackUrl(
+            sourceUrl: sourceUrl,
+            qualityLabel: qualityLabel,
+            trackType: trackType,
+          );
+          if (fresh != null && fresh.isNotEmpty && fresh != effectiveUrl) {
+            if (kDebugMode) {
+              debugPrint(
+                '🔄 [DownloadManager] Link expired mid-download for task '
+                '${task.taskId} — refreshed and retrying (not counted '
+                'against the retry budget)',
+              );
+            }
+            effectiveUrl = fresh;
+            await applyPinningIfNeeded(effectiveUrl);
+            attempt--; // link refresh isn't a "retry" of the same failure
+            continue;
+          }
+        }
+
         if (attempt >= _maxWorkerAttempts || !_isTransientDownloadError(e)) {
           rethrow;
         }
