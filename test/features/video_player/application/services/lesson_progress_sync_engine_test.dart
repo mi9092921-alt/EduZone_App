@@ -155,4 +155,58 @@ void main() {
 
     expect(engine.pendingCount, 1);
   });
+
+  test(
+    'closeSession discards a failed/retry-queued item instead of leaving '
+    "it to retry under a future account's session (STATE-003 regression)",
+    () async {
+      // Account A's flush fails (e.g. offline right as they log out) and is
+      // left queued for retry, exactly like "requeues the batch when sync
+      // fails" above.
+      when(
+        () => repository.syncProgressBatch(any()),
+      ).thenAnswer((_) async => const Left(ServerFailure('offline')));
+
+      engine.enqueue(
+        const LessonProgressSyncItem(
+          courseId: 'account-a-course',
+          lessonId: 'account-a-lesson',
+          completed: false,
+          progressPct: 10,
+        ),
+        flushNow: true,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.pendingCount, 1);
+
+      // Logout closes the session. This must discard the failed item
+      // rather than leave it queued for the retry timer -- otherwise, once
+      // a *different* account opens a new session on this device, the
+      // eventual retry would call syncProgressBatch() with account A's
+      // course/lesson data while the ambient Supabase session belongs to
+      // account B (video_player_remote_ds.dart reads currentUser.id at
+      // flush time, not enqueue time), silently attributing account A's
+      // watch progress to account B.
+      await engine.closeSession();
+      expect(engine.pendingCount, 0);
+
+      // A different account's session opens and the retry timer's original
+      // window elapses. The stale item must never have been flushed.
+      when(
+        () => repository.syncProgressBatch(any()),
+      ).thenAnswer((_) async => const Right(null));
+      engine.openSession();
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      verifyNever(
+        () => repository.syncProgressBatch(
+          any(
+            that: predicate<List<LessonProgressSyncItem>>(
+              (items) => items.any((i) => i.courseId == 'account-a-course'),
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }

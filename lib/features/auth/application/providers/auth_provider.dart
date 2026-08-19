@@ -206,6 +206,13 @@ class Auth extends _$Auth {
                   : null,
             ),
           );
+          // Guard, matching login()'s equivalent call: if a concurrent
+          // logout()/passive-revocation already superseded this operation,
+          // _safeSetStateIfStillPending above was a silent no-op (state is
+          // no longer AuthInitializing/AuthDegraded) and that concurrent
+          // path has already correctly closed the shared progress-sync
+          // session -- reopening it here would undo that.
+          if (!_isCurrentAuthOperation(operationGeneration)) return;
           openUserProgressSession(ref);
 
           // Track activity and session in the background (device already validated/re-bound above)
@@ -714,6 +721,17 @@ class Auth extends _$Auth {
     // A new login/passive revocation may have superseded this logout while
     // server cleanup was in flight. Do not clear the newer session locally.
     if (!_isCurrentAuthOperation(generation)) return;
+
+    // Flush any pending lesson-progress writes while the about-to-be-cleared
+    // session's token is still valid, then close the shared queue so it
+    // stops accepting new items and discards anything left over instead of
+    // silently retrying it under whatever account signs in next on this
+    // device (see LessonProgressSyncEngine.closeSession doc comment, and
+    // video_player_remote_ds.dart's syncProgressBatch, which reads the
+    // *ambient* Supabase currentUser.id at flush time -- not at enqueue
+    // time -- so a stale retry after a new login would otherwise be
+    // attributed to the new account, corrupting their progress data).
+    await flushAndCloseUserProgressSession(ref);
 
     // ── Phase 3: Clear local session securely ───────────────────────────────
     await orchestrator.forceLocalCleanup();
