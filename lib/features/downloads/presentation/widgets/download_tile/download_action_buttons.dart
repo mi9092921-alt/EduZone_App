@@ -1,16 +1,16 @@
-import 'package:app/core/error/failures.dart';
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/design_system/design_system.dart';
 import 'package:app/features/downloads/domain/entities/download_enums.dart';
 import 'package:app/shared/utils/app_snackbar.dart';
+import 'package:app/shared/utils/error_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../application/providers/downloads_provider.dart';
 
-/// Runs a [DownloadsNotifier] action and surfaces a [Failure] (or any
-/// other error) as an error SnackBar instead of letting it become an
-/// unhandled Future rejection.
+/// Runs a [DownloadsNotifier] action and surfaces a safe, user-facing
+/// error message (or any other error) as an error SnackBar instead of
+/// letting it become an unhandled Future rejection.
 ///
 /// Extracted from `download_tile.dart`'s private `_performAction` method
 /// — mirrors the pattern already used for
@@ -25,7 +25,7 @@ Future<void> performDownloadAction(
   } catch (e) {
     if (!context.mounted) return;
     final l10n = AppLocalizations.of(context)!;
-    final message = e is Failure ? e.message : e.toString();
+    final message = ErrorHandler.getMessage(context, e);
     AppSnackbar.showError(
       context: context,
       message: l10n.downloadActionFailed(message),
