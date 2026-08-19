@@ -391,5 +391,74 @@ void main() {
         unsignedDir.deleteSync(recursive: true);
       },
     );
+
+    test('creates and persists download session and chunk manifest', () async {
+      final tempDir = Directory.systemTemp.createTempSync('eduzone_manifest');
+      final service = StorageService(documentsDirectoryPath: tempDir.path);
+      final now = DateTime.now().millisecondsSinceEpoch;
+
+      await service.insertDownloadSession({
+        'download_id': 'session-1',
+        'lesson_id': 'lesson-1',
+        'course_id': 'course-1',
+        'content_version': 'v1',
+        'quality': '720p',
+        'track_type': 'video',
+        'total_bytes': 1024,
+        'chunk_size': 512,
+        'total_chunks': 2,
+        'completed_bytes': 0,
+        'status': 'downloading',
+        'created_at': now,
+        'updated_at': now,
+        'source_identity': 'lesson-1:v1:720p:video',
+        'entitlement_id': 'entitlement-1',
+        'encryption_version': 1,
+        'container_version': 1,
+      });
+      await service.upsertDownloadChunk({
+        'download_id': 'session-1',
+        'chunk_index': 0,
+        'plaintext_start': 0,
+        'plaintext_length': 512,
+        'encrypted_offset': 18,
+        'encrypted_length': 528,
+        'state': 'pending',
+        'downloaded_bytes': 0,
+        'attempts': 1,
+        'updated_at': now,
+        'committed_at': now,
+      });
+
+      expect(
+        (await service.getDownloadSession('session-1'))?['status'],
+        equals('downloading'),
+      );
+      final chunks = await service.getDownloadChunks('session-1');
+      expect(chunks, hasLength(1));
+      expect(chunks.single['state'], equals('pending'));
+
+      await service.commitDownloadChunk(
+        downloadId: 'session-1',
+        chunkIndex: 0,
+        completedBytes: 512,
+        checksum: 'chunk-checksum',
+      );
+      expect(
+        (await service.getDownloadChunks('session-1')).single['state'],
+        equals('verified'),
+      );
+      await service.commitDownloadChunk(
+        downloadId: 'session-1',
+        chunkIndex: 0,
+        completedBytes: 512,
+        checksum: 'chunk-checksum',
+      );
+      final committedSession = await service.getDownloadSession('session-1');
+      expect(committedSession?['completed_bytes'], equals(512));
+
+      await service.close();
+      tempDir.deleteSync(recursive: true);
+    });
   });
 }

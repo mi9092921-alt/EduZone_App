@@ -20,10 +20,12 @@ import 'package:sqflite/sqflite.dart';
 /// - File sizes and checksums
 class StorageService {
   static const _databaseName = 'eduzone_downloads.db';
-  static const _databaseVersion = 9;
+  static const _databaseVersion = 10;
 
   static const _tableDownloadedLessons = 'downloaded_lessons';
   static const _tableBookmarks = 'bookmarks';
+  static const _tableDownloadSessions = 'download_sessions';
+  static const _tableDownloadChunks = 'download_chunks';
 
   /// Secure-storage key for the device-bound HMAC key used to sign
   /// security-critical download metadata (P6.22/P6.23). Never the AES
@@ -143,6 +145,8 @@ class StorageService {
     await db.execute('''
       CREATE INDEX idx_bookmarks_user ON $_tableBookmarks(user_id)
     ''');
+
+    await _createDownloadManifestTables(db);
   }
 
   /// Handles database upgrades.
@@ -281,6 +285,10 @@ class StorageService {
       // They remain visible so the user can delete/re-download them.
     }
 
+    if (oldVersion < 10) {
+      await _createDownloadManifestTables(db);
+    }
+
     // Preventive data-integrity sweep: any 'completed' row that is missing
     // critical numeric fields would cause a silent TypeError in _mapToEntity
     // (swallowed by the catch block), making it invisible in the downloads
@@ -293,6 +301,195 @@ class StorageService {
         AND (file_size IS NULL OR downloaded_at IS NULL OR expires_at IS NULL)
     ''');
     debugPrint('[StorageService] onUpgrade $oldVersion→$newVersion complete');
+  }
+
+  Future<void> _createDownloadManifestTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $_tableDownloadSessions (
+        download_id TEXT PRIMARY KEY,
+        lesson_id TEXT NOT NULL,
+        course_id TEXT NOT NULL,
+        content_version TEXT NOT NULL DEFAULT '',
+        quality TEXT NOT NULL,
+        track_type TEXT NOT NULL,
+        total_bytes INTEGER NOT NULL,
+        chunk_size INTEGER NOT NULL,
+        total_chunks INTEGER NOT NULL,
+        completed_bytes INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        source_identity TEXT NOT NULL,
+        entitlement_id TEXT NOT NULL DEFAULT '',
+        expires_at INTEGER,
+        encryption_version INTEGER NOT NULL DEFAULT 1,
+        container_version INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_download_sessions_status
+      ON $_tableDownloadSessions(status)
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $_tableDownloadChunks (
+        download_id TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        plaintext_start INTEGER NOT NULL,
+        plaintext_length INTEGER NOT NULL,
+        encrypted_offset INTEGER NOT NULL,
+        encrypted_length INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        checksum TEXT,
+        updated_at INTEGER NOT NULL,
+        last_error TEXT,
+        committed_at INTEGER,
+        PRIMARY KEY (download_id, chunk_index),
+        FOREIGN KEY (download_id) REFERENCES $_tableDownloadSessions(download_id)
+          ON DELETE CASCADE
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_download_chunks_state
+      ON $_tableDownloadChunks(download_id, state)
+    ''');
+  }
+
+  /// Stores or replaces the durable identity of a download session.
+  Future<void> insertDownloadSession(Map<String, dynamic> session) async {
+    final db = await database;
+    await db.insert(
+      _tableDownloadSessions,
+      session,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<Map<String, dynamic>?> getDownloadSession(String downloadId) async {
+    final db = await database;
+    final rows = await db.query(
+      _tableDownloadSessions,
+      where: 'download_id = ?',
+      whereArgs: [downloadId],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<List<Map<String, dynamic>>> getDownloadSessions() async {
+    final db = await database;
+    return db.query(_tableDownloadSessions, orderBy: 'updated_at DESC');
+  }
+
+  Future<void> updateDownloadSession(
+    String downloadId,
+    Map<String, dynamic> updates,
+  ) async {
+    final db = await database;
+    await db.update(
+      _tableDownloadSessions,
+      {...updates, 'updated_at': DateTime.now().millisecondsSinceEpoch},
+      where: 'download_id = ?',
+      whereArgs: [downloadId],
+    );
+  }
+
+  Future<void> deleteDownloadSession(String downloadId) async {
+    final db = await database;
+    await db.delete(
+      _tableDownloadSessions,
+      where: 'download_id = ?',
+      whereArgs: [downloadId],
+    );
+  }
+
+  Future<void> upsertDownloadChunk(Map<String, dynamic> chunk) async {
+    final db = await database;
+    await db.insert(
+      _tableDownloadChunks,
+      chunk,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getDownloadChunks(String downloadId) async {
+    final db = await database;
+    return db.query(
+      _tableDownloadChunks,
+      where: 'download_id = ?',
+      whereArgs: [downloadId],
+      orderBy: 'chunk_index ASC',
+    );
+  }
+
+  Future<void> updateDownloadChunk(
+    String downloadId,
+    int chunkIndex,
+    Map<String, dynamic> updates,
+  ) async {
+    final db = await database;
+    await db.update(
+      _tableDownloadChunks,
+      {...updates, 'updated_at': DateTime.now().millisecondsSinceEpoch},
+      where: 'download_id = ? AND chunk_index = ?',
+      whereArgs: [downloadId, chunkIndex],
+    );
+  }
+
+  /// Atomically marks a chunk as verified and advances its parent session.
+  ///
+  /// The byte counter is advanced only when the previous state was not
+  /// `verified`, making repeated recovery/commit calls idempotent.
+  Future<void> commitDownloadChunk({
+    required String downloadId,
+    required int chunkIndex,
+    required int completedBytes,
+    String? checksum,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        _tableDownloadChunks,
+        columns: ['state'],
+        where: 'download_id = ? AND chunk_index = ?',
+        whereArgs: [downloadId, chunkIndex],
+        limit: 1,
+      );
+      if (rows.isEmpty || rows.first['state'] == 'verified') return;
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await txn.update(
+        _tableDownloadChunks,
+        {
+          'state': 'verified',
+          'downloaded_bytes': completedBytes,
+          'checksum': checksum,
+          'updated_at': now,
+          'committed_at': now,
+          'last_error': null,
+        },
+        where: 'download_id = ? AND chunk_index = ?',
+        whereArgs: [downloadId, chunkIndex],
+      );
+      await txn.rawUpdate(
+        '''
+        UPDATE $_tableDownloadSessions
+        SET completed_bytes = completed_bytes + ?, updated_at = ?
+        WHERE download_id = ?
+        ''',
+        [completedBytes, now, downloadId],
+      );
+    });
+  }
+
+  Future<void> deleteDownloadChunks(String downloadId) async {
+    final db = await database;
+    await db.delete(
+      _tableDownloadChunks,
+      where: 'download_id = ?',
+      whereArgs: [downloadId],
+    );
   }
 
   /// Inserts a new download record.

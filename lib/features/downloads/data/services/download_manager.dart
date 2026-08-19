@@ -30,9 +30,10 @@ import '../../../../core/services/encryption_service.dart'
         encryptChunkBatch,
         planChunkLayout,
         totalEncryptedSizeForPlan;
-
 import '../../data/datasources/download_remote_ds.dart';
 import '../../domain/entities/download_enums.dart';
+import 'chunk_scheduler.dart';
+import 'chunk_transport.dart';
 
 /// Top-level callback triggered by background_downloader when a task's
 /// server link is nearing expiration (TTL < 6h).
@@ -519,6 +520,10 @@ class DownloadManager {
     required ProgressCallback onProgress,
     String? downloadId,
     Map<String, String>? headers,
+    Future<void> Function(int totalBytes, List<PlannedChunk> plan)?
+        onPlanCreated,
+    Future<void> Function(PlannedChunk chunk)? onChunkCommitted,
+    Set<int>? completedChunkIndexes,
   }) async {
     if (!_dioParallelEligiblePlatform) return null;
     if (_activeDownloadIds.length >= _maxConcurrentDownloads) {
@@ -561,9 +566,17 @@ class DownloadManager {
       }
 
       final plan = planChunkLayout(probe.totalBytes);
+      await onPlanCreated?.call(probe.totalBytes, plan);
+      final completed = completedChunkIndexes ?? const <int>{};
+      final pendingPlan = plan
+          .where((chunk) => !completed.contains(chunk.index))
+          .toList(growable: false);
       final destFile = File(encryptedSavePath);
       await destFile.parent.create(recursive: true);
-      if (await destFile.exists()) await destFile.delete();
+      final hasResumableFile = completed.isNotEmpty && await destFile.exists();
+      if (!hasResumableFile && await destFile.exists()) {
+        await destFile.delete();
+      }
 
       // Single open here — deliberately NOT one `File.open()` per worker
       // the way the plaintext `_downloadRange` path does. `FileMode.write`
@@ -574,14 +587,16 @@ class DownloadManager {
       // this single handle — serialized through [_AsyncFileWriteLock] below
       // — sidesteps that risk entirely rather than depending on the exact
       // truncate/seek semantics of any particular `FileMode`.
-      raf = await destFile.open(mode: FileMode.write);
-      await raf.writeFrom(chunkedFormatHeaderBytes);
+      if (!await destFile.exists()) await destFile.create(recursive: true);
+      raf = await destFile.open(mode: FileMode.writeOnly);
+      if (!hasResumableFile) await raf.writeFrom(chunkedFormatHeaderBytes);
       await raf.truncate(totalEncryptedSizeForPlan(plan));
 
       final chunkCount = probe.totalBytes >= _parallelDownloadLargeBytes ? 6 : 4;
-      final workerChunkGroups = _splitChunksAcrossWorkers(plan, chunkCount);
+      final workerChunkGroups = _splitChunksAcrossWorkers(pendingPlan, chunkCount);
       final progressByWorker = List<int>.filled(workerChunkGroups.length, 0);
       final writeLock = _AsyncFileWriteLock();
+      final chunkTransport = DioChunkTransport(dio);
 
       if (kDebugMode) {
         debugPrint(
@@ -590,23 +605,32 @@ class DownloadManager {
         );
       }
 
-      await Future.wait([
-        for (var w = 0; w < workerChunkGroups.length; w++)
-          _downloadAndEncryptChunkGroup(
-            dio: dio,
-            url: url,
-            headers: effectiveHeaders,
-            raf: raf,
-            writeLock: writeLock,
-            chunks: workerChunkGroups[w],
-            workerIndex: w,
-            progressByWorker: progressByWorker,
-            totalPlaintextBytes: probe.totalBytes,
-            keyBase64: encryptionKeyBase64,
-            cancelToken: cancelToken,
-            onProgress: onProgress,
-          ),
-      ]);
+      onProgress(
+        completed
+            .where((index) => index >= 0 && index < plan.length)
+            .map((index) => plan[index].plaintextLength)
+            .fold<int>(0, (sum, bytes) => sum + bytes),
+        probe.totalBytes,
+      );
+
+      await ChunkScheduler(concurrency: workerChunkGroups.length).run<int>(
+        items: [for (var i = 0; i < workerChunkGroups.length; i++) i],
+        execute: (workerIndex) => _downloadAndEncryptChunkGroup(
+          transport: chunkTransport,
+          url: url,
+          headers: effectiveHeaders,
+          raf: raf!,
+          writeLock: writeLock,
+          chunks: workerChunkGroups[workerIndex],
+          workerIndex: workerIndex,
+          progressByWorker: progressByWorker,
+          totalPlaintextBytes: probe.totalBytes,
+          keyBase64: encryptionKeyBase64,
+          cancelToken: cancelToken,
+          onChunkCommitted: onChunkCommitted,
+          onProgress: onProgress,
+        ),
+      );
 
       onProgress(probe.totalBytes, probe.totalBytes);
 
@@ -653,7 +677,7 @@ class DownloadManager {
   /// each chunk as soon as enough bytes for it have arrived, and writes the
   /// result straight to its precomputed position via [raf]/[writeLock].
   Future<void> _downloadAndEncryptChunkGroup({
-    required Dio dio,
+    required ChunkTransport transport,
     required String url,
     required Map<String, String> headers,
     required RandomAccessFile raf,
@@ -664,6 +688,7 @@ class DownloadManager {
     required int totalPlaintextBytes,
     required String keyBase64,
     required CancelToken cancelToken,
+    Future<void> Function(PlannedChunk chunk)? onChunkCommitted,
     required ProgressCallback onProgress,
   }) async {
     if (chunks.isEmpty) return;
@@ -684,21 +709,13 @@ class DownloadManager {
       final rangeStart = chunks[flushedChunkCount].plaintextStart;
 
       try {
-        final response = await dio.get<ResponseBody>(
-          url,
-          options: Options(
-            headers: {...headers, 'Range': 'bytes=$rangeStart-$rangeEnd'},
-            followRedirects: true,
-            responseType: ResponseType.stream,
-            receiveTimeout: Duration.zero,
-            sendTimeout: const Duration(seconds: 30),
-            validateStatus: (status) => status == 206,
-          ),
+        final response = await transport.openRange(
+          url: url,
+          start: rangeStart,
+          end: rangeEnd,
+          headers: headers,
           cancelToken: cancelToken,
         );
-
-        final body = response.data;
-        if (body == null) throw StateError('Range response body is empty');
 
         // FIFO of not-yet-consumed network packets, so a chunk boundary
         // that falls mid-packet doesn't require re-copying everything
@@ -757,10 +774,15 @@ class DownloadManager {
               await raf.writeFrom(rec.cipherWithTag);
             }
           });
+          if (onChunkCommitted != null) {
+            for (final chunk in toEncrypt) {
+              await onChunkCommitted(chunk);
+            }
+          }
           flushedChunkCount += toEncrypt.length;
         }
 
-        await for (final data in body.stream.timeout(_streamIdleTimeout)) {
+        await for (final data in response.stream.timeout(_streamIdleTimeout)) {
           if (cancelToken.isCancelled) {
             throw cancelToken.cancelError ?? StateError('Download canceled');
           }

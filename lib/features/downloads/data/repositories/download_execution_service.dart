@@ -6,9 +6,11 @@ import 'package:flutter/foundation.dart';
 import '../../../../core/services/encryption_service.dart';
 import '../../domain/entities/download_enums.dart';
 import '../../domain/entities/download_progress.dart';
+import '../../domain/entities/download_session.dart';
 import '../datasources/download_local_ds.dart';
 import '../datasources/download_remote_ds.dart';
 import '../services/download_manager.dart';
+import '../services/download_manifest_service.dart';
 import '../services/download_notification_helper.dart';
 
 /// Runs a single download end-to-end in the background: downloads (and
@@ -36,6 +38,7 @@ class DownloadExecutionService {
   final DownloadLocalDataSource _localDataSource;
   final DownloadManager _downloadManager;
   final EncryptionService _encryptionService;
+  final DownloadManifestService? _manifestService;
 
   // Shared session state, owned by DownloadRepositoryImpl and passed by
   // reference so this service and the repository observe the same state.
@@ -50,6 +53,7 @@ class DownloadExecutionService {
     required DownloadLocalDataSource localDataSource,
     required DownloadManager downloadManager,
     required EncryptionService encryptionService,
+    DownloadManifestService? manifestService,
     required Map<String, StreamController<DownloadProgress>>
         progressControllers,
     required Map<String, String> downloadManagerIds,
@@ -60,6 +64,7 @@ class DownloadExecutionService {
         _localDataSource = localDataSource,
         _downloadManager = downloadManager,
         _encryptionService = encryptionService,
+        _manifestService = manifestService,
         _progressControllers = progressControllers,
         _downloadManagerIds = downloadManagerIds,
         _pausedDownloads = pausedDownloads,
@@ -84,18 +89,79 @@ class DownloadExecutionService {
     required String tempPath,
     required String encryptedSavePath,
     required String encryptionKey,
+    required String lessonId,
     required String? sourceUrl,
     required String? qualityLabel,
     String? trackType,
+    required String manifestDownloadId,
+    required String courseId,
+    required String contentVersion,
+    required String entitlementId,
+    required DateTime? manifestExpiresAt,
     required void Function(int received, int total) onProgress,
   }) async {
-    final pipelinedManagerId = await _downloadManager.startEncryptedDownload(
-      downloadId: downloadId,
-      url: url,
-      encryptedSavePath: encryptedSavePath,
-      encryptionKeyBase64: encryptionKey,
-      onProgress: onProgress,
-    );
+    final manifest = _manifestService;
+    Future<void> onPlanCreated(int totalBytes, List<PlannedChunk> plan) async {
+      if (manifest == null) return;
+      final now = DateTime.now();
+      final effectiveTrack = trackType ?? 'video';
+      final effectiveQuality = qualityLabel ?? 'unknown';
+      await manifest.persistPlan(
+        session: DownloadSession(
+          downloadId: manifestDownloadId,
+          lessonId: lessonId,
+          courseId: courseId,
+          contentVersion: contentVersion,
+          quality: effectiveQuality,
+          trackType: effectiveTrack,
+          totalBytes: totalBytes,
+          chunkSize: plan.isEmpty ? 0 : plan.first.plaintextLength,
+          totalChunks: plan.length,
+          completedBytes: 0,
+          status: 'downloading',
+          createdAt: now,
+          updatedAt: now,
+          sourceIdentity:
+              '$lessonId:$contentVersion:$effectiveQuality:$effectiveTrack',
+          entitlementId: entitlementId,
+          expiresAt: manifestExpiresAt,
+          encryptionVersion: 1,
+          containerVersion: 1,
+        ),
+        plan: plan,
+      );
+    }
+
+    Future<void> onChunkCommitted(PlannedChunk chunk) async {
+      if (manifest == null) return;
+      await manifest.commitChunk(
+        downloadId: manifestDownloadId,
+        chunk: chunk,
+      );
+    }
+
+    final verifiedChunkIndexes = manifest == null
+        ? null
+        : await manifest.getVerifiedChunkIndexes(manifestDownloadId);
+
+    final pipelinedManagerId = manifest == null
+        ? await _downloadManager.startEncryptedDownload(
+            downloadId: downloadId,
+            url: url,
+            encryptedSavePath: encryptedSavePath,
+            encryptionKeyBase64: encryptionKey,
+            onProgress: onProgress,
+          )
+        : await _downloadManager.startEncryptedDownload(
+            downloadId: downloadId,
+            url: url,
+            encryptedSavePath: encryptedSavePath,
+            encryptionKeyBase64: encryptionKey,
+            onPlanCreated: onPlanCreated,
+            onChunkCommitted: onChunkCommitted,
+            completedChunkIndexes: verifiedChunkIndexes,
+            onProgress: onProgress,
+          );
     if (pipelinedManagerId != null) return pipelinedManagerId;
 
     if (kDebugMode) {
@@ -142,6 +208,10 @@ class DownloadExecutionService {
     VideoQuality? quality,
     DateTime? accessExpiresAt,
     String? sourceUrl,
+    String courseId = '',
+    String contentVersion = '',
+    String entitlementId = '',
+    DateTime? manifestExpiresAt,
   }) async {
     // Update status to downloading
     await _localDataSource.updateDownloadStatus(downloadId, 'downloading');
@@ -219,8 +289,14 @@ class DownloadExecutionService {
           tempPath: videoTempPath,
           encryptedSavePath: videoSavePath,
           encryptionKey: encryptionKey,
+          lessonId: lessonId,
           sourceUrl: sourceUrl,
           qualityLabel: quality?.label,
+          manifestDownloadId: '${downloadId}_video',
+          courseId: courseId,
+          contentVersion: contentVersion,
+          entitlementId: entitlementId,
+          manifestExpiresAt: manifestExpiresAt,
           onProgress: (received, total) {
             videoReceived = received;
             videoTotal = total > 0 ? total : videoTotal;
@@ -234,9 +310,15 @@ class DownloadExecutionService {
           tempPath: audioTempPath!,
           encryptedSavePath: audioSavePath,
           encryptionKey: encryptionKey,
+          lessonId: lessonId,
           sourceUrl: sourceUrl,
           qualityLabel: quality?.label,
           trackType: 'audio',
+          manifestDownloadId: '${downloadId}_audio',
+          courseId: courseId,
+          contentVersion: contentVersion,
+          entitlementId: entitlementId,
+          manifestExpiresAt: manifestExpiresAt,
           onProgress: (received, total) {
             audioReceived = received;
             audioTotal = total > 0 ? total : audioTotal;
@@ -275,8 +357,14 @@ class DownloadExecutionService {
           tempPath: videoTempPath,
           encryptedSavePath: videoSavePath,
           encryptionKey: encryptionKey,
+          lessonId: lessonId,
           sourceUrl: sourceUrl,
           qualityLabel: quality?.label,
+          manifestDownloadId: downloadId,
+          courseId: courseId,
+          contentVersion: contentVersion,
+          entitlementId: entitlementId,
+          manifestExpiresAt: manifestExpiresAt,
           onProgress: (received, total) {
             videoReceived = received;
             videoTotal = total;

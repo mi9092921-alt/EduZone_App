@@ -6,6 +6,8 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../../../core/utils/device_info_helper.dart';
+import '../../domain/entities/download_chunk.dart';
+import '../../domain/entities/download_session.dart';
 import '../../domain/entities/downloaded_lesson.dart';
 
 /// Local data source for download operations.
@@ -136,6 +138,66 @@ class DownloadLocalDataSource {
     });
   }
 
+  Future<void> saveDownloadSession(DownloadSession session) async {
+    await _storageService.insertDownloadSession(session.toMap());
+  }
+
+  Future<DownloadSession?> getDownloadSession(String downloadId) async {
+    final row = await _storageService.getDownloadSession(downloadId);
+    return row == null ? null : DownloadSession.fromMap(row);
+  }
+
+  Future<List<DownloadSession>> getDownloadSessions() async {
+    final rows = await _storageService.getDownloadSessions();
+    return rows.map(DownloadSession.fromMap).toList(growable: false);
+  }
+
+  Future<void> updateDownloadSession(
+    String downloadId,
+    Map<String, dynamic> updates,
+  ) async {
+    await _storageService.updateDownloadSession(downloadId, updates);
+  }
+
+  Future<void> deleteDownloadSession(String downloadId) async {
+    await _storageService.deleteDownloadSession(downloadId);
+  }
+
+  Future<void> saveDownloadChunk(DownloadChunk chunk) async {
+    await _storageService.upsertDownloadChunk(chunk.toMap());
+  }
+
+  Future<List<DownloadChunk>> getDownloadChunks(String downloadId) async {
+    final rows = await _storageService.getDownloadChunks(downloadId);
+    return rows.map(DownloadChunk.fromMap).toList(growable: false);
+  }
+
+  Future<void> updateDownloadChunk(
+    String downloadId,
+    int chunkIndex,
+    Map<String, dynamic> updates,
+  ) async {
+    await _storageService.updateDownloadChunk(downloadId, chunkIndex, updates);
+  }
+
+  Future<void> commitDownloadChunk({
+    required String downloadId,
+    required int chunkIndex,
+    required int completedBytes,
+    String? checksum,
+  }) async {
+    await _storageService.commitDownloadChunk(
+      downloadId: downloadId,
+      chunkIndex: chunkIndex,
+      completedBytes: completedBytes,
+      checksum: checksum,
+    );
+  }
+
+  Future<void> deleteDownloadChunks(String downloadId) async {
+    await _storageService.deleteDownloadChunks(downloadId);
+  }
+
   /// Gets all downloads from the local database.
   ///
   /// Scoped to the current account by default (see
@@ -177,10 +239,13 @@ class DownloadLocalDataSource {
   }
 
   /// Gets a download by its ID.
-  Future<Map<String, dynamic>?> getDownloadById(String id) async {
+  Future<Map<String, dynamic>?> getDownloadById(
+    String id, {
+    bool scopeToCurrentUser = true,
+  }) async {
     return await _storageService.getDownloadById(
       id,
-      ownerUserId: _currentUserId(),
+      ownerUserId: scopeToCurrentUser ? _currentUserId() : null,
     );
   }
 

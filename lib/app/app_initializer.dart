@@ -15,6 +15,7 @@ import '../core/utils/device_info_helper.dart';
 import '../features/downloads/application/services/offline_crash_recovery.dart';
 import '../features/downloads/data/datasources/download_local_ds.dart';
 import '../features/downloads/data/services/download_manager.dart';
+import '../features/downloads/data/services/download_recovery_service.dart';
 import '../features/notifications/data/services/fcm_service.dart';
 
 class AppInitializer {
@@ -91,24 +92,27 @@ class AppInitializer {
         }),
       );
 
-      // 7. Offline downloads crash recovery (P6.31) — reclassify any
-      // download left in `pending`/`downloading` status by a previous
-      // process that died mid-download, so it shows as an actionable
-      // "failed" tile instead of a permanently stuck progress bar.
+      // 7. Durable download recovery: reconcile the SQLite manifest with
+      // encrypted files before any session is resumed. This preserves safe
+      // verified chunks instead of downgrading the whole download to failed.
       // Constructed directly (not via Riverpod) because no ProviderScope
       // exists yet at this point in startup — same constraint
       // CleanupScheduler's isolate callback already has.
       unawaited(
-        OfflineCrashRecovery(
+        DownloadRecoveryService(
           localDataSource: DownloadLocalDataSource(
             StorageService(secureStorage: const FlutterSecureStorage()),
           ),
-        ).reconcileInterruptedDownloads().catchError((Object e) {
+        ).reconcile().catchError((Object e) {
           debugPrint(
-            '⚠️ Offline crash-recovery reconciliation failed: '
+            '⚠️ Durable download recovery failed: '
             '${e.runtimeType}',
           );
-          return 0;
+          return const DownloadRecoveryReport(
+            sessionsScanned: 0,
+            chunksReset: 0,
+            chunksInvalidated: 0,
+          );
         }),
       );
 

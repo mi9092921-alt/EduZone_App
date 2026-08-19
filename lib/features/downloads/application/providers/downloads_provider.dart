@@ -9,6 +9,7 @@ import '../../data/datasources/download_local_ds.dart';
 import '../../data/datasources/download_remote_ds.dart';
 import '../../data/repositories/download_repository_impl.dart';
 import '../../data/services/download_manager.dart';
+import '../../data/services/download_manifest_service.dart';
 import '../../domain/entities/download_enums.dart';
 import '../../domain/entities/download_progress.dart';
 import '../../domain/entities/downloaded_lesson.dart';
@@ -59,6 +60,9 @@ DownloadRepository downloadRepository(Ref ref) {
     localDataSource: ref.watch(downloadLocalDataSourceProvider),
     downloadManager: ref.watch(downloadManagerProvider),
     encryptionService: ref.watch(encryptionServiceProvider),
+    manifestService: DownloadManifestService(
+      localDataSource: ref.watch(downloadLocalDataSourceProvider),
+    ),
   );
 }
 

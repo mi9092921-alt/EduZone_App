@@ -15,6 +15,7 @@ import '../../domain/repositories/download_repository.dart';
 import '../datasources/download_local_ds.dart';
 import '../datasources/download_remote_ds.dart';
 import '../services/download_manager.dart';
+import '../services/download_manifest_service.dart';
 import '../services/download_notification_helper.dart';
 import 'download_execution_service.dart';
 import 'download_format_selector.dart';
@@ -33,6 +34,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
   final DownloadQueryService _queryService;
   final DownloadFormatSelector _formatSelector;
   final DownloadLinkRefresher _linkRefresher;
+  final DownloadManifestService? _manifestService;
 
   // Assigned in the constructor body (not the initializer list) so it can
   // be wired to the exact same _progressControllers/_downloadManagerIds/
@@ -79,6 +81,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
     required DownloadLocalDataSource localDataSource,
     required DownloadManager downloadManager,
     required EncryptionService encryptionService,
+    DownloadManifestService? manifestService,
     Uuid? uuid,
   })  : _remoteDataSource = remoteDataSource,
         _localDataSource = localDataSource,
@@ -90,6 +93,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
           remoteDataSource: remoteDataSource,
           localDataSource: localDataSource,
         ),
+        _manifestService = manifestService,
         _uuid = uuid ?? const Uuid() {
     DownloadNotificationHelper.init();
     _executionService = DownloadExecutionService(
@@ -97,6 +101,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       localDataSource: localDataSource,
       downloadManager: downloadManager,
       encryptionService: encryptionService,
+      manifestService: _manifestService,
       // Shared by reference with this repository's own session-state
       // fields — see the field-level doc comment above.
       progressControllers: _progressControllers,
@@ -260,6 +265,12 @@ class DownloadRepositoryImpl implements DownloadRepository {
           audioSavePath: audioPath,
           encryptionKey: encryptionKey,
           lessonId: lessonId,
+          courseId: courseId,
+          contentVersion:
+              offlineEntitlement['content_version']?.toString() ?? '',
+          entitlementId:
+              offlineEntitlement['entitlement_id']?.toString() ?? '',
+          manifestExpiresAt: expiresAt,
           quality: quality,
           accessExpiresAt: serverExpiresAt,
           sourceUrl: videoUrl,
@@ -292,6 +303,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _pausedDownloads.add(downloadId);
       await _downloadManager.pauseDownload(managerDownloadId);
       await _localDataSource.updateDownloadStatus(downloadId, 'paused');
+      await _manifestService?.markPaused(downloadId);
       _changeController.add(null);
       await DownloadNotificationHelper.cancel(downloadId: downloadId);
       return const Right(null);
@@ -407,6 +419,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       _changeController.add(null);
       _pausedDownloads.remove(downloadId);
       _cancelledDownloads.remove(downloadId);
+      await _manifestService?.markRunning(downloadId);
 
       unawaited(
         _executionService.execute(
@@ -418,6 +431,10 @@ class DownloadRepositoryImpl implements DownloadRepository {
           audioSavePath: audioPath,
           encryptionKey: encryptionKey,
           lessonId: lessonId,
+          courseId: downloadData['course_id'] as String? ?? '',
+          contentVersion: downloadData['content_version']?.toString() ?? '',
+          entitlementId: entitlementId,
+          manifestExpiresAt: accessExpiresAt,
           quality: quality,
           accessExpiresAt: accessExpiresAt,
           sourceUrl: sourceUrl,
