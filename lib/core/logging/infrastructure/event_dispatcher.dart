@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../domain/app_event.dart';
 import '../handlers/event_handler.dart';
 
@@ -24,8 +26,24 @@ class EventDispatcher {
       if (handler.shouldHandle(event)) {
         try {
           handler.handle(event);
-        } catch (_) {
-          // Never let a handler crash take down the event pipeline
+        } catch (e) {
+          // Never let one handler's failure take down the pipeline for
+          // the remaining handlers (e.g. a bug in AnalyticsHandler must
+          // not stop AuditHandler from still encrypting/queuing a
+          // security-relevant event for the same AppEvent). Swallowing
+          // this *silently* would itself violate Section 15 ("Audit:
+          // ... unexpected exceptions") by making failures inside the
+          // logging pipeline itself invisible -- surface the exception
+          // type locally in debug builds. Deliberately not forwarded to
+          // Sentry/CrashHandler here: CrashHandler is one of the
+          // handlers this loop calls, so reporting its own failures
+          // through itself risks recursion.
+          if (kDebugMode) {
+            debugPrint(
+              '[EventDispatcher] Handler ${handler.runtimeType} threw '
+              '${e.runtimeType} handling ${event.activityType}',
+            );
+          }
         }
       }
     }

@@ -37,6 +37,7 @@ CHECKS = [
     ("Memory Hygiene Guard", "check_memory_hygiene.py"),
     ("Localization Guard", "check_localizations.py"),
     ("Auth Security Guard", "check_auth_security.py"),
+    ("Logging Security Guard", "check_logging_security.py"),
     ("Config/Secrets Security Guard", "check_config_security.py"),
 ]
 

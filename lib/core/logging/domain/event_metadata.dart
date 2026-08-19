@@ -53,17 +53,4 @@ class LogEntry {
     if (firstFailedAt == null) return false;
     return DateTime.now().difference(firstFailedAt!) > maxAge;
   }
-
-  /// Convert to Supabase-compatible map for `activity_log_queue` insert.
-  Map<String, dynamic> toSupabaseMap() {
-    return {
-      'activity_type': eventType,
-      'user_id': userId, // allow null for anonymous events
-      'tenant_id': tenantId ?? '00000000-0000-0000-0000-000000000001', // Fallback to System Tenant
-      'details': details, // Send Map directly for JSONB
-      'device_id': deviceId,
-      'risk_level': riskLevel,
-      'created_at': createdAt.toUtc().toIso8601String(),
-    };
-  }
 }

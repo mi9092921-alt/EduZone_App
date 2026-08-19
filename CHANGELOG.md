@@ -72,7 +72,9 @@
     in this codebase (e.g. `fcm_service.dart`). Sentry (the controlled,
     scrubbed channel) still receives the full error + stack trace
     either way.
-  Added `test/core/logging/handlers/audit_handler_test.dart` and
+  Added `test/core/logging/infrastructure/event_dispatcher_test.dart`
+  as a regression guard for handler isolation, alongside
+  `test/core/logging/handlers/audit_handler_test.dart` and
   `crash_handler_test.dart` (the logging module had zero prior test
   coverage) covering the fail-closed redaction behavior and breadcrumb
   handling. Not independently re-verified with `flutter analyze`/
@@ -84,6 +86,19 @@
   could not be verified without pub package access in this sandbox, and
   guessing it risked shipping code that doesn't compile — flagged as a
   follow-up requiring a live environment.
+- **CI (Section 25 — CI/CD)**: added `tool/check_logging_security.py`,
+  a new static guard (same regex/`check-ignore` convention as
+  `check_auth_security.py`) wired into `check_all.py`, `Makefile`
+  (`check-logging-security`), and `.github/workflows/ci.yml`. It
+  regression-guards the four Section 15 bugs fixed above one-to-one:
+  direct `.from('activity_log_queue')` access, a bare
+  `LogEntry.fromEvent(event)` call with no `encryptedDetails:` in
+  `audit_handler.dart`, `Sentry.captureException(event.errorMessage,
+  ...)`, and any empty `catch` block reappearing under
+  `lib/core/logging/`. Manually verified against this session's own
+  code: PASSes on the fixed code, and — checked by temporarily
+  reintroducing each of the four original bugs one at a time and
+  re-running the script — correctly FAILs on every one of them.
 - **Security (Section 12 — Offline entitlement RPC volume / P6.25)**:
   `authorize_offline_download` and `revalidate_offline_entitlement`
   (`supabase/schema/07_functions.sql`) previously had no bound on how many

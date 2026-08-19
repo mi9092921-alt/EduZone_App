@@ -92,6 +92,8 @@ jobs:
         run: make check-localizations
       - name: Auth Security Guard
         run: make check-auth-security
+      - name: Logging Security Guard
+        run: make check-logging-security
       - name: Config/Secrets Security Guard
         run: make check-config-security
       - name: Run tests with coverage

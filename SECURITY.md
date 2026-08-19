@@ -413,6 +413,14 @@ audit of this pipeline, all fixed:
   internals or signed-URL tokens in their message. Release builds now
   only print `error.runtimeType` locally; Sentry still gets the full
   diagnostic record.
+- **`EventDispatcher._dispatch()`** wrapped every handler call in
+  `catch (_) {}` with no logging at all — a bug inside any one handler
+  (e.g. `AnalyticsHandler`) would be permanently invisible, which is
+  itself a Section 15 gap ("Audit: ... unexpected exceptions"). The
+  per-handler isolation (one handler's failure must not stop the others
+  running for the same event) is a legitimate pattern and is kept; the
+  exception type is now surfaced via `debugPrint` in debug builds
+  instead of silently discarded.
 
 **Not done, and explicitly flagged rather than silently skipped**: Sentry
 `beforeSend`/`beforeBreadcrumb` scrubbing hooks as defense-in-depth on top
@@ -423,6 +431,53 @@ could not be confirmed without pub package access in this environment;
 adding it without verifying the signature risked shipping code that
 doesn't compile, which this project's "No Fake Completion" rule weighs
 worse than leaving the gap open and documented.
+
+**Existing, unchanged behavior documented here for honesty** (Section 37):
+`SentryService` sets `options.attachScreenshot = !kDebugMode` — release
+builds attach a screenshot of the app's UI at the moment of a crash to
+the Sentry event. On screens already protected against capture (e.g. via
+this app's screenshot/screen-recording guards during offline video
+playback), that protection is expected to make the attached image blank,
+since it operates at the OS window-flag level, not inside Sentry. On
+everything else (home, courses, profile, notifications, etc.) a crash
+screenshot can include whatever educational/personal content was on
+screen. This was a pre-existing, deliberate crash-diagnostics trade-off,
+not something introduced or changed by this audit; it is recorded here
+because SECURITY.md previously didn't mention it at all.
+
+`LogEncryptionService`'s AES-256-GCM key is generated on-device on first
+use and stored only in that device's `FlutterSecureStorage` — it is
+never transmitted to, or derivable by, the backend. This means the
+`AuditHandler`-encrypted `details` payload that reaches
+`activity_log_queue` is opaque server-side by construction: no admin
+tool, ops dashboard, or backend job can ever decrypt it without physical
+access to the originating device's secure storage. The event's
+metadata columns (type, category, risk level, user/tenant id, timestamp)
+remain in the clear and are what any server-side audit review is
+actually expected to work from; the encrypted `details` blob is a
+device-local forensic record, not a centrally-reviewable one. This is
+existing, unchanged design — recorded here, again per Section 37,
+because it wasn't documented anywhere before this audit and matters for
+anyone building future ops/compliance tooling on top of this table.
+
+**Known low-severity gap, not fixed here (out of this section's module
+boundary)**: `LogQueue.clear()` exists (doc comment: "used on
+logout/cleanup") but nothing currently calls it during the logout
+transaction (`lib/features/auth/...`, already audited separately —
+Section 8). In practice this is not a cross-account data leak: each
+queued `LogEntry.userId` is captured at event-creation time, and
+`public.log_activity_async`'s own `p_user_id = auth.uid()` check (see
+above) means a User A entry still pending in memory after a switch to
+User B will simply fail server-side with `PERMISSION_DENIED` rather than
+ever being attributed to User B — the RPC's own authorization already
+makes this fail-safe. The only actual cost is a handful of User A's
+last pre-logout events being retried until they dead-letter instead of
+being discarded immediately. Wiring `queue.clear()` into the logout
+transaction would be a reasonable follow-up but touches a different,
+previously-hardened module (auth's `LogoutOrchestrator` or equivalent)
+and isn't required for correctness or security — flagged rather than
+silently left unmentioned, not silently fixed by reaching into another
+section's territory.
 
 ## What's verified — by the developer, not by this document's author
 
