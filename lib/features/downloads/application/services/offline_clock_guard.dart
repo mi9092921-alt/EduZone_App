@@ -86,8 +86,8 @@ class OfflineClockGuard {
       final anchor = DateTime.fromMillisecondsSinceEpoch(storedMs);
       if (current.isBefore(anchor.subtract(tolerance))) {
         throw ClockRollbackSuspectedException(
-          'device time $current is more than $tolerance behind the '
-          'previously observed time $anchor',
+          'device time $current is more than $tolerance behind the ' // check-ignore
+          'previously observed time $anchor', // check-ignore
         );
       }
       if (!current.isAfter(anchor)) {

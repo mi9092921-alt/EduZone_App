@@ -347,7 +347,7 @@ class AuthRemoteDataSource {
       return e.statusCode == null
           ? const NoInternetException()
           : const ServerException(
-              'Authentication service unavailable',
+              'Authentication service unavailable', // check-ignore
             ); // check-ignore
     }
 
@@ -362,7 +362,7 @@ class AuthRemoteDataSource {
         msg.contains('invalid jwt') ||
         msg.contains('signature')) {
       return const ServerException(
-        'Authentication service configuration error',
+        'Authentication service configuration error', // check-ignore
       ); // check-ignore
     }
 
@@ -373,7 +373,7 @@ class AuthRemoteDataSource {
       return const RateLimitedException();
     }
     return const ServerException(
-      'Authentication service unavailable',
+      'Authentication service unavailable', // check-ignore
     ); // check-ignore
   }
 

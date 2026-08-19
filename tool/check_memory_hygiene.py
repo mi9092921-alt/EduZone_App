@@ -62,6 +62,9 @@ LONG_LIVED_PROVIDER_ALLOWLIST = {
     "downloadRepository",
     "downloadChanges",
     "DownloadsNotifier",
+    # One app-wide queue shared by every video-progress family instance;
+    # the provider registers ref.onDispose(engine.dispose).
+    "lessonProgressSyncEngine",
 }
 
 MANUAL_PROVIDER_RE = re.compile(

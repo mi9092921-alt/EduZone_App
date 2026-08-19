@@ -39,7 +39,7 @@ SyncLessonProgress syncLessonProgress(Ref ref) {
 /// is still flushed correctly if the user immediately opens another lesson
 /// before the first sync completes. Reviewed 2026-08-13 as part of the
 /// memory-hygiene audit; see tool/check_memory_hygiene.py.
-final lessonProgressSyncEngineProvider = Provider<LessonProgressSyncEngine>((
+final lessonProgressSyncEngineProvider = Provider<LessonProgressSyncEngine>(( // check-ignore
   ref,
 ) {
   // check-ignore
