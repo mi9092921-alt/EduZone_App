@@ -56,13 +56,12 @@ void main() {
   setUp(() {
     repository = MockDownloadRepository();
     changeStreamController = StreamController<void>.broadcast();
-    when(() => repository.changeStream)
-        .thenAnswer((_) => changeStreamController.stream);
+    when(
+      () => repository.changeStream,
+    ).thenAnswer((_) => changeStreamController.stream);
 
     container = ProviderContainer(
-      overrides: [
-        downloadRepositoryProvider.overrideWithValue(repository),
-      ],
+      overrides: [downloadRepositoryProvider.overrideWithValue(repository)],
     );
   });
 
@@ -73,8 +72,9 @@ void main() {
 
   group('DownloadsNotifier.build', () {
     test('loads the initial list of downloads from the repository', () async {
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => Right([_lesson('1')]));
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => Right([_lesson('1')]));
 
       final result = await container.read(downloadsProvider.future);
 
@@ -83,34 +83,40 @@ void main() {
       verify(() => repository.getDownloads()).called(1);
     });
 
-    test('a repository failure surfaces as AsyncError on the provider', () async {
-      const failure = CacheFailure('db error');
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => const Left(failure));
+    test(
+      'a repository failure surfaces as AsyncError on the provider',
+      () async {
+        const failure = CacheFailure('db error');
+        when(
+          () => repository.getDownloads(),
+        ).thenAnswer((_) async => const Left(failure));
 
-      // NOTE: `expectLater(container.read(downloadsProvider.future),
-      // throwsA(...))` deadlocks here — a known Riverpod edge case where a
-      // keepAlive AsyncNotifier's very first `build()` throwing, observed
-      // via a cold `.future` read with no prior listener, never settles.
-      // Establishing a listener first (as any real widget's ref.watch
-      // would) and then reading the synchronous state avoids it entirely.
-      final sub = container.listen(downloadsProvider, (_, _) {});
-      addTearDown(sub.close);
+        // NOTE: `expectLater(container.read(downloadsProvider.future),
+        // throwsA(...))` deadlocks here — a known Riverpod edge case where a
+        // keepAlive AsyncNotifier's very first `build()` throwing, observed
+        // via a cold `.future` read with no prior listener, never settles.
+        // Establishing a listener first (as any real widget's ref.watch
+        // would) and then reading the synchronous state avoids it entirely.
+        final sub = container.listen(downloadsProvider, (_, _) {});
+        addTearDown(sub.close);
 
-      await _settle();
+        await _settle();
 
-      final state = container.read(downloadsProvider);
-      expect(state.hasError, isTrue);
-      expect(state.error, same(failure));
-    });
+        final state = container.read(downloadsProvider);
+        expect(state.hasError, isTrue);
+        expect(state.error, same(failure));
+      },
+    );
 
     test(
       'a changeStream event reloads downloads and invalidates storage usage',
       () async {
-        when(() => repository.getDownloads())
-            .thenAnswer((_) async => Right([_lesson('1')]));
-        when(() => repository.getTotalStorageUsed())
-            .thenAnswer((_) async => const Right(1024));
+        when(
+          () => repository.getDownloads(),
+        ).thenAnswer((_) async => Right([_lesson('1')]));
+        when(
+          () => repository.getTotalStorageUsed(),
+        ).thenAnswer((_) async => const Right(1024));
 
         // Pin totalStorageUsedProvider alive with a listener, exactly like a
         // widget's ref.watch would — it is plain @riverpod (autoDispose), so
@@ -123,8 +129,9 @@ void main() {
         verify(() => repository.getDownloads()).called(1);
         verify(() => repository.getTotalStorageUsed()).called(1);
 
-        when(() => repository.getDownloads())
-            .thenAnswer((_) async => Right([_lesson('1'), _lesson('2')]));
+        when(
+          () => repository.getDownloads(),
+        ).thenAnswer((_) async => Right([_lesson('1'), _lesson('2')]));
 
         changeStreamController.add(null);
         await _settle();
@@ -146,35 +153,71 @@ void main() {
       },
     );
 
+    test('a repository failure during a changeStream refresh sets AsyncError '
+        'without crashing the listener', () async {
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => Right([_lesson('1')]));
+      when(
+        () => repository.getTotalStorageUsed(),
+      ).thenAnswer((_) async => const Right(0));
+
+      await container.read(downloadsProvider.future);
+
+      const failure = StorageFailure('disk read error');
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => const Left(failure));
+
+      changeStreamController.add(null);
+      await _settle();
+
+      final state = container.read(downloadsProvider);
+      expect(state.hasError, isTrue);
+      expect(state.error, same(failure));
+    });
+
     test(
-      'a repository failure during a changeStream refresh sets AsyncError '
-      'without crashing the listener',
+      'ignores a stale changeStream result after the provider is invalidated',
       () async {
-        when(() => repository.getDownloads())
-            .thenAnswer((_) async => Right([_lesson('1')]));
-        when(() => repository.getTotalStorageUsed())
-            .thenAnswer((_) async => const Right(0));
+        final staleRefresh =
+            Completer<Either<Failure, List<DownloadedLesson>>>();
+        var calls = 0;
+
+        when(() => repository.getDownloads()).thenAnswer((_) {
+          calls++;
+          if (calls == 1) return Future.value(Right([_lesson('initial')]));
+          if (calls == 2) return staleRefresh.future;
+          return Future.value(Right([_lesson('new-session')]));
+        });
 
         await container.read(downloadsProvider.future);
 
-        const failure = StorageFailure('disk read error');
-        when(() => repository.getDownloads())
-            .thenAnswer((_) async => const Left(failure));
-
         changeStreamController.add(null);
+        await Future<void>.delayed(Duration.zero);
+        container.invalidate(downloadsProvider);
+        final refreshed = container.read(downloadsProvider.future);
+        await refreshed;
+
+        staleRefresh.complete(Right([_lesson('stale')]));
         await _settle();
 
-        final state = container.read(downloadsProvider);
-        expect(state.hasError, isTrue);
-        expect(state.error, same(failure));
+        expect(
+          container.read(downloadsProvider).value?.single.id,
+          'new-session',
+          reason:
+              'a result started before invalidation must not overwrite the '
+              'new provider generation',
+        );
       },
     );
   });
 
   group('DownloadsNotifier.startDownload', () {
     test('on success, refreshes the list from the repository', () async {
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => const Right([]));
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => const Right([]));
       await container.read(downloadsProvider.future);
 
       when(
@@ -187,8 +230,9 @@ void main() {
           quality: VideoQuality.p720,
         ),
       ).thenAnswer((_) async => Right(_lesson('1')));
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => Right([_lesson('1')]));
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => Right([_lesson('1')]));
 
       final notifier = container.read(downloadsProvider.notifier);
       await notifier.startDownload(
@@ -207,8 +251,9 @@ void main() {
     test(
       'on failure, sets AsyncError on the provider AND rethrows to the caller',
       () async {
-        when(() => repository.getDownloads())
-            .thenAnswer((_) async => const Right([]));
+        when(
+          () => repository.getDownloads(),
+        ).thenAnswer((_) async => const Right([]));
         await container.read(downloadsProvider.future);
 
         const failure = AlreadyDownloadedFailure();
@@ -255,8 +300,9 @@ void main() {
       );
       await container.read(downloadsProvider.future);
 
-      when(() => repository.pauseDownload('download-1'))
-          .thenAnswer((_) async => const Right(null));
+      when(
+        () => repository.pauseDownload('download-1'),
+      ).thenAnswer((_) async => const Right(null));
       when(() => repository.getDownloads()).thenAnswer(
         (_) async => Right([_lesson('1', status: DownloadStatus.paused)]),
       );
@@ -272,14 +318,17 @@ void main() {
     });
 
     test('resumeDownload calls the use case then refreshes', () async {
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => const Right([]));
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => const Right([]));
       await container.read(downloadsProvider.future);
 
-      when(() => repository.resumeDownload('download-1'))
-          .thenAnswer((_) async => const Right(null));
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => Right([_lesson('1')]));
+      when(
+        () => repository.resumeDownload('download-1'),
+      ).thenAnswer((_) async => const Right(null));
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => Right([_lesson('1')]));
 
       final notifier = container.read(downloadsProvider.notifier);
       await notifier.resumeDownload('download-1');
@@ -289,14 +338,17 @@ void main() {
     });
 
     test('cancelDownload calls the use case then refreshes', () async {
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => Right([_lesson('1')]));
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => Right([_lesson('1')]));
       await container.read(downloadsProvider.future);
 
-      when(() => repository.cancelDownload('download-1'))
-          .thenAnswer((_) async => const Right(null));
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => const Right([]));
+      when(
+        () => repository.cancelDownload('download-1'),
+      ).thenAnswer((_) async => const Right(null));
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => const Right([]));
 
       final notifier = container.read(downloadsProvider.notifier);
       await notifier.cancelDownload('download-1');
@@ -306,14 +358,17 @@ void main() {
     });
 
     test('deleteDownload calls the use case then refreshes', () async {
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => Right([_lesson('1')]));
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => Right([_lesson('1')]));
       await container.read(downloadsProvider.future);
 
-      when(() => repository.deleteDownload('download-1'))
-          .thenAnswer((_) async => const Right(null));
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => const Right([]));
+      when(
+        () => repository.deleteDownload('download-1'),
+      ).thenAnswer((_) async => const Right(null));
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => const Right([]));
 
       final notifier = container.read(downloadsProvider.notifier);
       await notifier.deleteDownload('download-1');
@@ -323,14 +378,17 @@ void main() {
     });
 
     test('cleanupExpired calls the use case then refreshes', () async {
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => Right([_lesson('1'), _lesson('2')]));
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => Right([_lesson('1'), _lesson('2')]));
       await container.read(downloadsProvider.future);
 
-      when(() => repository.cleanupExpiredDownloads())
-          .thenAnswer((_) async => const Right(1));
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => Right([_lesson('2')]));
+      when(
+        () => repository.cleanupExpiredDownloads(),
+      ).thenAnswer((_) async => const Right(1));
+      when(
+        () => repository.getDownloads(),
+      ).thenAnswer((_) async => Right([_lesson('2')]));
 
       final notifier = container.read(downloadsProvider.notifier);
       await notifier.cleanupExpired();
@@ -345,13 +403,15 @@ void main() {
       'pauseDownload sets AsyncError AND rethrows on repository failure',
       () async {
         when(() => repository.getDownloads()).thenAnswer(
-          (_) async => Right([_lesson('1', status: DownloadStatus.downloading)]),
+          (_) async =>
+              Right([_lesson('1', status: DownloadStatus.downloading)]),
         );
         await container.read(downloadsProvider.future);
 
         const failure = ServerFailure('pause failed');
-        when(() => repository.pauseDownload('download-1'))
-            .thenAnswer((_) async => const Left(failure));
+        when(
+          () => repository.pauseDownload('download-1'),
+        ).thenAnswer((_) async => const Left(failure));
 
         final notifier = container.read(downloadsProvider.notifier);
 
@@ -369,13 +429,15 @@ void main() {
     test(
       'resumeDownload sets AsyncError AND rethrows on repository failure',
       () async {
-        when(() => repository.getDownloads())
-            .thenAnswer((_) async => Right([_lesson('1')]));
+        when(
+          () => repository.getDownloads(),
+        ).thenAnswer((_) async => Right([_lesson('1')]));
         await container.read(downloadsProvider.future);
 
         const failure = ServerFailure('resume failed');
-        when(() => repository.resumeDownload('download-1'))
-            .thenAnswer((_) async => const Left(failure));
+        when(
+          () => repository.resumeDownload('download-1'),
+        ).thenAnswer((_) async => const Left(failure));
 
         final notifier = container.read(downloadsProvider.notifier);
 
@@ -393,13 +455,15 @@ void main() {
     test(
       'cancelDownload sets AsyncError AND rethrows on repository failure',
       () async {
-        when(() => repository.getDownloads())
-            .thenAnswer((_) async => Right([_lesson('1')]));
+        when(
+          () => repository.getDownloads(),
+        ).thenAnswer((_) async => Right([_lesson('1')]));
         await container.read(downloadsProvider.future);
 
         const failure = ServerFailure('cancel failed');
-        when(() => repository.cancelDownload('download-1'))
-            .thenAnswer((_) async => const Left(failure));
+        when(
+          () => repository.cancelDownload('download-1'),
+        ).thenAnswer((_) async => const Left(failure));
 
         final notifier = container.read(downloadsProvider.notifier);
 
@@ -417,13 +481,15 @@ void main() {
     test(
       'deleteDownload sets AsyncError AND rethrows on repository failure',
       () async {
-        when(() => repository.getDownloads())
-            .thenAnswer((_) async => Right([_lesson('1')]));
+        when(
+          () => repository.getDownloads(),
+        ).thenAnswer((_) async => Right([_lesson('1')]));
         await container.read(downloadsProvider.future);
 
         const failure = StorageFailure('delete failed');
-        when(() => repository.deleteDownload('download-1'))
-            .thenAnswer((_) async => const Left(failure));
+        when(
+          () => repository.deleteDownload('download-1'),
+        ).thenAnswer((_) async => const Left(failure));
 
         final notifier = container.read(downloadsProvider.notifier);
 
@@ -441,20 +507,19 @@ void main() {
     test(
       'cleanupExpired sets AsyncError AND rethrows on repository failure',
       () async {
-        when(() => repository.getDownloads())
-            .thenAnswer((_) async => Right([_lesson('1')]));
+        when(
+          () => repository.getDownloads(),
+        ).thenAnswer((_) async => Right([_lesson('1')]));
         await container.read(downloadsProvider.future);
 
         const failure = CacheFailure('cleanup failed');
-        when(() => repository.cleanupExpiredDownloads())
-            .thenAnswer((_) async => const Left(failure));
+        when(
+          () => repository.cleanupExpiredDownloads(),
+        ).thenAnswer((_) async => const Left(failure));
 
         final notifier = container.read(downloadsProvider.notifier);
 
-        await expectLater(
-          notifier.cleanupExpired(),
-          throwsA(same(failure)),
-        );
+        await expectLater(notifier.cleanupExpired(), throwsA(same(failure)));
 
         final state = container.read(downloadsProvider);
         expect(state.hasError, isTrue);
@@ -464,47 +529,58 @@ void main() {
   });
 
   group('DownloadsNotifier.refresh', () {
-    test('a failure during refresh() sets AsyncError without throwing', () async {
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => const Right([]));
-      await container.read(downloadsProvider.future);
+    test(
+      'a failure during refresh() sets AsyncError without throwing',
+      () async {
+        when(
+          () => repository.getDownloads(),
+        ).thenAnswer((_) async => const Right([]));
+        await container.read(downloadsProvider.future);
 
-      const failure = CacheFailure('reload failed');
-      when(() => repository.getDownloads())
-          .thenAnswer((_) async => const Left(failure));
+        const failure = CacheFailure('reload failed');
+        when(
+          () => repository.getDownloads(),
+        ).thenAnswer((_) async => const Left(failure));
 
-      final notifier = container.read(downloadsProvider.notifier);
-      // refresh() uses AsyncValue.guard — must not throw synchronously.
-      await notifier.refresh();
+        final notifier = container.read(downloadsProvider.notifier);
+        // refresh() uses AsyncValue.guard — must not throw synchronously.
+        await notifier.refresh();
 
-      final state = container.read(downloadsProvider);
-      expect(state.hasError, isTrue);
-      expect(state.error, same(failure));
-    });
+        final state = container.read(downloadsProvider);
+        expect(state.hasError, isTrue);
+        expect(state.error, same(failure));
+      },
+    );
   });
 
   group('Satellite providers', () {
     test('totalStorageUsedProvider folds a failure to 0', () async {
-      when(() => repository.getTotalStorageUsed())
-          .thenAnswer((_) async => const Left(CacheFailure('boom')));
+      when(
+        () => repository.getTotalStorageUsed(),
+      ).thenAnswer((_) async => const Left(CacheFailure('boom')));
 
       final result = await container.read(totalStorageUsedProvider.future);
 
       expect(result, 0);
     });
 
-    test('totalStorageUsedProvider returns the real total on success', () async {
-      when(() => repository.getTotalStorageUsed())
-          .thenAnswer((_) async => const Right(2048));
+    test(
+      'totalStorageUsedProvider returns the real total on success',
+      () async {
+        when(
+          () => repository.getTotalStorageUsed(),
+        ).thenAnswer((_) async => const Right(2048));
 
-      final result = await container.read(totalStorageUsedProvider.future);
+        final result = await container.read(totalStorageUsedProvider.future);
 
-      expect(result, 2048);
-    });
+        expect(result, 2048);
+      },
+    );
 
     test('downloadByLessonId folds a failure to null', () async {
-      when(() => repository.getDownloadByLessonId('lesson-1'))
-          .thenAnswer((_) async => const Left(NotFoundFailure('missing')));
+      when(
+        () => repository.getDownloadByLessonId('lesson-1'),
+      ).thenAnswer((_) async => const Left(NotFoundFailure('missing')));
 
       final result = await container.read(
         downloadByLessonIdProvider('lesson-1').future,
@@ -514,8 +590,9 @@ void main() {
     });
 
     test('downloadByLessonId returns the download on success', () async {
-      when(() => repository.getDownloadByLessonId('lesson-1'))
-          .thenAnswer((_) async => Right(_lesson('1')));
+      when(
+        () => repository.getDownloadByLessonId('lesson-1'),
+      ).thenAnswer((_) async => Right(_lesson('1')));
 
       final result = await container.read(
         downloadByLessonIdProvider('lesson-1').future,
@@ -525,8 +602,9 @@ void main() {
     });
 
     test('downloadById folds a failure to null', () async {
-      when(() => repository.getDownloadById('download-1'))
-          .thenAnswer((_) async => const Left(NotFoundFailure('missing')));
+      when(
+        () => repository.getDownloadById('download-1'),
+      ).thenAnswer((_) async => const Left(NotFoundFailure('missing')));
 
       final result = await container.read(
         downloadByIdProvider('download-1').future,
@@ -535,35 +613,39 @@ void main() {
       expect(result, isNull);
     });
 
-    test('downloadProgress streams progress updates from the repository', () async {
-      final progressController = StreamController<DownloadProgress>();
-      addTearDown(progressController.close);
-      when(() => repository.watchProgress('download-1'))
-          .thenAnswer((_) => progressController.stream);
+    test(
+      'downloadProgress streams progress updates from the repository',
+      () async {
+        final progressController = StreamController<DownloadProgress>();
+        addTearDown(progressController.close);
+        when(
+          () => repository.watchProgress('download-1'),
+        ).thenAnswer((_) => progressController.stream);
 
-      final events = <DownloadProgress>[];
-      final sub = container.listen(
-        downloadProgressProvider('download-1'),
-        (_, next) {
+        final events = <DownloadProgress>[];
+        final sub = container.listen(downloadProgressProvider('download-1'), (
+          _,
+          next,
+        ) {
           if (next.hasValue) events.add(next.value!);
-        },
-      );
-      addTearDown(sub.close);
+        });
+        addTearDown(sub.close);
 
-      progressController.add(
-        const DownloadProgress(
-          downloadId: 'download-1',
-          lessonId: 'lesson-1',
-          receivedBytes: 50,
-          totalBytes: 100,
-          progress: 0.5,
-          status: DownloadStatus.downloading,
-        ),
-      );
-      await _settle();
+        progressController.add(
+          const DownloadProgress(
+            downloadId: 'download-1',
+            lessonId: 'lesson-1',
+            receivedBytes: 50,
+            totalBytes: 100,
+            progress: 0.5,
+            status: DownloadStatus.downloading,
+          ),
+        );
+        await _settle();
 
-      expect(events, hasLength(1));
-      expect(events.first.progress, 0.5);
-    });
+        expect(events, hasLength(1));
+        expect(events.first.progress, 0.5);
+      },
+    );
   });
 }

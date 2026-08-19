@@ -128,9 +128,11 @@ Future<List<CourseEnrollment>> myCourses(Ref ref) async {
 /// show skeletons or fallback UI instead of silently defaulting to `false`.
 @riverpod
 AsyncValue<bool> isEnrolled(Ref ref, String courseId) {
-  return ref.watch(myCoursesProvider).whenData(
-    (enrollments) => enrollments.any((e) => e.courseId == courseId),
-  );
+  return ref
+      .watch(myCoursesProvider)
+      .whenData(
+        (enrollments) => enrollments.any((e) => e.courseId == courseId),
+      );
 }
 
 @riverpod
@@ -193,9 +195,14 @@ class PaginatedCoursesState {
 @riverpod
 class PublicCourses extends _$PublicCourses {
   bool _isLoadingPage = false;
+  int _buildGeneration = 0;
+  int _pageRequestGeneration = 0;
 
   @override
   Future<PaginatedCoursesState> build() async {
+    ++_buildGeneration;
+    ++_pageRequestGeneration;
+    _isLoadingPage = false;
     final getPublicCourses = ref.watch(getPublicCoursesProvider);
     final result = await getPublicCourses();
     return result.fold(
@@ -213,14 +220,24 @@ class PublicCourses extends _$PublicCourses {
     final currentState = state.value;
     if (currentState == null || !currentState.hasMore) return;
 
+    final buildGeneration = _buildGeneration;
+    final pageRequestGeneration = ++_pageRequestGeneration;
     _isLoadingPage = true;
     try {
       final nextPage = currentState.page + 1;
       final getPublicCourses = ref.read(getPublicCoursesProvider);
       final result = await getPublicCourses(page: nextPage);
 
+      if (!ref.mounted ||
+          buildGeneration != _buildGeneration ||
+          pageRequestGeneration != _pageRequestGeneration) {
+        return;
+      }
+
       result.fold(
-        (failure) {}, // handle error appropriately (e.g. snackbar)
+        (failure) {
+          state = AsyncError(failure.toAppException(), StackTrace.current);
+        },
         (newCourses) {
           final Set<String> newIds = {...currentState.loadedIds};
           final List<Course> uniqueNewCourses = [];
@@ -281,8 +298,12 @@ Future<CourseProgressSummary> courseProgress(Ref ref, String courseId) async {
 /// local writes are fast enough to await directly.
 @Riverpod(keepAlive: true)
 class BookmarkedCourses extends _$BookmarkedCourses {
+  int _buildGeneration = 0;
+  Future<void> _lastToggle = Future<void>.value();
+
   @override
   Future<Set<String>> build() async {
+    ++_buildGeneration;
     final getBookmarkedCourseIds = ref.watch(getBookmarkedCourseIdsProvider);
     final result = await getBookmarkedCourseIds();
     return result.fold((_) => <String>{}, (ids) => ids);
@@ -292,17 +313,37 @@ class BookmarkedCourses extends _$BookmarkedCourses {
   ///
   /// Awaits the SQLite write, then refreshes state.
   Future<void> toggleBookmark(String courseId) async {
+    final operation = _lastToggle.then<void>(
+      (_) => _toggleBookmarkForCurrentGeneration(courseId),
+    );
+    _lastToggle = operation.catchError((Object _) {});
+    await operation;
+  }
+
+  Future<void> _toggleBookmarkForCurrentGeneration(String courseId) async {
+    final buildGeneration = _buildGeneration;
     final current = state.value ?? <String>{};
     final isBookmarked = current.contains(courseId);
     final toggleCourseBookmark = ref.read(toggleCourseBookmarkProvider);
-    await toggleCourseBookmark(
+    final result = await toggleCourseBookmark(
       courseId: courseId,
       isCurrentlyBookmarked: isBookmarked,
     );
-    state = AsyncData(
-      isBookmarked
-          ? ({...current}..remove(courseId))
-          : {...current, courseId},
+
+    if (!ref.mounted || buildGeneration != _buildGeneration) return;
+
+    result.fold(
+      (failure) => Error.throwWithStackTrace(
+        failure.toAppException(),
+        StackTrace.current,
+      ),
+      (_) {
+        state = AsyncData(
+          isBookmarked
+              ? ({...current}..remove(courseId))
+              : {...current, courseId},
+        );
+      },
     );
   }
 }

@@ -13,18 +13,12 @@ class NetworkBannerState {
   final bool isOffline;
   final bool isDismissed;
 
-  const NetworkBannerState({
-    this.isOffline = false,
-    this.isDismissed = false,
-  });
+  const NetworkBannerState({this.isOffline = false, this.isDismissed = false});
 
   /// The banner should only be visible while offline AND not dismissed.
   bool get shouldShow => isOffline && !isDismissed;
 
-  NetworkBannerState copyWith({
-    bool? isOffline,
-    bool? isDismissed,
-  }) {
+  NetworkBannerState copyWith({bool? isOffline, bool? isDismissed}) {
     return NetworkBannerState(
       isOffline: isOffline ?? this.isOffline,
       isDismissed: isDismissed ?? this.isDismissed,
@@ -41,29 +35,41 @@ class NetworkBannerState {
 class NetworkBannerNotifier extends Notifier<NetworkBannerState> {
   Connectivity? _connectivity;
   StreamSubscription<List<ConnectivityResult>>? _subscription;
+  int _buildGeneration = 0;
 
   @override
   NetworkBannerState build() {
+    final buildGeneration = ++_buildGeneration;
     _connectivity = Connectivity();
-    _subscription =
-        _connectivity!.onConnectivityChanged.listen(_onConnectivityChanged);
+    _subscription = _connectivity!.onConnectivityChanged.listen(
+      (results) => _onConnectivityChanged(results, buildGeneration),
+    );
 
     ref.onDispose(() {
+      ++_buildGeneration;
       _subscription?.cancel();
     });
 
     // Fire-and-forget: check current status once the provider is built.
-    Future.microtask(_checkInitialStatus);
+    Future.microtask(() => _checkInitialStatus(buildGeneration));
 
     return const NetworkBannerState();
   }
 
-  Future<void> _checkInitialStatus() async {
-    final result = await _connectivity!.checkConnectivity();
-    _onConnectivityChanged(result);
+  Future<void> _checkInitialStatus(int buildGeneration) async {
+    final connectivity = _connectivity;
+    if (connectivity == null) return;
+
+    final result = await connectivity.checkConnectivity();
+    _onConnectivityChanged(result, buildGeneration);
   }
 
-  void _onConnectivityChanged(List<ConnectivityResult> results) {
+  void _onConnectivityChanged(
+    List<ConnectivityResult> results,
+    int buildGeneration,
+  ) {
+    if (!ref.mounted || buildGeneration != _buildGeneration) return;
+
     final isNowOffline = results.every((r) => r == ConnectivityResult.none);
 
     if (isNowOffline == state.isOffline) return;
@@ -89,5 +95,5 @@ class NetworkBannerNotifier extends Notifier<NetworkBannerState> {
 
 final networkBannerProvider =
     NotifierProvider.autoDispose<NetworkBannerNotifier, NetworkBannerState>(
-  NetworkBannerNotifier.new,
-);
+      NetworkBannerNotifier.new,
+    );

@@ -60,7 +60,9 @@ class ProfileActionsState {
       isUpdating: isUpdating ?? this.isUpdating,
       isUploadingAvatar: isUploadingAvatar ?? this.isUploadingAvatar,
       error: clearError ? null : (error ?? this.error),
-      successMessage: clearSuccess ? null : (successMessage ?? this.successMessage),
+      successMessage: clearSuccess
+          ? null
+          : (successMessage ?? this.successMessage),
     );
   }
 }
@@ -71,10 +73,7 @@ class ProfileActions extends _$ProfileActions {
   ProfileActionsState build() => const ProfileActionsState();
 
   /// Update first/last name.
-  Future<bool> updateName({
-    String? firstName,
-    String? lastName,
-  }) async {
+  Future<bool> updateName({String? firstName, String? lastName}) async {
     // FIX (FLUTTER-A/9): ProfileActions is autoDispose (default for
     // @riverpod class) and the UI only ever does `ref.read(...notifier)`
     // (never `watch`), so nothing keeps this notifier alive across the
@@ -84,13 +83,16 @@ class ProfileActions extends _$ProfileActions {
     // `await` (see player4_provider.dart for the same established
     // pattern in this codebase).
     final keepAliveLink = ref.keepAlive();
-    state = state.copyWith(isUpdating: true, clearError: true, clearSuccess: true);
+    state = state.copyWith(
+      isUpdating: true,
+      clearError: true,
+      clearSuccess: true,
+    );
 
     try {
-      await ref.read(updateProfileUseCaseProvider).call(
-        firstName: firstName,
-        lastName: lastName,
-      );
+      await ref
+          .read(updateProfileUseCaseProvider)
+          .call(firstName: firstName, lastName: lastName);
       // The backend write already succeeded at this point regardless of
       // what happens below, so treat disposal here as success, not error.
       if (!ref.mounted) return true;
@@ -109,10 +111,7 @@ class ProfileActions extends _$ProfileActions {
       return true;
     } catch (e) {
       if (ref.mounted) {
-        state = state.copyWith(
-          isUpdating: false,
-          error: e.toString(),
-        );
+        state = state.copyWith(isUpdating: false, error: e.toString());
       }
       return false;
     } finally {
@@ -127,7 +126,11 @@ class ProfileActions extends _$ProfileActions {
     // See updateName() above for why this must be acquired before the
     // first `await` (FLUTTER-A/9).
     final keepAliveLink = ref.keepAlive();
-    state = state.copyWith(isUploadingAvatar: true, clearError: true, clearSuccess: true);
+    state = state.copyWith(
+      isUploadingAvatar: true,
+      clearError: true,
+      clearSuccess: true,
+    );
 
     try {
       await ref.read(updateProfileUseCaseProvider).uploadAvatar(filePath);
@@ -147,10 +150,7 @@ class ProfileActions extends _$ProfileActions {
       return true;
     } catch (e) {
       if (ref.mounted) {
-        state = state.copyWith(
-          isUploadingAvatar: false,
-          error: e.toString(),
-        );
+        state = state.copyWith(isUploadingAvatar: false, error: e.toString());
       }
       return false;
     } finally {
@@ -170,5 +170,6 @@ class ProfileActions extends _$ProfileActions {
 /// distant, unrelated `auth` file.
 void invalidateProfileProviders(Ref ref) {
   ref.invalidate(profileProvider);
+  ref.invalidate(profileActionsProvider);
   ref.invalidate(profileRepositoryProvider);
 }

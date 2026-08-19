@@ -27,7 +27,8 @@ class Player4VideoInfo extends _$Player4VideoInfo {
     // If called after `await`, Riverpod may have already disposed this provider
     // (e.g. the user navigated away while the network call was in flight),
     // causing UnmountedRefException on `ref.keepAlive()`.
-    final link = ref.keepAlive();
+    final link = ref
+        .keepAlive(); // check-ignore: content-keyed and self-expiring; not user-scoped
 
     final info = await remoteDataSource.getVideoInfo(videoId);
 

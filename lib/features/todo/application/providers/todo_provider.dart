@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -68,18 +70,53 @@ class TodoState {
 
 @riverpod
 class TodoNotifier extends _$TodoNotifier {
+  int _buildGeneration = 0;
+  int _fetchGeneration = 0;
+  Future<void> _mutationQueue = Future<void>.value();
+
+  bool _isCurrent(int buildGeneration, int fetchGeneration) {
+    return ref.mounted &&
+        buildGeneration == _buildGeneration &&
+        fetchGeneration == _fetchGeneration;
+  }
+
+  Future<T> _enqueueMutation<T>(Future<T> Function() mutation) {
+    final operation = _mutationQueue.then<T>((_) => mutation());
+    _mutationQueue = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return operation;
+  }
+
   @override
   TodoState build() {
-    // We can't call async methods directly in build if we want to return immediate state.
-    // However, we can use future to initialize or just trigger the fetch.
-    Future.microtask(() => fetchTodos());
+    final buildGeneration = ++_buildGeneration;
+    ++_fetchGeneration;
+    // The initial fetch is intentionally scheduled after build returns so the
+    // notifier exposes a deterministic initial state first.
+    Future.microtask(() {
+      if (ref.mounted && buildGeneration == _buildGeneration) {
+        unawaited(_fetchTodos(buildGeneration));
+      }
+    });
     return TodoState();
   }
 
   Future<void> fetchTodos() async {
+    final buildGeneration = _buildGeneration;
+    await _fetchTodos(buildGeneration);
+  }
+
+  Future<void> _fetchTodos(int buildGeneration) async {
+    final fetchGeneration = ++_fetchGeneration;
+    if (!ref.mounted || buildGeneration != _buildGeneration) return;
+
     state = state.copyWith(isLoading: true, clearError: true);
 
     final result = await ref.read(getTodosProvider).call();
+
+    if (!_isCurrent(buildGeneration, fetchGeneration)) return;
 
     result.fold(
       (failure) =>
@@ -89,6 +126,13 @@ class TodoNotifier extends _$TodoNotifier {
   }
 
   Future<void> toggleTodoStatus(String todoId, bool currentStatus) async {
+    await _enqueueMutation(() async {
+      await _toggleTodoStatus(todoId, currentStatus);
+    });
+  }
+
+  Future<void> _toggleTodoStatus(String todoId, bool currentStatus) async {
+    final buildGeneration = _buildGeneration;
     // Optimistic update
     final initialTodos = state.todos;
     final updatedTodos = initialTodos.map((t) {
@@ -103,6 +147,8 @@ class TodoNotifier extends _$TodoNotifier {
     final result = await ref
         .read(toggleTodoProvider)
         .call(todoId, !currentStatus);
+
+    if (!ref.mounted || buildGeneration != _buildGeneration) return;
 
     result.fold(
       (failure) {
@@ -131,11 +177,20 @@ class TodoNotifier extends _$TodoNotifier {
   }
 
   Future<void> addTodo(TodoItem newTodo) async {
+    await _enqueueMutation(() async {
+      await _addTodo(newTodo);
+    });
+  }
+
+  Future<void> _addTodo(TodoItem newTodo) async {
+    final buildGeneration = _buildGeneration;
     // Optimistic update
     final initialTodos = state.todos;
     state = state.copyWith(todos: [newTodo, ...initialTodos]);
 
     final result = await ref.read(addTodoProvider).call(newTodo);
+
+    if (!ref.mounted || buildGeneration != _buildGeneration) return;
 
     result.fold(
       (failure) {
@@ -162,6 +217,11 @@ class TodoNotifier extends _$TodoNotifier {
   }
 
   Future<bool> deleteTodo(String todoId) async {
+    return await _enqueueMutation(() => _deleteTodo(todoId));
+  }
+
+  Future<bool> _deleteTodo(String todoId) async {
+    final buildGeneration = _buildGeneration;
     // Optimistic update
     final initialTodos = state.todos;
     final updatedTodos = initialTodos.where((t) => t.id != todoId).toList();
@@ -169,6 +229,8 @@ class TodoNotifier extends _$TodoNotifier {
     state = state.copyWith(todos: updatedTodos);
 
     final result = await ref.read(deleteTodoProvider).call(todoId);
+
+    if (!ref.mounted || buildGeneration != _buildGeneration) return false;
 
     return result.fold(
       (failure) {
@@ -185,6 +247,13 @@ class TodoNotifier extends _$TodoNotifier {
   }
 
   Future<void> updateTodo(TodoItem updatedTodo) async {
+    await _enqueueMutation(() async {
+      await _updateTodo(updatedTodo);
+    });
+  }
+
+  Future<void> _updateTodo(TodoItem updatedTodo) async {
+    final buildGeneration = _buildGeneration;
     // Optimistic update
     final initialTodos = state.todos;
     final updatedList = initialTodos.map((t) {
@@ -195,6 +264,8 @@ class TodoNotifier extends _$TodoNotifier {
     state = state.copyWith(todos: updatedList);
 
     final result = await ref.read(updateTodoProvider).call(updatedTodo);
+
+    if (!ref.mounted || buildGeneration != _buildGeneration) return;
 
     result.fold(
       (failure) {

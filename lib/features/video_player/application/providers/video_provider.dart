@@ -100,24 +100,27 @@ class VideoProgress extends _$VideoProgress {
 
   VideoPlayerRepository? _repo;
   LessonProgressSyncEngine? _syncEngine;
-  bool _disposeRegistered = false;
+  int _buildGeneration = 0;
+  bool _hasPendingProgress = false;
 
   @override
   VideoState build(String courseId, String lessonId) {
+    final buildGeneration = ++_buildGeneration;
     // Prevent auto-dispose from tearing this down between progress ticks,
     // since callers use ref.read(...) rather than ref.watch(...).
     ref.keepAlive();
 
     // A kept-alive provider is rebuilt in place when invalidated. Flush the
-    // previous account's pending progress and reset all in-memory state first.
-    if (_lastWatchTimeSec > 0 && _syncEngine != null) {
-      _queueSync(courseId, lessonId, flushNow: true);
-    }
+    // previous account's unsent progress and reset all in-memory state first.
+    // `_hasPendingProgress` makes this idempotent with the onDispose callback:
+    // Riverpod may run that callback either before or after the rebuild.
+    _flushPendingProgress(courseId, lessonId);
     _syncTimer?.cancel();
     _syncTimer = null;
     _markedComplete = false;
     _lastWatchTimeSec = 0;
     _lastProgressPct = 0.0;
+    _hasPendingProgress = false;
 
     // Resolve dependencies once, while ref is still valid. These are plain
     // object references from here on — safe to use even after this
@@ -125,22 +128,20 @@ class VideoProgress extends _$VideoProgress {
     _repo = ref.read(videoPlayerRepositoryProvider);
     _syncEngine = ref.read(lessonProgressSyncEngineProvider);
 
-    if (!_disposeRegistered) {
-      _disposeRegistered = true;
-      ref.onDispose(() {
-        _syncTimer?.cancel();
-        // Final sync on dispose if progress was made. Safe: _syncToDb no
-        // longer touches ref or state.
-        if (_lastWatchTimeSec > 0 && _syncEngine != null) {
-          _queueSync(courseId, lessonId, flushNow: true);
-        }
-        // Invalidation may rebuild this notifier after running onDispose.
-        // Clear the snapshot so the rebuild does not enqueue it twice.
-        _lastWatchTimeSec = 0;
-        _lastProgressPct = 0.0;
-        _markedComplete = false;
-      });
-    }
+    ref.onDispose(() {
+      // If this callback belongs to a previous build and Riverpod invokes it
+      // after the replacement build started, the replacement build already
+      // flushed the old snapshot. Do not flush the new account's state here.
+      if (buildGeneration != _buildGeneration) return;
+
+      _syncTimer?.cancel();
+      _flushPendingProgress(courseId, lessonId);
+      _lastWatchTimeSec = 0;
+      _lastProgressPct = 0.0;
+      _markedComplete = false;
+      _repo = null;
+      _syncEngine = null;
+    });
 
     return VideoState(progressPct: 0.0, watchTimeSec: 0, isCompleted: false);
   }
@@ -161,6 +162,7 @@ class VideoProgress extends _$VideoProgress {
 
     _lastWatchTimeSec = watchTimeSec;
     _lastProgressPct = currentPct;
+    _hasPendingProgress = true;
 
     state = state.copyWith(
       progressPct: currentPct,
@@ -182,6 +184,7 @@ class VideoProgress extends _$VideoProgress {
     if (!_markedComplete) {
       _markedComplete = true;
       _lastProgressPct = 100.0;
+      _hasPendingProgress = true;
       state = state.copyWith(isCompleted: true);
       _syncTimer?.cancel();
       _queueSync(courseId, lessonId, flushNow: true);
@@ -191,13 +194,17 @@ class VideoProgress extends _$VideoProgress {
 
   void _scheduleDebouncedSync(String courseId, String lessonId) {
     _syncTimer?.cancel();
+    final buildGeneration = _buildGeneration;
     _syncTimer = Timer(const Duration(seconds: 10), () {
+      if (buildGeneration != _buildGeneration) return;
       _queueSync(courseId, lessonId, flushNow: true);
     });
   }
 
   /// Does NOT use `ref` or `state` — safe to call from onDispose or after disposal.
   void _queueSync(String courseId, String lessonId, {bool flushNow = false}) {
+    if (_syncEngine == null || !_hasPendingProgress) return;
+    _hasPendingProgress = false;
     _syncEngine?.enqueue(
       LessonProgressSyncItem(
         courseId: courseId,
@@ -208,6 +215,13 @@ class VideoProgress extends _$VideoProgress {
       ),
       flushNow: flushNow,
     );
+  }
+
+  /// Takes a snapshot before a provider rebuild/dispose can clear its fields.
+  /// Does not touch Riverpod's [ref] or [state].
+  void _flushPendingProgress(String courseId, String lessonId) {
+    if (!_hasPendingProgress) return;
+    _queueSync(courseId, lessonId, flushNow: true);
   }
 
   /// Does NOT use `ref` or `state` — safe to call from onDispose or after disposal.

@@ -78,6 +78,8 @@ jobs:
         run: make check-architecture
       - name: Provider Cycle Guard
         run: make check-provider-cycles
+      - name: Session-Invalidation Guard
+        run: make check-session-invalidation
       - name: RTL Guard
         run: make check-rtl
       - name: Design Token Guard

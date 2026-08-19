@@ -30,6 +30,7 @@ CHECKS = [
     ("Accessibility Guard", "check_a11y.py"),
     ("Architecture Guard", "check_architecture.py"),
     ("Provider Cycle Guard", "check_provider_cycles.py"),
+    ("Session-Invalidation Guard", "check_session_invalidation.py"),
     ("RTL Guard", "check_rtl.py"),
     ("Design Token Guard", "check_design_tokens.py"),
     ("Performance Guard", "check_performance.py"),

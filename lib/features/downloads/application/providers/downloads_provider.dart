@@ -109,26 +109,43 @@ CleanupExpiredDownloadsUseCase cleanupExpiredDownloadsUseCase(Ref ref) {
 /// Notifier for managing the list of downloaded lessons.
 @Riverpod(keepAlive: true)
 class DownloadsNotifier extends _$DownloadsNotifier {
-  @override
-  Future<List<DownloadedLesson>> build() async {
-    final repository = ref.watch(downloadRepositoryProvider);
-    final subscription = repository.changeStream.listen((_) async {
-      ref.invalidate(totalStorageUsedProvider);
-      state = await AsyncValue.guard(() => _loadDownloads());
-    });
-    ref.onDispose(() => subscription.cancel());
-    return _loadDownloads();
+  int _buildGeneration = 0;
+  int _loadGeneration = 0;
+
+  bool _isCurrent(int generation, int loadGeneration) {
+    return ref.mounted &&
+        generation == _buildGeneration &&
+        loadGeneration == _loadGeneration;
   }
 
-  Future<List<DownloadedLesson>> _loadDownloads() async {
-    final result = await ref.read(downloadRepositoryProvider).getDownloads();
-    return result.fold(
-      (failure) {
-        debugPrint('❌ _loadDownloads failed: $failure');
-        throw failure;
-      },
-      (downloads) => downloads,
-    );
+  @override
+  Future<List<DownloadedLesson>> build() async {
+    final generation = ++_buildGeneration;
+    final repository = ref.watch(downloadRepositoryProvider);
+    final subscription = repository.changeStream.listen((_) async {
+      if (!ref.mounted || generation != _buildGeneration) return;
+
+      ref.invalidate(totalStorageUsedProvider);
+      final loadGeneration = ++_loadGeneration;
+      final next = await AsyncValue.guard(() => _loadDownloads(repository));
+      if (_isCurrent(generation, loadGeneration)) state = next;
+    });
+    ref.onDispose(() {
+      ++_buildGeneration;
+      ++_loadGeneration;
+      subscription.cancel();
+    });
+    return _loadDownloads(repository);
+  }
+
+  Future<List<DownloadedLesson>> _loadDownloads(
+    DownloadRepository repository,
+  ) async {
+    final result = await repository.getDownloads();
+    return result.fold((failure) {
+      debugPrint('❌ _loadDownloads failed: $failure');
+      throw failure;
+    }, (downloads) => downloads);
   }
 
   /// Starts a new download.
@@ -145,7 +162,9 @@ class DownloadsNotifier extends _$DownloadsNotifier {
     // Do NOT mutate state here — setting AsyncLoading() would trigger a
     // provider rebuild which disposes this Ref before the await completes.
     // The calling UI already shows its own progress indicator (SnackBar).
-    final result = await ref.read(startDownloadUseCaseProvider).call(
+    final generation = _buildGeneration;
+    final useCase = ref.read(startDownloadUseCaseProvider);
+    final result = await useCase.call(
       lessonId: lessonId,
       courseId: courseId,
       courseTitle: courseTitle,
@@ -155,114 +174,104 @@ class DownloadsNotifier extends _$DownloadsNotifier {
     );
 
     // Guard: provider may have been disposed while we were awaiting.
-    if (!ref.mounted) return;
+    if (!ref.mounted || generation != _buildGeneration) return;
 
-    await result.fold(
-      (failure) {
-        state = AsyncError(failure, StackTrace.current);
-        // Re-expose failure so the calling widget can show the error.
-        Error.throwWithStackTrace(failure, StackTrace.current);
-      },
-      (_) => refresh(),
-    );
+    await result.fold((failure) {
+      state = AsyncError(failure, StackTrace.current);
+      // Re-expose failure so the calling widget can show the error.
+      Error.throwWithStackTrace(failure, StackTrace.current);
+    }, (_) => refresh());
   }
 
   /// Pauses an active download.
   ///
   /// Throws a [Failure] if the pause request could not be completed.
   Future<void> pauseDownload(String downloadId) async {
-    final result =
-        await ref.read(pauseDownloadUseCaseProvider).call(downloadId);
+    final generation = _buildGeneration;
+    final useCase = ref.read(pauseDownloadUseCaseProvider);
+    final result = await useCase.call(downloadId);
 
     // Guard: provider may have been disposed while we were awaiting.
-    if (!ref.mounted) return;
+    if (!ref.mounted || generation != _buildGeneration) return;
 
-    await result.fold(
-      (failure) {
-        state = AsyncError(failure, StackTrace.current);
-        // Re-expose failure so the calling widget can show the error.
-        Error.throwWithStackTrace(failure, StackTrace.current);
-      },
-      (_) => refresh(),
-    );
+    await result.fold((failure) {
+      state = AsyncError(failure, StackTrace.current);
+      // Re-expose failure so the calling widget can show the error.
+      Error.throwWithStackTrace(failure, StackTrace.current);
+    }, (_) => refresh());
   }
 
   /// Resumes a paused download.
   ///
   /// Throws a [Failure] if the resume request could not be completed.
   Future<void> resumeDownload(String downloadId) async {
-    final result =
-        await ref.read(resumeDownloadUseCaseProvider).call(downloadId);
+    final generation = _buildGeneration;
+    final useCase = ref.read(resumeDownloadUseCaseProvider);
+    final result = await useCase.call(downloadId);
 
-    if (!ref.mounted) return;
+    if (!ref.mounted || generation != _buildGeneration) return;
 
-    await result.fold(
-      (failure) {
-        state = AsyncError(failure, StackTrace.current);
-        Error.throwWithStackTrace(failure, StackTrace.current);
-      },
-      (_) => refresh(),
-    );
+    await result.fold((failure) {
+      state = AsyncError(failure, StackTrace.current);
+      Error.throwWithStackTrace(failure, StackTrace.current);
+    }, (_) => refresh());
   }
 
   /// Cancels a download.
   ///
   /// Throws a [Failure] if the cancel request could not be completed.
   Future<void> cancelDownload(String downloadId) async {
-    final result =
-        await ref.read(cancelDownloadUseCaseProvider).call(downloadId);
+    final generation = _buildGeneration;
+    final useCase = ref.read(cancelDownloadUseCaseProvider);
+    final result = await useCase.call(downloadId);
 
-    if (!ref.mounted) return;
+    if (!ref.mounted || generation != _buildGeneration) return;
 
-    await result.fold(
-      (failure) {
-        state = AsyncError(failure, StackTrace.current);
-        Error.throwWithStackTrace(failure, StackTrace.current);
-      },
-      (_) => refresh(),
-    );
+    await result.fold((failure) {
+      state = AsyncError(failure, StackTrace.current);
+      Error.throwWithStackTrace(failure, StackTrace.current);
+    }, (_) => refresh());
   }
 
   /// Deletes a downloaded lesson.
   ///
   /// Throws a [Failure] if the delete request could not be completed.
   Future<void> deleteDownload(String downloadId) async {
-    final result =
-        await ref.read(deleteDownloadUseCaseProvider).call(downloadId);
+    final generation = _buildGeneration;
+    final useCase = ref.read(deleteDownloadUseCaseProvider);
+    final result = await useCase.call(downloadId);
 
-    if (!ref.mounted) return;
+    if (!ref.mounted || generation != _buildGeneration) return;
 
-    await result.fold(
-      (failure) {
-        state = AsyncError(failure, StackTrace.current);
-        Error.throwWithStackTrace(failure, StackTrace.current);
-      },
-      (_) => refresh(),
-    );
+    await result.fold((failure) {
+      state = AsyncError(failure, StackTrace.current);
+      Error.throwWithStackTrace(failure, StackTrace.current);
+    }, (_) => refresh());
   }
 
   /// Cleans up expired downloads.
   ///
   /// Throws a [Failure] if the cleanup could not be completed.
   Future<void> cleanupExpired() async {
-    final result =
-        await ref.read(cleanupExpiredDownloadsUseCaseProvider).call();
+    final generation = _buildGeneration;
+    final useCase = ref.read(cleanupExpiredDownloadsUseCaseProvider);
+    final result = await useCase.call();
 
-    if (!ref.mounted) return;
+    if (!ref.mounted || generation != _buildGeneration) return;
 
-    await result.fold(
-      (failure) {
-        state = AsyncError(failure, StackTrace.current);
-        Error.throwWithStackTrace(failure, StackTrace.current);
-      },
-      (_) => refresh(),
-    );
+    await result.fold((failure) {
+      state = AsyncError(failure, StackTrace.current);
+      Error.throwWithStackTrace(failure, StackTrace.current);
+    }, (_) => refresh());
   }
 
   /// Refreshes the downloads list without showing a loading spinner.
   Future<void> refresh() async {
-    final next = await AsyncValue.guard(() => _loadDownloads());
-    if (ref.mounted) state = next;
+    final generation = _buildGeneration;
+    final repository = ref.read(downloadRepositoryProvider);
+    final loadGeneration = ++_loadGeneration;
+    final next = await AsyncValue.guard(() => _loadDownloads(repository));
+    if (_isCurrent(generation, loadGeneration)) state = next;
   }
 }
 
@@ -317,11 +326,10 @@ Stream<DownloadProgress> downloadProgress(Ref ref, String downloadId) {
 /// Provider for total storage used by downloads.
 @riverpod
 Future<int> totalStorageUsed(Ref ref) async {
-  final result = await ref.watch(downloadRepositoryProvider).getTotalStorageUsed();
-  return result.fold(
-    (failure) => 0,
-    (total) => total,
-  );
+  final result = await ref
+      .watch(downloadRepositoryProvider)
+      .getTotalStorageUsed();
+  return result.fold((failure) => 0, (total) => total);
 }
 
 // ─── Download by Lesson ID Provider ────────────────────────────────────────────
@@ -332,10 +340,7 @@ Future<DownloadedLesson?> downloadByLessonId(Ref ref, String lessonId) async {
   final result = await ref
       .watch(downloadRepositoryProvider)
       .getDownloadByLessonId(lessonId);
-  return result.fold(
-    (failure) => null,
-    (download) => download,
-  );
+  return result.fold((failure) => null, (download) => download);
 }
 
 /// Provider for getting a download by its own download ID.
@@ -344,8 +349,5 @@ Future<DownloadedLesson?> downloadById(Ref ref, String downloadId) async {
   final result = await ref
       .watch(downloadRepositoryProvider)
       .getDownloadById(downloadId);
-  return result.fold(
-    (failure) => null,
-    (download) => download,
-  );
+  return result.fold((failure) => null, (download) => download);
 }
