@@ -342,6 +342,17 @@ GRANT EXECUTE ON FUNCTION public.assert_valid_session() TO authenticated, servic
 REVOKE EXECUTE ON FUNCTION public.current_user_session() FROM anon;
 GRANT EXECUTE ON FUNCTION public.current_user_session() TO authenticated, service_role;
 
+-- FIX (regression introduced and now corrected during this cleanup pass):
+-- the 4-arg overload's explicit REVOKE FROM PUBIC/anon + GRANT TO
+-- authenticated/service_role was dropped when this block was relocated
+-- out of a duplicate "Function Permissions" section earlier in this
+-- cleanup. Without it, the function keeps the default PUBLIC EXECUTE grant
+-- Postgres assigns at CREATE FUNCTION time, so anon can call the real
+-- rate-limiting RPC directly -- exactly the least-privilege violation
+-- Check "Rate-Limit RPC Least Privilege" in VALIDATION.sql exists to catch.
+REVOKE ALL ON FUNCTION public.check_rate_limit(text, uuid, inet, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.check_rate_limit(text, uuid, inet, uuid) TO authenticated, service_role;
+
 -- Deprecated 3-arg overload (public.check_rate_limit(text, integer, integer)) is a
 -- fail-closed stub (see 07_functions.sql) that only raises DEPRECATED_API; explicitly
 -- revoked from every role, including authenticated, so it is unreachable via PostgREST.
