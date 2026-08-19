@@ -483,6 +483,36 @@ void main() {
       );
     });
 
+    test('denies when the server content version differs from the local copy',
+        () async {
+      final row = validRow()..['content_version'] = 'v1';
+      when(() => localDataSource.getDownloadById(downloadId))
+          .thenAnswer((_) async => row);
+      when(() => mockSupabaseClient.rpc(
+            'revalidate_offline_entitlement',
+            params: any(named: 'params'),
+          )).thenAnswer((_) => FakePostgrestFilterBuilder(
+            Future.value({
+              'status': 'ACTIVE',
+              'content_version': 'v2',
+              'expires_at': DateTime.now()
+                  .add(const Duration(days: 1))
+                  .toIso8601String(),
+            }),
+          ));
+
+      await expectLater(
+        buildEngine().authorize(downloadId),
+        throwsA(
+          isA<OfflinePlaybackDeniedException>().having(
+            (e) => e.reason,
+            'reason',
+            OfflinePlaybackDenialReason.serverRevalidationDenied,
+          ),
+        ),
+      );
+    });
+
     test('allows playback when device is offline (SocketException) with valid local cached entitlement', () async {
       when(() => localDataSource.getDownloadById(downloadId))
           .thenAnswer((_) async => validRow());

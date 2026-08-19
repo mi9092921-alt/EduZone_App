@@ -459,13 +459,58 @@ Future<ChunkIndex> buildIndexForExistingFile(File encryptedFile) async {
 Future<ChunkIndex> loadOrBuildIndex(File encryptedFile) async {
   final idxFile = File('${encryptedFile.path}.idx');
   if (await idxFile.exists()) {
-    final content = await idxFile.readAsString();
-    final jsonMap = json.decode(content) as Map<String, dynamic>;
-    return ChunkIndex.fromJson(jsonMap);
+    try {
+      final content = await idxFile.readAsString();
+      final jsonMap = json.decode(content) as Map<String, dynamic>;
+      final index = ChunkIndex.fromJson(jsonMap);
+      if (await _isCompatibleIndex(encryptedFile, index)) {
+        return index;
+      }
+    } on Object {
+      // A partially-written, old, or otherwise malformed sidecar is
+      // recoverable: rebuild it from the authenticated file layout below.
+    }
   }
   final index = await buildIndexForExistingFile(encryptedFile);
   await idxFile.writeAsString(json.encode(index.toJson()), flush: true);
   return index;
+}
+
+/// Verifies that a sidecar describes the exact chunked file beside it.
+///
+/// Sidecars are a cache, not an authority. A process can be killed while an
+/// index is being written, and older app versions may have left an index with
+/// a different layout. Rebuilding is safe and keeps the existing encrypted
+/// bytes untouched.
+Future<bool> _isCompatibleIndex(File encryptedFile, ChunkIndex index) async {
+  if (index.version != 1 || index.totalPlaintextSize < 0) return false;
+
+  final fileLength = await encryptedFile.length();
+  if (fileLength < chunkedFormatHeaderBytes.length) return false;
+
+  final raf = await encryptedFile.open();
+  try {
+    final header = await raf.read(chunkedFormatHeaderBytes.length);
+    if (!_bytesEqual(header, chunkedFormatHeaderBytes)) return false;
+  } finally {
+    await raf.close();
+  }
+
+  var expectedOffset = chunkedFormatHeaderBytes.length;
+  var totalPlaintext = 0;
+  for (final chunk in index.chunks) {
+    if (chunk.plaintextLength <= 0 ||
+        chunk.encryptedLength !=
+            chunk.plaintextLength + EncryptionService.gcmTagLength ||
+        chunk.encryptedOffset != expectedOffset) {
+      return false;
+    }
+    expectedOffset += EncryptionService.ivLength + 4 + chunk.encryptedLength;
+    totalPlaintext += chunk.plaintextLength;
+  }
+
+  return totalPlaintext == index.totalPlaintextSize &&
+      expectedOffset == fileLength;
 }
 
 Future<void> _encryptFileOnWorker(

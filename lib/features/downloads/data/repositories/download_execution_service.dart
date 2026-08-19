@@ -71,13 +71,13 @@ class DownloadExecutionService {
         _cancelledDownloads = cancelledDownloads,
         _changeController = changeController;
 
-  /// Downloads [url] into [encryptedSavePath], preferring the pipelined
-  /// download-and-encrypt-in-one-pass path
-  /// (`DownloadManager.startEncryptedDownload`) and transparently falling
-  /// back to the original download-then-encrypt flow when the pipelined
-  /// path declines (small file, server without Range support, or iOS while
-  /// the app isn't in the foreground — see that method's doc for the full
-  /// list of reasons it can return `null`).
+  /// Downloads [url] into [encryptedSavePath] through the pipelined
+  /// download-and-encrypt-in-one-pass path.
+  ///
+  /// Plaintext fallback is intentionally not allowed here. If the encrypted
+  /// pipeline is unavailable (small file, missing Range support, or an
+  /// ineligible platform/lifecycle state), the caller must fail the download
+  /// rather than writing the media to disk unencrypted first.
   ///
   /// Returns the manager download id, so callers can still route
   /// pause/resume/cancel through `downloadManagerIds` exactly as before —
@@ -86,11 +86,9 @@ class DownloadExecutionService {
   Future<String> _downloadTrackEncrypted({
     required String downloadId,
     required String url,
-    required String tempPath,
     required String encryptedSavePath,
     required String encryptionKey,
     required String lessonId,
-    required String? sourceUrl,
     required String? qualityLabel,
     String? trackType,
     required String manifestDownloadId,
@@ -162,35 +160,12 @@ class DownloadExecutionService {
             completedChunkIndexes: verifiedChunkIndexes,
             onProgress: onProgress,
           );
-    if (pipelinedManagerId != null) return pipelinedManagerId;
-
-    if (kDebugMode) {
-      debugPrint(
-        '⚠️ Pipelined encrypted download unavailable for $downloadId — '
-        'falling back to download-then-encrypt.',
+    if (pipelinedManagerId == null) {
+      throw StateError(
+        'Encrypted streaming is unavailable for this download',
       );
     }
-
-    final legacyManagerId = await _downloadManager.startDownload(
-      downloadId: downloadId,
-      url: url,
-      savePath: tempPath,
-      sourceUrl: sourceUrl,
-      qualityLabel: qualityLabel,
-      trackType: trackType ?? 'video',
-      onProgress: onProgress,
-    );
-
-    final tempFile = File(tempPath);
-    if (!await tempFile.exists()) {
-      throw Exception('Download failed: temp file not found'); // check-ignore
-    }
-    await _encryptionService.encryptFile(
-      tempFile,
-      File(encryptedSavePath),
-      encryptionKey,
-    );
-    return legacyManagerId;
+    return pipelinedManagerId;
   }
 
   /// Executes a (possibly dual-track) download for [downloadId] and drives
@@ -224,13 +199,8 @@ class DownloadExecutionService {
 
     final isDualTrack = audioUrl != null && audioSavePath != null;
 
-    final videoTempPath = '$videoSavePath.tmp';
-    final audioTempPath = audioSavePath != null ? '$audioSavePath.tmp' : null;
-
     var lastStoredProgress = -1.0;
     var lastProgressUpdateAt = DateTime.fromMillisecondsSinceEpoch(0);
-    var keepTempFiles = false;
-
     // Shared progress state for parallel downloads
     var videoReceived = 0;
     var videoTotal = 0;
@@ -286,11 +256,9 @@ class DownloadExecutionService {
         final videoFuture = _downloadTrackEncrypted(
           downloadId: '${downloadId}_video',
           url: videoUrl,
-          tempPath: videoTempPath,
           encryptedSavePath: videoSavePath,
           encryptionKey: encryptionKey,
           lessonId: lessonId,
-          sourceUrl: sourceUrl,
           qualityLabel: quality?.label,
           manifestDownloadId: '${downloadId}_video',
           courseId: courseId,
@@ -307,11 +275,9 @@ class DownloadExecutionService {
         final audioFuture = _downloadTrackEncrypted(
           downloadId: '${downloadId}_audio',
           url: audioUrl,
-          tempPath: audioTempPath!,
           encryptedSavePath: audioSavePath,
           encryptionKey: encryptionKey,
           lessonId: lessonId,
-          sourceUrl: sourceUrl,
           qualityLabel: quality?.label,
           trackType: 'audio',
           manifestDownloadId: '${downloadId}_audio',
@@ -329,9 +295,8 @@ class DownloadExecutionService {
         final results = await Future.wait([videoFuture, audioFuture]);
         _downloadManagerIds[downloadId] = results.first;
 
-        // Both tracks are already encrypted on disk at this point — either
-        // written directly by the pipelined path, or by the legacy
-        // encryptFile() fallback inside _downloadTrackEncrypted().
+        // Both tracks are already encrypted on disk at this point because the
+        // only execution path above writes encrypted chunks directly.
         final videoEncrypted = File(videoSavePath);
         final audioEncrypted = File(audioSavePath);
 
@@ -354,11 +319,9 @@ class DownloadExecutionService {
         final managerDownloadId = await _downloadTrackEncrypted(
           downloadId: downloadId,
           url: videoUrl,
-          tempPath: videoTempPath,
           encryptedSavePath: videoSavePath,
           encryptionKey: encryptionKey,
           lessonId: lessonId,
-          sourceUrl: sourceUrl,
           qualityLabel: quality?.label,
           manifestDownloadId: downloadId,
           courseId: courseId,
@@ -385,6 +348,8 @@ class DownloadExecutionService {
           'checksum': checksum,
         });
       }
+
+      await _manifestService?.markCompleted(downloadId);
 
       _changeController.add(null);
 
@@ -415,7 +380,6 @@ class DownloadExecutionService {
       }
     } catch (e, stack) {
       if (_pausedDownloads.remove(downloadId)) {
-        keepTempFiles = true;
         await _localDataSource.updateDownloadStatus(downloadId, 'paused');
         _changeController.add(null);
         controller.add(DownloadProgress(
@@ -447,19 +411,6 @@ class DownloadExecutionService {
         title: title,
       );
     } finally {
-      if (!keepTempFiles) {
-        for (final tmpPath in [
-          videoTempPath,
-          ?audioTempPath,
-        ]) {
-          try {
-            final f = File(tmpPath);
-            if (await f.exists()) await f.delete();
-          } catch (_) {
-            // Best-effort cleanup.
-          }
-        }
-      }
       await closeProgressController(downloadId, controller);
     }
   }

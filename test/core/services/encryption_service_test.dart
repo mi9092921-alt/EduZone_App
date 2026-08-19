@@ -106,4 +106,22 @@ void main() {
 
     expect(await decryptedFile.readAsBytes(), equals(originalPayload));
   });
+
+  test('keeps old container names usable while recognizing new extensions', () {
+    expect(
+      detectContainerExt(r'C:\downloads\lesson_720p.enc'),
+      equals('mp4'),
+    );
+    expect(
+      detectContainerExt(r'C:\downloads\lesson_720p.webm.enc'),
+      equals('webm'),
+    );
+    expect(
+      detectContainerExt('/downloads/lesson_audio.opus.enc'),
+      equals('opus'),
+    );
+    expect(mimeTypeForContainerExt('webm'), equals('video/webm'));
+    expect(mimeTypeForContainerExt('m4a'), equals('audio/mp4'));
+    expect(mimeTypeForContainerExt('unknown'), equals('video/mp4'));
+  });
 }

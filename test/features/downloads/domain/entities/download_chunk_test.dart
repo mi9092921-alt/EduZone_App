@@ -25,8 +25,10 @@ void main() {
 
     expect(restored.downloadId, 'd1');
     expect(restored.chunkIndex, 2);
-    expect(restored.updatedAt, updatedAt);
-    expect(restored.committedAt, committedAt);
+    expect(restored.updatedAt.millisecondsSinceEpoch,
+        updatedAt.millisecondsSinceEpoch);
+    expect(restored.committedAt!.millisecondsSinceEpoch,
+        committedAt.millisecondsSinceEpoch);
     expect(restored.checksum, 'abc');
     expect(restored.lastError, isNull);
   });

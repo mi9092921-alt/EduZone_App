@@ -279,6 +279,18 @@ class OfflinePolicyEngine {
       final serverStatus = serverData['status']?.toString();
       final serverExpiry = DateTime.tryParse(serverData['expires_at']?.toString() ?? '');
       final serverRevokedAt = DateTime.tryParse(serverData['revoked_at']?.toString() ?? '');
+      final localContentVersion = row['content_version']?.toString();
+      final serverContentVersion = serverData['content_version']?.toString();
+      if (localContentVersion != null &&
+          localContentVersion.isNotEmpty &&
+          serverContentVersion != null &&
+          serverContentVersion.isNotEmpty &&
+          localContentVersion != serverContentVersion) {
+        throw OfflinePlaybackDeniedException(
+          OfflinePlaybackDenialReason.serverRevalidationDenied,
+          'downloadId=$downloadId content version mismatch', // check-ignore
+        );
+      }
       await _localDataSource.updateDownload(downloadId, {
         'server_status': serverStatus,
         'server_expires_at': serverExpiry?.millisecondsSinceEpoch,

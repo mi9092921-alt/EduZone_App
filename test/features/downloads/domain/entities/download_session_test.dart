@@ -32,7 +32,8 @@ void main() {
     expect(restored.contentVersion, 'v2');
     expect(restored.totalChunks, 10);
     expect(restored.completedBytes, 400);
-    expect(restored.createdAt, createdAt);
+    expect(restored.createdAt.millisecondsSinceEpoch,
+        createdAt.millisecondsSinceEpoch);
     expect(restored.expiresAt, isNull);
   });
 }

@@ -82,7 +82,7 @@ Future<Task?> handleTokenRefresh(Task task) async {
 /// with an authorization error that looks like link expiry — a Range GET
 /// against an already-expired signed URL fails identically no matter how
 /// many times it's retried verbatim, so recovering from it needs a fresh
-/// URL, not just a delay-and-retry (see `_looksLikeExpiredLinkError` and
+/// URL, not just a delay-and-retry (see [looksLikeExpiredLinkError] and
 /// its use in `_downloadWithDio`).
 ///
 /// Returns null (never throws) if no fresher URL could be resolved, so
@@ -177,7 +177,8 @@ class DownloadManager {
   /// failure (bad credentials/URL, deliberate cancellation) that retrying
   /// cannot fix. Range GETs are idempotent, so retrying them is always safe
   /// from a correctness standpoint — this only decides whether it's *useful*.
-  static bool _isTransientDownloadError(Object error) {
+  @visibleForTesting
+  static bool isTransientDownloadError(Object error) {
     if (error is DioException) {
       switch (error.type) {
         case DioExceptionType.connectionTimeout:
@@ -203,7 +204,8 @@ class DownloadManager {
   /// opposed to a genuine transient network error). Retrying the same URL
   /// against this can't succeed — the fix is a fresh URL (see
   /// `fetchFreshTrackUrl`), not a delay.
-  static bool _looksLikeExpiredLinkError(Object error) {
+  @visibleForTesting
+  static bool looksLikeExpiredLinkError(Object error) {
     if (error is DioException && error.type == DioExceptionType.badResponse) {
       final code = error.response?.statusCode;
       return code == 401 || code == 403 || code == 410;
@@ -496,16 +498,15 @@ class DownloadManager {
   /// [PlannedChunk] for why — so workers never need to coordinate beyond
   /// "who owns which chunk indices".
   ///
-  /// Returns `null` if the pipelined path isn't usable for this download —
-  /// callers MUST fall back to the existing [startDownload] +
-  /// [EncryptionService.encryptFile] flow in that case. Reasons this
-  /// returns `null`:
+  /// Returns `null` if the pipelined path isn't usable for this download.
+  /// The encrypted execution service treats this as a hard failure; it must
+  /// not fall back to a plaintext temporary file. Reasons this returns
+  /// `null`:
   /// - The server doesn't support Range requests, or the file is smaller
   ///   than [_parallelDownloadMinBytes] (not worth parallelizing).
   /// - [_dioParallelEligiblePlatform] is false (iOS, app backgrounded).
   /// - Any error during setup/download/encryption (network failure mid-way,
-  ///   disk full, etc.) — the caller's existing plaintext-then-encrypt path
-  ///   is the fallback of last resort, not a second copy of this one.
+  ///   disk full, etc.).
   ///
   /// Known limitation carried over unchanged from the existing
   /// `_tryDownloadWithParallelRanges` plaintext path: pausing a download
@@ -816,7 +817,7 @@ class DownloadManager {
         return;
       } catch (e) {
         if (cancelToken.isCancelled) rethrow;
-        if (attempt >= _maxWorkerAttempts || !_isTransientDownloadError(e)) {
+        if (attempt >= _maxWorkerAttempts || !isTransientDownloadError(e)) {
           rethrow;
         }
         // Bytes received in the failed attempt beyond the last flush were
@@ -1019,7 +1020,7 @@ class DownloadManager {
         if (!linkRefreshUsed &&
             sourceUrl != null &&
             sourceUrl.isNotEmpty &&
-            _looksLikeExpiredLinkError(e)) {
+            looksLikeExpiredLinkError(e)) {
           linkRefreshUsed = true;
           final fresh = await fetchFreshTrackUrl(
             sourceUrl: sourceUrl,
@@ -1041,7 +1042,7 @@ class DownloadManager {
           }
         }
 
-        if (attempt >= _maxWorkerAttempts || !_isTransientDownloadError(e)) {
+        if (attempt >= _maxWorkerAttempts || !isTransientDownloadError(e)) {
           rethrow;
         }
         if (kDebugMode) {
@@ -1154,7 +1155,7 @@ class DownloadManager {
         return _RangeProbe(totalBytes);
       } catch (e) {
         if (cancelToken.isCancelled) rethrow;
-        if (attempt >= _maxWorkerAttempts || !_isTransientDownloadError(e)) {
+        if (attempt >= _maxWorkerAttempts || !isTransientDownloadError(e)) {
           rethrow;
         }
         if (kDebugMode) {
@@ -1237,7 +1238,7 @@ class DownloadManager {
         return;
       } catch (e) {
         if (cancelToken.isCancelled) rethrow;
-        if (attempt >= _maxWorkerAttempts || !_isTransientDownloadError(e)) {
+        if (attempt >= _maxWorkerAttempts || !isTransientDownloadError(e)) {
           rethrow;
         }
         if (kDebugMode) {

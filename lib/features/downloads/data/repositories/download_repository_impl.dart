@@ -484,6 +484,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       }
 
       await _localDataSource.deleteDownload(downloadId);
+      await _manifestService?.deleteForDownload(downloadId);
       _changeController.add(null);
       
       try {
@@ -573,6 +574,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       }
 
       await _localDataSource.deleteDownload(downloadId);
+      await _manifestService?.deleteForDownload(downloadId);
       _changeController.add(null);
 
       try {

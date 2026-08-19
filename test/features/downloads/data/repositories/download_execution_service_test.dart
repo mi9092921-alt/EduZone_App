@@ -150,8 +150,8 @@ void main() {
       expect(progressControllers.containsKey('d1'), isFalse);
     });
 
-    test('falls back to download-then-encrypt when the pipelined path '
-        'declines', () async {
+    test('fails without writing plaintext when the encrypted path declines',
+        () async {
       final videoSavePath = '${tempDir.path}/lesson.mp4.enc';
 
       when(() => downloadManager.startEncryptedDownload(
@@ -161,30 +161,6 @@ void main() {
             encryptionKeyBase64: any(named: 'encryptionKeyBase64'),
             onProgress: any(named: 'onProgress'),
           )).thenAnswer((_) async => null);
-
-      when(() => downloadManager.startDownload(
-            downloadId: any(named: 'downloadId'),
-            url: any(named: 'url'),
-            savePath: any(named: 'savePath'),
-            onProgress: any(named: 'onProgress'),
-            headers: any(named: 'headers'),
-            sourceUrl: any(named: 'sourceUrl'),
-            qualityLabel: any(named: 'qualityLabel'),
-            trackType: any(named: 'trackType'),
-          )).thenAnswer((invocation) async {
-        final savePath = invocation.namedArguments[#savePath] as String;
-        await File(savePath).writeAsBytes(List.filled(5, 2));
-        final onProgress =
-            invocation.namedArguments[#onProgress] as ProgressCallback;
-        onProgress(5, 5);
-        return 'manager-legacy';
-      });
-
-      when(() => encryptionService.encryptFile(any(), any(), 'test-key'))
-          .thenAnswer((invocation) async {
-        final destination = invocation.positionalArguments[1] as File;
-        await destination.writeAsBytes(List.filled(5, 2));
-      });
 
       await service.execute(
         downloadId: 'd2',
@@ -197,13 +173,20 @@ void main() {
         sourceUrl: 'https://example.com/source',
       );
 
-      verify(() => encryptionService.encryptFile(any(), any(), 'test-key'))
+      verifyNever(() => downloadManager.startDownload(
+            downloadId: any(named: 'downloadId'),
+            url: any(named: 'url'),
+            savePath: any(named: 'savePath'),
+            onProgress: any(named: 'onProgress'),
+            headers: any(named: 'headers'),
+            sourceUrl: any(named: 'sourceUrl'),
+            qualityLabel: any(named: 'qualityLabel'),
+            trackType: any(named: 'trackType'),
+          ));
+      verifyNever(() => encryptionService.encryptFile(any(), any(), any()));
+      verify(() => localDataSource.updateDownloadStatus('d2', 'failed'))
           .called(1);
-      final captured = verify(
-        () => localDataSource.updateDownload('d2', captureAny()),
-      ).captured;
-      expect((captured.last as Map<String, dynamic>)['download_status'],
-          'completed');
+      expect(await File('$videoSavePath.tmp').exists(), isFalse);
     });
   });
 

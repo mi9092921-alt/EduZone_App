@@ -27,8 +27,23 @@ class DownloadManifestService {
       );
     }
 
-    await _localDataSource.saveDownloadSession(session);
     final existing = await _localDataSource.getDownloadChunks(session.downloadId);
+    final existingSession =
+        await _localDataSource.getDownloadSession(session.downloadId);
+    final verifiedBytes = existing
+        .where((chunk) => chunk.state == 'verified')
+        .fold<int>(0, (sum, chunk) => sum + chunk.plaintextLength);
+    final preservedCompletedBytes = existingSession == null
+        ? verifiedBytes
+        : (existingSession.completedBytes > verifiedBytes
+              ? existingSession.completedBytes
+              : verifiedBytes);
+    await _localDataSource.saveDownloadSession(
+      session.copyWithProgress(
+        completedBytes: preservedCompletedBytes,
+        createdAt: existingSession?.createdAt ?? session.createdAt,
+      ),
+    );
     final existingIndexes = existing.map((chunk) => chunk.chunkIndex).toSet();
     final now = DateTime.now();
 
@@ -76,33 +91,88 @@ class DownloadManifestService {
   }
 
   Future<void> markPaused(String downloadId) async {
-    final chunks = await _localDataSource.getDownloadChunks(downloadId);
-    for (final chunk in chunks) {
-      if (chunk.state != 'fetching' &&
-          chunk.state != 'encrypting' &&
-          chunk.state != 'persisted') {
-        continue;
+    for (final trackId in _trackIds(downloadId)) {
+      final chunks = await _localDataSource.getDownloadChunks(trackId);
+      for (final chunk in chunks) {
+        if (chunk.state != 'fetching' &&
+            chunk.state != 'encrypting' &&
+            chunk.state != 'persisted') {
+          continue;
+        }
+        await _localDataSource.updateDownloadChunk(
+          trackId,
+          chunk.chunkIndex,
+          {
+            'state': 'pending',
+            'downloaded_bytes': 0,
+            'last_error': 'Paused before chunk commit',
+          },
+        );
       }
-      await _localDataSource.updateDownloadChunk(
-        downloadId,
-        chunk.chunkIndex,
-        {
-          'state': 'pending',
-          'downloaded_bytes': 0,
-          'last_error': 'Paused before chunk commit',
-        },
-      );
+      await _localDataSource.updateDownloadSession(trackId, {'status': 'paused'});
     }
-    await _localDataSource.updateDownloadSession(
-      downloadId,
-      {'status': 'paused'},
-    );
   }
 
   Future<void> markRunning(String downloadId) async {
-    await _localDataSource.updateDownloadSession(
-      downloadId,
-      {'status': 'downloading'},
+    for (final trackId in _trackIds(downloadId)) {
+      await _localDataSource.updateDownloadSession(
+        trackId,
+        {'status': 'downloading'},
+      );
+    }
+  }
+
+  Future<void> markCompleted(String downloadId) async {
+    for (final trackId in _trackIds(downloadId)) {
+      await _localDataSource.updateDownloadSession(
+        trackId,
+        {'status': 'completed'},
+      );
+    }
+  }
+
+  Future<void> deleteForDownload(String downloadId) async {
+    for (final trackId in _trackIds(downloadId)) {
+      await _localDataSource.deleteDownloadSession(trackId);
+      // This is intentionally explicit as well as relying on the SQL
+      // cascade, because some existing installations may not have foreign
+      // keys enabled on their SQLite connection.
+      await _localDataSource.deleteDownloadChunks(trackId);
+    }
+  }
+
+  List<String> _trackIds(String downloadId) => [
+        downloadId,
+        '${downloadId}_video',
+        '${downloadId}_audio',
+      ];
+
+}
+
+extension on DownloadSession {
+  DownloadSession copyWithProgress({
+    required int completedBytes,
+    required DateTime createdAt,
+  }) {
+    return DownloadSession(
+      downloadId: downloadId,
+      lessonId: lessonId,
+      courseId: courseId,
+      contentVersion: contentVersion,
+      quality: quality,
+      trackType: trackType,
+      totalBytes: totalBytes,
+      chunkSize: chunkSize,
+      totalChunks: totalChunks,
+      completedBytes: completedBytes,
+      status: status,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      sourceIdentity: sourceIdentity,
+      entitlementId: entitlementId,
+      expiresAt: expiresAt,
+      encryptionVersion: encryptionVersion,
+      containerVersion: containerVersion,
     );
   }
 }

@@ -80,6 +80,8 @@ void main() {
         .thenAnswer((_) async {});
     when(() => localDataSource.getDownloadChunks('download-1'))
         .thenAnswer((_) async => const <DownloadChunk>[]);
+    when(() => localDataSource.getDownloadSession('download-1'))
+        .thenAnswer((_) async => null);
     when(() => localDataSource.saveDownloadChunk(any()))
         .thenAnswer((_) async {});
   });
@@ -89,7 +91,11 @@ void main() {
 
     await service.persistPlan(session: session, plan: plan);
 
-    verify(() => localDataSource.saveDownloadSession(session)).called(1);
+    final saved = verify(
+      () => localDataSource.saveDownloadSession(captureAny()),
+    ).captured.single as DownloadSession;
+    expect(saved.downloadId, session.downloadId);
+    expect(saved.completedBytes, 0);
     final captured = verify(
       () => localDataSource.saveDownloadChunk(captureAny()),
     ).captured.cast<DownloadChunk>();
@@ -130,4 +136,91 @@ void main() {
     expect(captured, hasLength(1));
     expect(captured.single.chunkIndex, 1);
   });
+
+  test('preserves completed bytes and creation time when resuming a plan',
+      () async {
+    final persistedAt = DateTime(2025);
+    when(() => localDataSource.getDownloadSession('download-1'))
+        .thenAnswer((_) async => session.copyWithProgressForTest(
+              completedBytes: 512,
+              createdAt: persistedAt,
+            ));
+    when(() => localDataSource.getDownloadChunks('download-1')).thenAnswer(
+      (_) async => [
+        DownloadChunk(
+          downloadId: 'download-1',
+          chunkIndex: 0,
+          plaintextStart: 0,
+          plaintextLength: 512,
+          encryptedOffset: chunkedFormatHeaderBytes.length,
+          encryptedLength: 512 + 16 + 12 + 4,
+          state: 'verified',
+          downloadedBytes: 512,
+          attempts: 1,
+          checksum: 'checksum',
+          updatedAt: persistedAt,
+          lastError: null,
+          committedAt: persistedAt,
+        ),
+      ],
+    );
+
+    await service.persistPlan(
+      session: session,
+      plan: planChunkLayout(1024, chunkSize: 512),
+    );
+
+    final saved = verify(
+      () => localDataSource.saveDownloadSession(captureAny()),
+    ).captured.single as DownloadSession;
+    expect(saved.completedBytes, 512);
+    expect(saved.createdAt, persistedAt);
+  });
+
+  test('pauses all possible track manifests for a dual-track download',
+      () async {
+    when(() => localDataSource.getDownloadChunks(any()))
+        .thenAnswer((_) async => const <DownloadChunk>[]);
+    when(() => localDataSource.updateDownloadSession(any(), any()))
+        .thenAnswer((_) async {});
+
+    await service.markPaused('download-1');
+
+    verify(() => localDataSource.updateDownloadSession(
+          'download-1_video',
+          {'status': 'paused'},
+        )).called(1);
+    verify(() => localDataSource.updateDownloadSession(
+          'download-1_audio',
+          {'status': 'paused'},
+        )).called(1);
+  });
+}
+
+extension on DownloadSession {
+  DownloadSession copyWithProgressForTest({
+    required int completedBytes,
+    required DateTime createdAt,
+  }) {
+    return DownloadSession(
+      downloadId: downloadId,
+      lessonId: lessonId,
+      courseId: courseId,
+      contentVersion: contentVersion,
+      quality: quality,
+      trackType: trackType,
+      totalBytes: totalBytes,
+      chunkSize: chunkSize,
+      totalChunks: totalChunks,
+      completedBytes: completedBytes,
+      status: status,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      sourceIdentity: sourceIdentity,
+      entitlementId: entitlementId,
+      expiresAt: expiresAt,
+      encryptionVersion: encryptionVersion,
+      containerVersion: containerVersion,
+    );
+  }
 }

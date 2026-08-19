@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:app/core/services/encryption_service.dart';
 import 'package:app/core/services/offline_playback_service.dart';
+import 'package:encrypt/encrypt.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -65,5 +67,44 @@ void main() {
 
     await service.cleanupTempFile(preparedFile);
     expect(await preparedFile.exists(), isFalse);
+  });
+
+  test('prepares a legacy single-payload encrypted file', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'offline_playback_legacy_test',
+    );
+    addTearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    const downloadId = 'legacy-download';
+    final encryptedFile = File('${tempDir.path}/lesson_720p.enc');
+    final originalPayload = Uint8List.fromList(
+      List<int>.generate(128, (index) => (index * 13) % 256),
+    );
+    final keyBase64 = encryptionService.generateEncryptionKey();
+    await encryptionService.storeKey(downloadId, keyBase64);
+
+    final key = Key.fromBase64(keyBase64);
+    final iv = IV.fromSecureRandom(EncryptionService.ivLength);
+    final encrypted = Encrypter(AES(key, mode: AESMode.gcm)).encryptBytes(
+      originalPayload,
+      iv: iv,
+    );
+    await encryptedFile.writeAsBytes([
+      ...utf8.encode('eduzone-gcm'),
+      ...iv.bytes,
+      ...encrypted.bytes,
+    ]);
+
+    final preparedFile = await service.preparePlayableFile(
+      downloadId: downloadId,
+      encryptedPath: encryptedFile.path,
+      outputPath: '${tempDir.path}/legacy_prepared.mp4',
+    );
+
+    expect(await preparedFile.readAsBytes(), equals(originalPayload));
   });
 }
