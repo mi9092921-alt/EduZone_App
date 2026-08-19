@@ -85,10 +85,8 @@ class LessonsSidebar extends ConsumerWidget {
               final isCompleted = userProgress?.completed ?? false;
               final isLocked = !lesson.hasAccess && !lesson.isPreview;
 
-              return ColoredBox(
+              return Material(
                 color: isCurrent ? ds.primarySoft : Colors.transparent,
-
-                ///
                 child: LessonTile(
                   title: lesson.title,
                   duration: lesson.durationSec != null

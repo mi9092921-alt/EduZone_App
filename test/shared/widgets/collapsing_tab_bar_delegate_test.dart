@@ -9,7 +9,7 @@ void main() {
     );
   }
 
-  test('minExtent and maxExtent both equal the TabBar preferred height', () {
+  test('minExtent and maxExtent both equal the TabBar preferred height when no divider', () {
     final tabBar = buildTabBar();
     final delegate = CollapsingTabBarDelegate(
       tabBar: tabBar,
@@ -18,6 +18,18 @@ void main() {
 
     expect(delegate.minExtent, tabBar.preferredSize.height);
     expect(delegate.maxExtent, tabBar.preferredSize.height);
+  });
+
+  test('minExtent and maxExtent include divider height when dividerColor is set', () {
+    final tabBar = buildTabBar();
+    final delegate = CollapsingTabBarDelegate(
+      tabBar: tabBar,
+      backgroundColor: Colors.white,
+      dividerColor: Colors.grey,
+    );
+
+    expect(delegate.minExtent, tabBar.preferredSize.height + 1.0);
+    expect(delegate.maxExtent, tabBar.preferredSize.height + 1.0);
   });
 
   testWidgets('renders without a divider when dividerColor is not set', (tester) async {

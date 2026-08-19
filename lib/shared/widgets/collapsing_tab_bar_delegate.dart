@@ -24,9 +24,11 @@ class CollapsingTabBarDelegate extends SliverPersistentHeaderDelegate {
   });
 
   @override
-  double get minExtent => tabBar.preferredSize.height;
+  double get minExtent =>
+      tabBar.preferredSize.height + (dividerColor != null ? 1.0 : 0.0);
   @override
-  double get maxExtent => tabBar.preferredSize.height;
+  double get maxExtent =>
+      tabBar.preferredSize.height + (dividerColor != null ? 1.0 : 0.0);
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {

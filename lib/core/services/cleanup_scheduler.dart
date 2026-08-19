@@ -54,12 +54,88 @@ class CleanupScheduler {
     );
   }
 
+  /// Runs one cleanup pass over every expired download row and returns a
+  /// summary of what happened.
+  ///
+  /// Extracted from [callbackDispatcher] as a pure, dependency-injected
+  /// unit so the file/key/DB-row deletion ordering and per-item failure
+  /// handling can be exercised directly in a test without WorkManager's
+  /// isolate machinery (which has no Flutter binding and cannot be driven
+  /// from `flutter test`). This is a behavior-preserving extraction, not a
+  /// rewrite — see `cleanup_scheduler_test.dart`.
+  @visibleForTesting
+  static Future<({int total, int removed, int keyDeletionFailures})>
+      runCleanup({
+    required DownloadLocalDataSource localDs,
+    required EncryptionService encryptionService,
+  }) async {
+    final expiredRows = await localDs.getExpiredDownloads();
+    var keyDeletionFailures = 0;
+
+    for (final row in expiredRows) {
+      final id = row['id'] as String?;
+      if (id == null || id.isEmpty) continue;
+
+      final encryptedPath = row['encrypted_path'] as String?;
+      final audioPath = row['audio_path'] as String?;
+
+      // Delete every file variant (the final encrypted file, any
+      // in-progress .tmp counterpart, and the chunked-container .idx
+      // sidecar written by loadOrBuildIndex — see encryption_service.dart.
+      // The .idx file was previously left behind here on every expiry
+      // cleanup (P6.29/P6.30 orphan detection gap).
+      for (final path in [
+        encryptedPath,
+        if (encryptedPath != null && encryptedPath.isNotEmpty) ...[
+          '$encryptedPath.tmp',
+          '$encryptedPath.idx',
+        ],
+        audioPath,
+        if (audioPath != null && audioPath.isNotEmpty) ...[
+          '$audioPath.tmp',
+          '$audioPath.idx',
+        ],
+      ]) {
+        if (path == null || path.isEmpty) continue;
+        try {
+          final file = File(path);
+          if (await file.exists()) await file.delete();
+        } catch (_) {
+          // Non-fatal: file may already be gone.
+        }
+      }
+
+      // Remove the AES key from secure storage. If this fails, do NOT
+      // delete the DB row below — leave the record in place so the
+      // next cleanup cycle retries this item instead of silently
+      // orphaning the key (a record-less key with no way to find and
+      // remove it later). This mirrors the same safety net the
+      // "crash mid-loop" comment below already relies on, extended to
+      // cover a caught (non-crashing) failure too.
+      try {
+        await encryptionService.deleteKey(id);
+      } catch (_) {
+        keyDeletionFailures++;
+        continue;
+      }
+
+      // Remove the DB row last so that a crash mid-loop leaves the
+      // record in place and the next run retries the cleanup.
+      await localDs.deleteDownload(id);
+    }
+
+    return (
+      total: expiredRows.length,
+      removed: expiredRows.length - keyDeletionFailures,
+      keyDeletionFailures: keyDeletionFailures,
+    );
+  }
+
   /// Callback dispatcher for WorkManager.
   ///
   /// Called by the system when the scheduled task fires.  Bootstraps its
   /// own DB + encryption instances (no Riverpod in this isolate) and
-  /// physically deletes every expired download row along with its files
-  /// and encryption key.
+  /// delegates the actual deletion work to [runCleanup].
   @pragma('vm:entry-point')
   static void callbackDispatcher() {
     Workmanager().executeTask((task, inputData) async {
@@ -71,66 +147,16 @@ class CleanupScheduler {
         final localDs = DownloadLocalDataSource(storageService);
         final encryptionService = EncryptionService(secureStorage);
 
-        final expiredRows = await localDs.getExpiredDownloads();
-        var keyDeletionFailures = 0;
-
-        for (final row in expiredRows) {
-          final id = row['id'] as String?;
-          if (id == null || id.isEmpty) continue;
-
-          final encryptedPath = row['encrypted_path'] as String?;
-          final audioPath = row['audio_path'] as String?;
-
-          // Delete every file variant (the final encrypted file, any
-          // in-progress .tmp counterpart, and the chunked-container .idx
-          // sidecar written by loadOrBuildIndex — see encryption_service.dart.
-          // The .idx file was previously left behind here on every expiry
-          // cleanup (P6.29/P6.30 orphan detection gap).
-          for (final path in [
-            encryptedPath,
-            if (encryptedPath != null && encryptedPath.isNotEmpty) ...[
-              '$encryptedPath.tmp',
-              '$encryptedPath.idx',
-            ],
-            audioPath,
-            if (audioPath != null && audioPath.isNotEmpty) ...[
-              '$audioPath.tmp',
-              '$audioPath.idx',
-            ],
-          ]) {
-            if (path == null || path.isEmpty) continue;
-            try {
-              final file = File(path);
-              if (await file.exists()) await file.delete();
-            } catch (_) {
-              // Non-fatal: file may already be gone.
-            }
-          }
-
-          // Remove the AES key from secure storage. If this fails, do NOT
-          // delete the DB row below — leave the record in place so the
-          // next cleanup cycle retries this item instead of silently
-          // orphaning the key (a record-less key with no way to find and
-          // remove it later). This mirrors the same safety net the
-          // "crash mid-loop" comment below already relies on, extended to
-          // cover a caught (non-crashing) failure too.
-          try {
-            await encryptionService.deleteKey(id);
-          } catch (_) {
-            keyDeletionFailures++;
-            continue;
-          }
-
-          // Remove the DB row last so that a crash mid-loop leaves the
-          // record in place and the next run retries the cleanup.
-          await localDs.deleteDownload(id);
-        }
+        final result = await runCleanup(
+          localDs: localDs,
+          encryptionService: encryptionService,
+        );
 
         if (kDebugMode) {
           debugPrint(
-            '[CleanupScheduler] Removed ${expiredRows.length - keyDeletionFailures} '
-            'of ${expiredRows.length} expired download(s)'
-            '${keyDeletionFailures > 0 ? ' ($keyDeletionFailures key-deletion failure(s), retried next cycle)' : ''}',
+            '[CleanupScheduler] Removed ${result.removed} '
+            'of ${result.total} expired download(s)'
+            '${result.keyDeletionFailures > 0 ? ' (${result.keyDeletionFailures} key-deletion failure(s), retried next cycle)' : ''}',
           );
         }
         return true;

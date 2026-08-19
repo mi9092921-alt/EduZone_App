@@ -9,10 +9,11 @@ import '../../domain/entities/lesson_progress_sync_item.dart';
 ///
 /// Handles upsert to `user_progress` table and activity logging.
 class VideoPlayerRemoteDataSource {
-  final SupabaseClient _client;
+  final SupabaseClient? _explicitClient;
+  SupabaseClient get _client => _explicitClient ?? SupabaseService.client;
 
   VideoPlayerRemoteDataSource([SupabaseClient? client])
-    : _client = client ?? SupabaseService.client;
+    : _explicitClient = client;
 
   /// Upserts the user's progress for a specific lesson.
   Future<void> syncProgress({

@@ -12,10 +12,11 @@ import '../models/streaming_video_info.dart';
 ///
 /// Handles Supabase Edge Function calls for fetching direct streaming video info.
 class Player4RemoteDataSource {
-  final SupabaseClient _client;
+  final SupabaseClient? _explicitClient;
+  SupabaseClient get _client => _explicitClient ?? SupabaseService.client;
 
   Player4RemoteDataSource([SupabaseClient? client])
-      : _client = client ?? SupabaseService.client;
+      : _explicitClient = client;
 
   /// Fetches streaming video info from Supabase Edge Function.
   ///
