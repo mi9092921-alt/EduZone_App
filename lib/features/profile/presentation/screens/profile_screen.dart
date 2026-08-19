@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../application/providers/profile_provider.dart';
 import '../../domain/entities/student_profile.dart';
 import '../widgets/device_info_widget.dart';
@@ -22,7 +23,9 @@ class ProfileScreen extends ConsumerWidget {
       title: l10n.profileTab,
       centerTitle: true,
       onRetry: () => ref.invalidate(profileProvider),
-      error: profileAsync.hasError ? l10n.errorGeneric : null,
+      error: profileAsync.hasError
+          ? ErrorHandler.getMessage(context, profileAsync.error!)
+          : null,
       bottomSpacing: AppSpacing.xl4,
       slivers: [
         AppSkeleton.sliver(

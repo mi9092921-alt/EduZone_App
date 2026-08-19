@@ -11,6 +11,7 @@ import '../../../../../core/network/supabase_client.dart';
 import '../../../../../core/utils/device_info_helper.dart';
 import '../../../../../design_system/design_system.dart';
 import '../../../../../shared/cross_feature/courses_shared.dart';
+import '../../../../../shared/utils/error_handler.dart';
 import '../../../application/providers/video_provider.dart';
 import 'modern_player_error_overlay.dart';
 import 'modern_player_fullscreen_exit_button.dart';
@@ -317,7 +318,7 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
         child: CircularProgressIndicator(color: AppColors.primary),
       ),
       error: (e, _) => Center(
-        child: Text(AppLocalizations.of(context)!.errorLoading(e.toString())),
+        child: Text(ErrorHandler.getMessage(context, e)),
       ),
     );
   }

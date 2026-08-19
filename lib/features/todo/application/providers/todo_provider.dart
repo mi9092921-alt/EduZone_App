@@ -50,14 +50,23 @@ UpdateTodo updateTodo(Ref ref) => UpdateTodo(ref.watch(todoRepositoryProvider));
 class TodoState {
   final List<TodoItem> todos;
   final bool isLoading;
-  final String? error;
+
+  /// The [Failure] from the last failed operation, or `null`. Kept as the
+  /// typed [Failure] (not a pre-formatted `String`) so the screen can
+  /// classify it via `ErrorHandler.getMessage()` at display time -- the
+  /// notifier layer has no `BuildContext`/localization access, so
+  /// classification can't happen here. Previously this stored
+  /// `failure.message` directly: an internal, English-only diagnostic
+  /// string never meant to be user-facing, shown as-is regardless of
+  /// locale (see Section 13/14 hardening pass).
+  final Object? error;
 
   TodoState({this.todos = const [], this.isLoading = false, this.error});
 
   TodoState copyWith({
     List<TodoItem>? todos,
     bool? isLoading,
-    String? error,
+    Object? error,
     bool clearError = false,
   }) {
     return TodoState(
@@ -120,7 +129,7 @@ class TodoNotifier extends _$TodoNotifier {
 
     result.fold(
       (failure) =>
-          state = state.copyWith(isLoading: false, error: failure.message),
+          state = state.copyWith(isLoading: false, error: failure),
       (todos) => state = state.copyWith(isLoading: false, todos: todos),
     );
   }
@@ -153,7 +162,7 @@ class TodoNotifier extends _$TodoNotifier {
     result.fold(
       (failure) {
         // Revert on failure
-        state = state.copyWith(error: failure.message, todos: initialTodos);
+        state = state.copyWith(error: failure, todos: initialTodos);
       },
       (_) {
         // Success
@@ -194,7 +203,7 @@ class TodoNotifier extends _$TodoNotifier {
 
     result.fold(
       (failure) {
-        state = state.copyWith(error: failure.message, todos: initialTodos);
+        state = state.copyWith(error: failure, todos: initialTodos);
       },
       (_) {
         // Success
@@ -235,7 +244,7 @@ class TodoNotifier extends _$TodoNotifier {
     return result.fold(
       (failure) {
         debugPrint('[TodoNotifier] deleteTodo failed: ${failure.message}');
-        state = state.copyWith(error: failure.message, todos: initialTodos);
+        state = state.copyWith(error: failure, todos: initialTodos);
         return false;
       },
       (_) {
@@ -269,7 +278,7 @@ class TodoNotifier extends _$TodoNotifier {
 
     result.fold(
       (failure) {
-        state = state.copyWith(error: failure.message, todos: initialTodos);
+        state = state.copyWith(error: failure, todos: initialTodos);
       },
       (_) {
         // Success

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/utils/app_snackbar.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../application/providers/todo_provider.dart';
 import '../../domain/entities/todo_item.dart';
 import '../widgets/add_todo_bottom_sheet.dart';
@@ -41,7 +42,7 @@ class TodoScreen extends ConsumerWidget {
       safeArea: false,
       onRefresh: () => ref.read(todoProvider.notifier).fetchTodos(),
       error: todoState.error != null && todoState.todos.isEmpty
-          ? todoState.error
+          ? ErrorHandler.getMessage(context, todoState.error!)
           : null,
       onRetry: () => ref.read(todoProvider.notifier).fetchTodos(),
       floatingActionButton: Padding(

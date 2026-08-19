@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
-import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../../../shared/cross_feature/courses_shared.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../application/providers/video_provider.dart';
 import 'youtube_player_widget.dart';
 
@@ -125,7 +125,7 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(
-        child: Text(AppLocalizations.of(context)!.errorLoading(e.toString())),
+        child: Text(ErrorHandler.getMessage(context, e)),
       ),
     );
   }

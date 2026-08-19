@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/cross_feature/courses_shared.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../application/providers/video_provider.dart';
 import '../widgets/lessons_sidebar.dart';
 import 'video_player/lesson_lookup.dart';
@@ -277,7 +278,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
           loading: () => const AppSkeleton(child: VideoPlayerSkeleton()),
           error: (e, _) => AppScreen(
             child: Center(
-              child: Text(AppLocalizations.of(context)!.errorLoading(e.toString())),
+              child: Text(ErrorHandler.getMessage(context, e)),
             ),
           ),
         );
@@ -285,7 +286,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       loading: () => const AppSkeleton(child: VideoPlayerSkeleton()),
       error: (e, _) => AppScreen(
         child: Center(
-          child: Text(AppLocalizations.of(context)!.errorLoading(e.toString())),
+          child: Text(ErrorHandler.getMessage(context, e)),
         ),
       ),
     );

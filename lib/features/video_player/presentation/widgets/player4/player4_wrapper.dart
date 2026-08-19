@@ -564,7 +564,7 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(
-        child: Text(AppLocalizations.of(context)!.errorLoading(e.toString())),
+        child: Text(mapPlayer4ErrorToMessage(AppLocalizations.of(context)!, e)),
       ),
     );
   }

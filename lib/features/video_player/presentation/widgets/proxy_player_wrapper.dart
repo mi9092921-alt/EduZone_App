@@ -6,6 +6,7 @@ import '../../../../core/network/supabase_client.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../../../design_system/design_system.dart';
 import '../../../../shared/cross_feature/courses_shared.dart';
+import '../../../../shared/utils/error_handler.dart';
 import 'proxy_video_player_widget.dart';
 
 class ProxyPlayerWrapper extends ConsumerStatefulWidget {
@@ -122,7 +123,7 @@ class _ProxyPlayerWrapperState extends ConsumerState<ProxyPlayerWrapper> {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(
-        child: Text(AppLocalizations.of(context)!.errorLoading(e.toString())),
+        child: Text(ErrorHandler.getMessage(context, e)),
       ),
     );
   }

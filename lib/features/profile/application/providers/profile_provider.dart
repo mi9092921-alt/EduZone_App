@@ -38,7 +38,15 @@ Future<StudentProfile> profile(Ref ref) async {
 class ProfileActionsState {
   final bool isUpdating;
   final bool isUploadingAvatar;
-  final String? error;
+
+  /// The error from the last failed update/upload, or `null`. Kept as the
+  /// typed exception (not a pre-formatted `String`) so the UI can
+  /// classify it via `ErrorHandler.getMessage()` at display time --
+  /// notifiers have no `BuildContext`/localization access, so
+  /// classification can't happen here. Previously this stored
+  /// `e.toString()` directly: an internal, unlocalized diagnostic string.
+  /// See Section 13/14 hardening pass.
+  final Object? error;
   final String? successMessage;
 
   const ProfileActionsState({
@@ -51,7 +59,7 @@ class ProfileActionsState {
   ProfileActionsState copyWith({
     bool? isUpdating,
     bool? isUploadingAvatar,
-    String? error,
+    Object? error,
     String? successMessage,
     bool clearError = false,
     bool clearSuccess = false,
@@ -111,7 +119,7 @@ class ProfileActions extends _$ProfileActions {
       return true;
     } catch (e) {
       if (ref.mounted) {
-        state = state.copyWith(isUpdating: false, error: e.toString());
+        state = state.copyWith(isUpdating: false, error: e);
       }
       return false;
     } finally {
@@ -150,7 +158,7 @@ class ProfileActions extends _$ProfileActions {
       return true;
     } catch (e) {
       if (ref.mounted) {
-        state = state.copyWith(isUploadingAvatar: false, error: e.toString());
+        state = state.copyWith(isUploadingAvatar: false, error: e);
       }
       return false;
     } finally {

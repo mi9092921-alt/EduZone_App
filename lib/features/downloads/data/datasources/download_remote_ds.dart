@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/error/exceptions.dart';
+import '../../../../core/network/network_exception_mapper.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../data/models/video_info.dart';
 
@@ -145,7 +146,8 @@ class DownloadRemoteDataSource {
         debugPrint('🔍 validateCourseAccess → Exception: $e');
         return true;
       }());
-      throw ServerException(e.toString());
+      if (e is AppException) rethrow;
+      throw NetworkExceptionMapper.map(e);
     }
   }
 
@@ -185,7 +187,8 @@ class DownloadRemoteDataSource {
         debugPrint('🔍 video-info → Exception: $e');
         return true;
       }());
-      throw ServerException(e.toString());
+      if (e is AppException) rethrow;
+      throw NetworkExceptionMapper.map(e);
     }
   }
 
@@ -216,7 +219,8 @@ class DownloadRemoteDataSource {
         'Failed to log download attempt: ${e.details ?? e.reasonPhrase ?? e.status}', // check-ignore
       );
     } catch (e) {
-      throw ServerException(e.toString());
+      if (e is AppException) rethrow;
+      throw NetworkExceptionMapper.map(e);
     }
   }
 }

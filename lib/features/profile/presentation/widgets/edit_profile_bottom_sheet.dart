@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/utils/app_snackbar.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../../../shared/widgets/app_avatar.dart';
 import '../../application/providers/profile_provider.dart';
 import '../../domain/entities/student_profile.dart';
@@ -116,7 +117,21 @@ class _EditProfileBottomSheetState
 
     if (mounted) {
       setState(() => _isSaving = false);
-      if (success) Navigator.pop(context);
+      if (success) {
+        Navigator.pop(context);
+      } else {
+        // Previously: on failure the sheet just stayed open with zero
+        // feedback -- ProfileActionsState.error was being set by the
+        // notifier but nothing ever read it, so a failed save looked
+        // indistinguishable from the button silently doing nothing.
+        final error = ref.read(profileActionsProvider).error;
+        AppSnackbar.showError(
+          context: context,
+          message: error != null
+              ? ErrorHandler.getMessage(context, error)
+              : l10n.errorGeneric,
+        );
+      }
     }
   }
 
