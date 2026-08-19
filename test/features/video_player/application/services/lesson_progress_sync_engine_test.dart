@@ -192,6 +192,7 @@ void main() {
 
       // A different account's session opens and the retry timer's original
       // window elapses. The stale item must never have been flushed.
+      clearInteractions(repository);
       when(
         () => repository.syncProgressBatch(any()),
       ).thenAnswer((_) async => const Right(null));

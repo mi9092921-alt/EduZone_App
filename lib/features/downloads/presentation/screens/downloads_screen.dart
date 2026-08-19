@@ -5,6 +5,7 @@ import '../../../../core/error/failures.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
 import '../../../../shared/utils/app_snackbar.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../application/providers/downloads_provider.dart';
 import '../../domain/entities/download_enums.dart';
 import '../../domain/entities/downloaded_lesson.dart';
@@ -278,7 +279,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            error.toString(),
+            ErrorHandler.getMessage(context, error),
             style: AppTextStyles.bodyMedium.copyWith(
               color: ds.textSecondary,
             ),

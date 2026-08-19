@@ -241,18 +241,26 @@ class TodoNotifier extends _$TodoNotifier {
 
     if (!ref.mounted || buildGeneration != _buildGeneration) return false;
 
-    return result.fold(
-      (failure) {
-        debugPrint('[TodoNotifier] deleteTodo failed: ${failure.message}');
-        state = state.copyWith(error: failure, todos: initialTodos);
-        return false;
-      },
-      (_) {
-        // Server confirmed deletion — refresh to stay in sync
-        fetchTodos();
-        return true;
-      },
-    );
+    final success = result.fold((failure) {
+      debugPrint('[TodoNotifier] deleteTodo failed: ${failure.message}');
+      state = state.copyWith(error: failure, todos: initialTodos);
+      return false;
+    }, (_) => true);
+
+    if (success) {
+      // Server confirmed deletion — refresh to stay in sync. Uses the
+      // internal _fetchTodos (not the public fetchTodos() wrapper), with
+      // the buildGeneration already captured above, and IS awaited (unlike
+      // the previous fire-and-forget `fetchTodos();`) so this refresh runs
+      // to completion inside the current _enqueueMutation slot instead of
+      // racing the next queued mutation. A fire-and-forget refresh here
+      // could otherwise resolve *after* e.g. a queued addTodo's optimistic
+      // update and silently overwrite it with the stale pre-delete list,
+      // making the newly added todo appear to vanish until the next
+      // explicit refresh.
+      await _fetchTodos(buildGeneration);
+    }
+    return success;
   }
 
   Future<void> updateTodo(TodoItem updatedTodo) async {

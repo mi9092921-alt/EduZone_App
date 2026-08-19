@@ -280,10 +280,18 @@ class DownloadRepositoryImpl implements DownloadRepository {
       );
 
       return Right(download);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(e.message));
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      // `getVideoInfo`/`authorizeOfflineDownload` can now throw
+      // NoInternetException/RequestTimeoutException directly (see
+      // download_remote_ds.dart's NetworkExceptionMapper wiring), not
+      // only ServerException. The previous `on ServerException catch`
+      // special-case meant those fell through to the generic
+      // `UnknownFailure(e.toString())` branch below, losing the
+      // connectivity classification one layer above where it was just
+      // established -- the same class of gap fixed for
+      // courses/home/notifications/todo/video_player. `failureFromError`
+      // preserves it consistently with those.
+      return Left(failureFromError(e));
     } finally {
       // Release as soon as the synchronous "claim this lessonId" purpose
       // is served — once `insertDownload` above has actually run (success
