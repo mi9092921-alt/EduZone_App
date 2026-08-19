@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/error/failures.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
 import '../../../../shared/utils/app_snackbar.dart';
@@ -323,9 +322,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     );
   }
 
-  /// Runs cleanupExpired and surfaces a [Failure] (or any other error) as an
-  /// error SnackBar instead of letting it become an unhandled Future
-  /// rejection.
+  /// Runs cleanupExpired and surfaces a safe, user-facing error message
+  /// (or any other error) as an error SnackBar instead of letting it
+  /// become an unhandled Future rejection.
   Future<void> _performCleanup(
     BuildContext context,
     AppLocalizations l10n,
@@ -334,7 +333,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       await ref.read(downloadsProvider.notifier).cleanupExpired();
     } catch (e) {
       if (!context.mounted) return;
-      final message = e is Failure ? e.message : e.toString();
+      final message = ErrorHandler.getMessage(context, e);
       AppSnackbar.showError(
         context: context,
         message: l10n.downloadActionFailed(message),

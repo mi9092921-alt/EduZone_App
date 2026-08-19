@@ -82,7 +82,12 @@ class EdzLocalProxy {
         }
         try {
           await req.response.close();
-        } catch (_) {}
+        } catch (_) {
+          // Best-effort stream close: if the client already disconnected
+          // or the socket is in a bad state, close() throws. There is no
+          // further error-handling action available at this point in the
+          // request lifecycle, and nothing left to report to.
+        }
       }
     });
 

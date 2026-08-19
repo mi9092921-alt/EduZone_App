@@ -30,6 +30,7 @@ import '../../../../core/services/encryption_service.dart'
         encryptChunkBatch,
         planChunkLayout,
         totalEncryptedSizeForPlan;
+import '../../../../shared/utils/global_error_handler.dart';
 import '../../data/datasources/download_remote_ds.dart';
 import '../../domain/entities/download_enums.dart';
 import 'chunk_scheduler.dart';
@@ -69,6 +70,15 @@ Future<Task?> handleTokenRefresh(Task task) async {
     if (kDebugMode) {
       debugPrint('⚠️ [handleTokenRefresh] Link refresh failed: $e\n$stack');
     }
+    // This callback can run in a background isolate (see
+    // _supabaseClientForBackgroundCallback's re-init fallback above),
+    // where Sentry may never have been initialized -- GlobalErrorHandler
+    // .logError() already wraps Sentry.captureException() in its own
+    // try/catch and no-ops safely in that case, so it's safe to call
+    // unconditionally here. Without this, a failed background link
+    // refresh (which silently degrades a download's retry behavior)
+    // produced zero production observability signal at all.
+    GlobalErrorHandler.logError(e, stack);
     return null;
   }
 }
@@ -118,6 +128,11 @@ Future<String?> fetchFreshTrackUrl({
     if (kDebugMode) {
       debugPrint('⚠️ [fetchFreshTrackUrl] Link refresh failed: $e\n$stack');
     }
+    // See the matching comment in handleTokenRefresh() above: this is
+    // called from the same possibly-uninitialized background isolate,
+    // and GlobalErrorHandler.logError() is safe to call unconditionally
+    // there.
+    GlobalErrorHandler.logError(e, stack);
     return null;
   }
 }

@@ -91,7 +91,12 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
         try { if (timerId) clearInterval(timerId); } catch(_) {}
         try { if (cleanupInterval) clearInterval(cleanupInterval); } catch(_) {}
       ''');
-    } catch (_) {}
+    } catch (_) {
+      // Best-effort JS-side timer cleanup during dispose(): the WebView
+      // may already be torn down by the time this runs, in which case
+      // evaluateJavascript throws. There is no user-facing operation left
+      // to fail here and nothing to report to.
+    }
 
     _webViewController = null;
     super.dispose();
@@ -115,7 +120,12 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
           }
           _dynamicUA = fixed;
         }
-      } catch (_) {}
+      } catch (_) {
+        // Best-effort user-agent customization: if the platform default
+        // UA can't be fetched/rewritten, the player simply keeps using
+        // the WebView's own default UA, which is a safe, working
+        // fallback — not a failure worth surfacing.
+      }
     }
 
     if (_dynamicUA.isEmpty) {
@@ -145,7 +155,12 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
         },
       });
       _logged = true;
-    } catch (_) {}
+    } catch (_) {
+      // Best-effort analytics ping: failure here must never block or
+      // interrupt playback, and there is nothing actionable for the user
+      // to do about a dropped activity-log call, so it is intentionally
+      // swallowed rather than surfaced.
+    }
   }
 
   // ─── Switch video without reloading WebView ──────────────────────────────────
@@ -227,7 +242,14 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
           }
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Best-effort parse of a JS-bridge progress/state payload: this
+      // fires on every playback tick, so a single malformed message must
+      // not crash or interrupt playback. Losing one progress update is
+      // harmless -- the next tick supersedes it -- and there is no
+      // specific action a user could take in response to a parse error
+      // here.
+    }
   }
 
   // ─── Build ───────────────────────────────────────────────────────────────────

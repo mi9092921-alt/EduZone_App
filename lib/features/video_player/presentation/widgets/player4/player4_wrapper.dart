@@ -411,7 +411,12 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
           },
         },
       );
-    } catch (_) {}
+    } catch (_) {
+      // Best-effort analytics ping: failure here must never block or
+      // interrupt playback, and there is nothing actionable for the user
+      // to do about a dropped activity-log call, so it is intentionally
+      // swallowed rather than surfaced.
+    }
   }
 
   Widget _buildControlsOverlay(DesignSystemColors ds) {

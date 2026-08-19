@@ -131,7 +131,7 @@ void main() {
       expect(message, l10n.errorGeneric);
     });
 
-    testWidgets('returns error.toString() when localization is unavailable', (tester) async {
+    testWidgets('falls back to a safe non-localized string when localization is unavailable', (tester) async {
       late BuildContext unlocalizedContext;
 
       await tester.pumpWidget(
@@ -145,10 +145,17 @@ void main() {
         ),
       );
 
-      const error = NoInternetException();
+      // Uses a ServerException specifically (rather than the previous
+      // NoInternetException) because it's the type whose `.message` is
+      // most likely to carry raw backend/diagnostic text -- the
+      // regression this fallback branch must not reintroduce is
+      // `error.toString()` leaking that text when AppLocalizations
+      // isn't reachable, not just returning *some* non-null string.
+      const error = ServerException('Postgrest: relation "x" does not exist');
       final message = ErrorHandler.getMessage(unlocalizedContext, error);
 
-      expect(message, error.toString());
+      expect(message, isNot(contains('relation')));
+      expect(message, isNot(equals(error.toString())));
     });
   });
 

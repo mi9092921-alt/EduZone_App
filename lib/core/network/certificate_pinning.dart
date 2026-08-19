@@ -25,7 +25,14 @@ bool isSupabaseHost(String url, {String? configuredSupabaseUrl}) {
         if (configUri.host.isNotEmpty && host == configUri.host.toLowerCase()) {
           return true;
         }
-      } catch (_) {}
+      } catch (_) {
+        // Malformed configuredSupabaseUrl: falls through to the
+        // hostname-suffix checks below rather than treating it as a
+        // match. This function only decides *which* hostnames are
+        // treated as Supabase for pinning purposes -- it is not itself
+        // the pinning/validation boundary -- so failing safe here means
+        // "don't grant this optional exact-match", not "skip pinning".
+      }
     }
 
     return host.endsWith('.supabase.co') ||

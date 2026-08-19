@@ -12,7 +12,17 @@ class ErrorHandler {
   /// to a localized user-friendly message.
   static String getMessage(BuildContext context, Object error) {
     final l10n = AppLocalizations.of(context);
-    if (l10n == null) return error.toString();
+    if (l10n == null) {
+      // AppLocalizations genuinely isn't reachable from this context
+      // (e.g. called above MaterialApp/its localizationsDelegates, which
+      // shouldn't happen for real screens but is possible in tests or a
+      // misplaced call site). There is no localized string to fall back
+      // to here, but `error.toString()` is exactly the raw-exception
+      // leak this whole utility exists to prevent (see the ServerException
+      // case below) -- so use a fixed, non-localized-but-safe English
+      // string instead of the caught error's own text.
+      return 'An error occurred';
+    }
 
     // Some providers re-throw the repository's `Failure` object directly
     // (`throw failure;`) instead of reconstructing an `AppException`.
