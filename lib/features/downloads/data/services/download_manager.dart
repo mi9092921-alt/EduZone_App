@@ -523,12 +523,13 @@ class DownloadManager {
   /// - Any error during setup/download/encryption (network failure mid-way,
   ///   disk full, etc.).
   ///
-  /// Known limitation carried over unchanged from the existing
-  /// `_tryDownloadWithParallelRanges` plaintext path: pausing a download
-  /// using this method and resuming it later restarts from zero rather than
-  /// resuming from the last downloaded byte — true partial-byte resume for
-  /// the Dio-driven parallel path doesn't exist yet on either path, and
-  /// adding it is a separate task from this one.
+  /// Byte-range resume: when [completedChunkIndexes] is non-empty and
+  /// [encryptedSavePath] already exists, this resumes into the existing
+  /// file instead of truncating it — only the chunks *not* in
+  /// [completedChunkIndexes] are re-fetched (see `pendingPlan` below). A
+  /// caller with no manifest/chunk-tracking available (i.e. that never
+  /// passes [completedChunkIndexes]) still gets the old restart-from-zero
+  /// behavior, since there's nothing durable to resume from in that case.
   Future<String?> startEncryptedDownload({
     required String url,
     required String encryptedSavePath,
@@ -540,6 +541,9 @@ class DownloadManager {
         onPlanCreated,
     Future<void> Function(PlannedChunk chunk)? onChunkCommitted,
     Set<int>? completedChunkIndexes,
+    String? sourceUrl,
+    String? qualityLabel,
+    String trackType = 'video',
   }) async {
     if (!_dioParallelEligiblePlatform) return null;
     if (_activeDownloadIds.length >= _maxConcurrentDownloads) {
@@ -645,6 +649,9 @@ class DownloadManager {
           cancelToken: cancelToken,
           onChunkCommitted: onChunkCommitted,
           onProgress: onProgress,
+          sourceUrl: sourceUrl,
+          qualityLabel: qualityLabel,
+          trackType: trackType,
         ),
       );
 
@@ -706,6 +713,9 @@ class DownloadManager {
     required CancelToken cancelToken,
     Future<void> Function(PlannedChunk chunk)? onChunkCommitted,
     required ProgressCallback onProgress,
+    String? sourceUrl,
+    String? qualityLabel,
+    String trackType = 'video',
   }) async {
     if (chunks.isEmpty) return;
     final rangeEnd = chunks.last.plaintextEnd;
@@ -719,6 +729,11 @@ class DownloadManager {
     // (at most `batchChunkCount` chunks of re-download per retry).
     var flushedChunkCount = 0;
     var attempt = 0;
+    // Mutable, unlike [url]: a link-refresh (below) swaps this for a fresh
+    // signed CDN URL without affecting sibling workers, which independently
+    // refresh their own copy if/when they also hit an expired link.
+    var effectiveUrl = url;
+    var linkRefreshUsed = false;
 
     while (flushedChunkCount < chunks.length) {
       attempt++;
@@ -726,7 +741,7 @@ class DownloadManager {
 
       try {
         final response = await transport.openRange(
-          url: url,
+          url: effectiveUrl,
           start: rangeStart,
           end: rangeEnd,
           headers: headers,
@@ -832,6 +847,40 @@ class DownloadManager {
         return;
       } catch (e) {
         if (cancelToken.isCancelled) rethrow;
+
+        // An expired signed URL fails identically no matter how many times
+        // the *same* URL is retried — see `_downloadWithDio`'s identical
+        // pattern, which this mirrors for the primary encrypted-chunk path.
+        // This one only fires once per worker; if the CDN URL was going to
+        // expire mid-download, catching it here (rather than only in the
+        // now-unreachable plaintext fallback) is what makes the "URL
+        // refresh without losing verified progress" acceptance criterion
+        // hold for the actual production path.
+        if (!linkRefreshUsed &&
+            sourceUrl != null &&
+            sourceUrl.isNotEmpty &&
+            looksLikeExpiredLinkError(e)) {
+          linkRefreshUsed = true;
+          final fresh = await fetchFreshTrackUrl(
+            sourceUrl: sourceUrl,
+            qualityLabel: qualityLabel,
+            trackType: trackType,
+          );
+          if (fresh != null && fresh.isNotEmpty && fresh != effectiveUrl) {
+            if (kDebugMode) {
+              debugPrint(
+                '🔄 [DownloadManager] Link expired mid-download for '
+                'encrypted worker $workerIndex — refreshed and retrying '
+                'from chunk $flushedChunkCount (not counted against the '
+                'retry budget)',
+              );
+            }
+            effectiveUrl = fresh;
+            attempt--; // link refresh isn't a "retry" of the same failure
+            continue;
+          }
+        }
+
         if (attempt >= _maxWorkerAttempts || !isTransientDownloadError(e)) {
           rethrow;
         }

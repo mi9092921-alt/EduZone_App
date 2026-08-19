@@ -209,6 +209,9 @@ void main() {
             onProgress: any(named: 'onProgress'),
             downloadId: any(named: 'downloadId'),
             headers: any(named: 'headers'),
+            sourceUrl: any(named: 'sourceUrl'),
+            qualityLabel: any(named: 'qualityLabel'),
+            trackType: any(named: 'trackType'),
           )).thenAnswer((invocation) async {
         final savePath = invocation.namedArguments[#encryptedSavePath] as String;
         await File(savePath).writeAsBytes([1, 2, 3]);
@@ -229,6 +232,9 @@ void main() {
             onProgress: any(named: 'onProgress'),
             downloadId: any(named: 'downloadId'),
             headers: any(named: 'headers'),
+            sourceUrl: any(named: 'sourceUrl'),
+            qualityLabel: any(named: 'qualityLabel'),
+            trackType: any(named: 'trackType'),
           )).called(1);
     });
 
@@ -328,6 +334,9 @@ void main() {
             onProgress: any(named: 'onProgress'),
             downloadId: any(named: 'downloadId'),
             headers: any(named: 'headers'),
+            sourceUrl: any(named: 'sourceUrl'),
+            qualityLabel: any(named: 'qualityLabel'),
+            trackType: any(named: 'trackType'),
           )).thenAnswer((invocation) async {
         final savePath = invocation.namedArguments[#encryptedSavePath] as String;
         await File(savePath).writeAsBytes([1, 2, 3]);
@@ -365,6 +374,9 @@ void main() {
             onProgress: any(named: 'onProgress'),
             downloadId: 'download-1_audio',
             headers: any(named: 'headers'),
+            sourceUrl: any(named: 'sourceUrl'),
+            qualityLabel: any(named: 'qualityLabel'),
+            trackType: any(named: 'trackType'),
           )).called(1);
     });
 

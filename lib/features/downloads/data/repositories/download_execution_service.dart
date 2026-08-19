@@ -91,6 +91,7 @@ class DownloadExecutionService {
     required String lessonId,
     required String? qualityLabel,
     String? trackType,
+    String? sourceUrl,
     required String manifestDownloadId,
     required String courseId,
     required String contentVersion,
@@ -149,6 +150,9 @@ class DownloadExecutionService {
             encryptedSavePath: encryptedSavePath,
             encryptionKeyBase64: encryptionKey,
             onProgress: onProgress,
+            sourceUrl: sourceUrl,
+            qualityLabel: qualityLabel,
+            trackType: trackType ?? 'video',
           )
         : await _downloadManager.startEncryptedDownload(
             downloadId: downloadId,
@@ -159,6 +163,9 @@ class DownloadExecutionService {
             onChunkCommitted: onChunkCommitted,
             completedChunkIndexes: verifiedChunkIndexes,
             onProgress: onProgress,
+            sourceUrl: sourceUrl,
+            qualityLabel: qualityLabel,
+            trackType: trackType ?? 'video',
           );
     if (pipelinedManagerId == null) {
       throw StateError(
@@ -260,6 +267,7 @@ class DownloadExecutionService {
           encryptionKey: encryptionKey,
           lessonId: lessonId,
           qualityLabel: quality?.label,
+          sourceUrl: sourceUrl,
           manifestDownloadId: '${downloadId}_video',
           courseId: courseId,
           contentVersion: contentVersion,
@@ -280,6 +288,7 @@ class DownloadExecutionService {
           lessonId: lessonId,
           qualityLabel: quality?.label,
           trackType: 'audio',
+          sourceUrl: sourceUrl,
           manifestDownloadId: '${downloadId}_audio',
           courseId: courseId,
           contentVersion: contentVersion,
@@ -323,6 +332,7 @@ class DownloadExecutionService {
           encryptionKey: encryptionKey,
           lessonId: lessonId,
           qualityLabel: quality?.label,
+          sourceUrl: sourceUrl,
           manifestDownloadId: downloadId,
           courseId: courseId,
           contentVersion: contentVersion,
