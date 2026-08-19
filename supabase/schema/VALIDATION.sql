@@ -1162,8 +1162,13 @@ BEGIN
       'feature_flags_admin_insert',
       'feature_flags_admin_update',
       'feature_flags_admin_delete',
-      'tenant_feature_flags_select',
-      'tenant_feature_flags_manage'
+      'tenant_feature_flags_select'
+      -- FIX: 'tenant_feature_flags_manage' used to be in this "historical
+      -- name" list, but it is the actual current canonical policy name
+      -- (see tenant_feature_flags_manage above, matching the
+      -- feature_flags_manage / feature_flag_users_manage /
+      -- feature_flag_roles_manage naming convention) -- this check was
+      -- permanently failing against a fully clean, canonical schema.
     );
 
   INSERT INTO validation_results VALUES (
@@ -1269,11 +1274,15 @@ BEGIN
     'EXECUTE'
   ) INTO v_auth_eval;
 
+  -- FIX: this used to assign into v_auth_eval a second time (copy-paste),
+  -- so v_anon_eval was never actually set (stayed NULL) and the real
+  -- authenticated-side result was silently overwritten by the anon-side
+  -- query before it could be read below.
   SELECT has_function_privilege(
     'anon',
     'public.evaluate_feature_flags(text[])',
     'EXECUTE'
-  ) INTO v_auth_eval;
+  ) INTO v_anon_eval;
 
   SELECT has_table_privilege('authenticated', 'public.feature_flags', 'SELECT')
       AND has_table_privilege('authenticated', 'public.tenant_feature_flags', 'UPDATE')
@@ -1347,18 +1356,22 @@ BEGIN
   );
 END $$;
 
--- Check 26: public.users and public.user_roles must NOT have FORCE ROW
--- LEVEL SECURITY (AUTH-BUG-01). Both tables are queried internally, as
--- the table owner, by SECURITY DEFINER helper functions
--- (validate_user_session(), is_admin_with_session_validation(),
--- get_auth_user_id(), get_current_tenant_id(), is_user_valid_cached())
+-- Check 26: public.users, public.user_roles, public.courses, and
+-- public.enrollments must NOT have FORCE ROW LEVEL SECURITY (AUTH-BUG-01,
+-- and the identical courses/enrollments case found during this cleanup
+-- pass). All four are queried internally, as the table owner, by SECURITY
+-- DEFINER helper functions (validate_user_session(),
+-- is_admin_with_session_validation(), get_auth_user_id(),
+-- get_current_tenant_id(), is_user_valid_cached(), has_course_access())
 -- that are themselves called BY policies on these same tables (and, via
 -- is_admin_with_session_validation(), by policies on other tables such
 -- as devices_admin_all/sessions_admin_all). FORCE strips the
 -- owner-bypass those helpers rely on to avoid recursion, causing
--- "infinite recursion detected in policy" (42P17) on login. RLS is
--- still fully ENABLEd and enforced for anon/authenticated regardless of
--- this setting -- FORCE only ever affects the table owner/superuser.
+-- "infinite recursion detected in policy" (42P17) on login, or the first
+-- time courses_select_merged's has_course_access(id) OR-branch is
+-- actually exercised. RLS is still fully ENABLEd and enforced for
+-- anon/authenticated regardless of this setting -- FORCE only ever
+-- affects the table owner/superuser.
 DO $$
 DECLARE
   v_bad text[];
@@ -1367,18 +1380,18 @@ BEGIN
   FROM pg_class c
   JOIN pg_namespace n ON n.oid = c.relnamespace
   WHERE n.nspname = 'public'
-    AND c.relname IN ('users', 'user_roles')
+    AND c.relname IN ('users', 'user_roles', 'courses', 'enrollments')
     AND c.relforcerowsecurity = true;
 
   INSERT INTO validation_results VALUES (
-    'users/user_roles Do Not FORCE Row Level Security',
+    'users/user_roles/courses/enrollments Do Not FORCE Row Level Security',
     CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
     COALESCE(
       'CRITICAL: FORCE ROW LEVEL SECURITY is set on: ' || array_to_string(v_bad, ', ')
         || ' -- this will cause infinite recursion (42P17) the next time a '
         || 'SECURITY DEFINER session/authorization helper is called from a '
-        || 'policy on that table, breaking login',
-      'Neither public.users nor public.user_roles forces RLS on the table owner (RLS remains enforced for anon/authenticated either way)'
+        || 'policy on that table, breaking login or course access checks',
+      'None of users/user_roles/courses/enrollments force RLS on the table owner (RLS remains enforced for anon/authenticated either way)'
     )
   );
 END $$;
@@ -1517,11 +1530,13 @@ BEGIN
   );
 END $$;
 
--- Check 30: Any SECURITY DEFINER helper reachable from a users/user_roles
--- policy that itself queries users/user_roles must remain SECURITY DEFINER
--- with a safe search_path (the mechanism that prevents 42P17 on those two
--- tables). If such a helper is ever changed to SECURITY INVOKER, the next
--- policy evaluation on users/user_roles will recurse into itself.
+-- Check 30: Any SECURITY DEFINER helper reachable from a
+-- users/user_roles/courses/enrollments policy that itself queries one of
+-- those same tables must remain SECURITY DEFINER with a safe search_path
+-- (the mechanism that prevents 42P17). If such a helper is ever changed to
+-- SECURITY INVOKER, the next policy evaluation on that table will recurse
+-- into itself. has_course_access() is included because it is the
+-- courses<->enrollments equivalent of the users/user_roles case.
 DO $$
 DECLARE
   v_bad text[];
@@ -1537,15 +1552,18 @@ BEGIN
         'is_admin_with_session_validation', 'assert_tenant',
         'is_current_user_super_admin', 'is_current_user_admin',
         'validate_user_session', 'user_has_permission',
-        'get_current_tenant_id', 'is_user_valid_cached', 'get_auth_user_id'
+        'get_current_tenant_id', 'is_user_valid_cached', 'get_auth_user_id',
+        'has_course_access'
       )
       AND (
         pg_get_functiondef(p.oid) ILIKE '%public.users%'
         OR pg_get_functiondef(p.oid) ILIKE '%public.user_roles%'
+        OR pg_get_functiondef(p.oid) ILIKE '%public.courses%'
+        OR pg_get_functiondef(p.oid) ILIKE '%public.enrollments%'
       )
       AND (
         NOT p.prosecdef
-        OR pg_get_functiondef(p.oid) !~* 'SET\s+search_path\s*='
+        OR pg_get_functiondef(p.oid) !~* 'SET\s+search_path\s*(=|TO)\s*'
       )
   ) bad_functions;
 
@@ -1553,11 +1571,10 @@ BEGIN
     'RLS Recursion Guards Remain SECURITY DEFINER With Safe search_path',
     CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
     COALESCE(
-      'CRITICAL: these helper functions query users/user_roles but are no '
-        || 'longer SECURITY DEFINER with a locked search_path -- policies on '
-        || 'users/user_roles that call them will recurse (42P17) on next use: '
-        || array_to_string(v_bad, ', '),
-      'All users/user_roles-touching policy helpers remain SECURITY DEFINER with a safe search_path'
+      'CRITICAL: these helper functions query users/user_roles/courses/enrollments '
+        || 'but are no longer SECURITY DEFINER with a locked search_path -- policies '
+        || 'that call them will recurse (42P17) on next use: ' || array_to_string(v_bad, ', '),
+      'All users/user_roles/courses/enrollments-touching policy helpers remain SECURITY DEFINER with a safe search_path'
     )
   );
 END $$;
@@ -1654,7 +1671,146 @@ BEGIN
   );
 END $$;
 
--- Display Results (includes Checks 27-32 above)
+-- Check 33: public.users SELECT policies must scope any bare admin check to
+-- the admin's own tenant (unless it is explicitly the super_admin branch).
+-- users_select_merged previously had `is_admin_with_session_validation()`
+-- as a standalone OR branch with no accompanying `tenant_id =
+-- get_current_tenant_id()` condition, so any tenant-scoped admin (not just
+-- super_admin) could SELECT every user row across every tenant -- a real
+-- cross-tenant data leak found during this cleanup pass. This check flags
+-- that exact shape again for any public.users SELECT/ALL policy.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(DISTINCT policyname ORDER BY policyname)
+    INTO v_bad
+  FROM pg_policies
+  WHERE schemaname = 'public'
+    AND tablename = 'users'
+    AND cmd IN ('SELECT', 'ALL')
+    AND qual ILIKE '%is_admin_with_session_validation()%'
+    AND qual !~* 'is_admin_with_session_validation\(\)\s+AND\s+\(?[a-z_.]*tenant_id\s*=';
+
+  INSERT INTO validation_results VALUES (
+    'users SELECT Policies Scope Admin Branch To Own Tenant',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: cross-tenant read leak -- these public.users policies call '
+        || 'is_admin_with_session_validation() without ANDing it to '
+        || 'tenant_id = get_current_tenant_id(), so a tenant admin can read '
+        || 'every tenant''s users: ' || array_to_string(v_bad, ', '),
+      'Every public.users policy that checks is_admin_with_session_validation() also ANDs it to the caller''s own tenant_id'
+    )
+  );
+END $$;
+
+-- Check 34: public.sessions must have both a SELECT and an INSERT policy
+-- for authenticated, scoped to the caller's own row. Before this cleanup
+-- pass, public.sessions had FORCE ROW LEVEL SECURITY and only a SELECT
+-- policy -- there was no way for a logged-in client to ever insert its own
+-- session row, so AuthRemoteDataSource.recordSession()'s direct client
+-- insert was silently failing RLS on every call (swallowed by its own
+-- try/catch) and public.sessions stayed permanently empty.
+DO $$
+DECLARE
+  v_has_select boolean;
+  v_has_insert boolean;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'sessions'
+      AND cmd IN ('SELECT', 'ALL') AND 'authenticated' = ANY(roles)
+  ) INTO v_has_select;
+
+  SELECT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'sessions'
+      AND cmd IN ('INSERT', 'ALL') AND 'authenticated' = ANY(roles)
+  ) INTO v_has_insert;
+
+  INSERT INTO validation_results VALUES (
+    'sessions Has SELECT and INSERT Policies For authenticated',
+    CASE WHEN v_has_select AND v_has_insert THEN 'PASS' ELSE 'FAIL' END,
+    'authenticated SELECT policy exists=' || v_has_select
+      || ', authenticated INSERT policy exists=' || v_has_insert
+      || CASE WHEN NOT v_has_insert THEN
+           ' -- CRITICAL: without an INSERT policy, recordSession() can never write a row and public.sessions stays empty'
+         ELSE '' END
+  );
+END $$;
+
+-- Check 35: public.courses SELECT/ALL policies granted to `authenticated`
+-- must be tenant-scoped. courses_select_policy previously also listed
+-- `authenticated` (alongside `anon`) with no tenant_id condition at all,
+-- so it silently OR-combined with courses_select_merged and let any
+-- authenticated user read any OTHER tenant's published courses -- a real
+-- cross-tenant leak found during this cleanup pass. anon-only policies are
+-- exempt: unauthenticated catalog browsing legitimately has no tenant
+-- context to scope by.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(DISTINCT policyname ORDER BY policyname)
+    INTO v_bad
+  FROM pg_policies
+  WHERE schemaname = 'public'
+    AND tablename = 'courses'
+    AND cmd IN ('SELECT', 'ALL')
+    AND permissive = 'PERMISSIVE'
+    AND 'authenticated' = ANY(roles)
+    AND coalesce(qual, '') !~* 'tenant_id\s*=';
+
+  INSERT INTO validation_results VALUES (
+    'courses Policies For authenticated Are Tenant-Scoped',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: cross-tenant read leak -- these public.courses policies grant '
+        || 'to authenticated with no tenant_id condition, so they OR-combine with '
+        || 'courses_select_merged and expose every tenant''s courses to every '
+        || 'authenticated user: ' || array_to_string(v_bad, ', '),
+      'Every public.courses policy granted to authenticated includes a tenant_id condition'
+    )
+  );
+END $$;
+
+-- Check 36: rollout_pct is documented and CHECK-constrained as basis points
+-- (0..10000, 10000 = 100%), but real production data was found stored as
+-- plain percentages (0..100) -- e.g. rollout_pct=100 meant to mean "100%"
+-- actually only reaches 1% of users (100 of 10000 buckets), since
+-- evaluate_feature_flag() compares a 0..9999 deterministic bucket against
+-- rollout_pct directly. Any enabled/rolling-out flag whose rollout_pct is
+-- in (0,100] and not exactly 10000 is a near-certain unit-scale data entry
+-- error, not a legitimate 0.01%-1% rollout (WARN, not FAIL: a value in
+-- this range is not technically invalid, just extremely likely to be a
+-- mistake -- this cannot be fixed by a schema change, only by correcting
+-- the data with an UPDATE against the live rows).
+DO $$
+DECLARE
+  v_suspect text[];
+BEGIN
+  SELECT array_agg(format('%s(pct=%s)', key, rollout_pct) ORDER BY key)
+    INTO v_suspect
+  FROM public.feature_flags
+  WHERE (is_enabled OR rollout_pct > 0)
+    AND rollout_pct > 0
+    AND rollout_pct <= 100
+    AND rollout_pct <> 10000;
+
+  INSERT INTO validation_results VALUES (
+    'feature_flags.rollout_pct Looks Like Basis Points, Not a Plain Percentage',
+    CASE WHEN v_suspect IS NULL THEN 'PASS' ELSE 'WARN' END,
+    COALESCE(
+      'SUSPECT DATA (likely entered as 0-100% instead of 0-10000 basis points, '
+        || 'so real rollout is ~100x smaller than intended): ' || array_to_string(v_suspect, ', ')
+        || ' -- fix with: UPDATE public.feature_flags SET rollout_pct = rollout_pct * 100 WHERE key IN (...) AND rollout_pct <> 10000;',
+      'No feature_flags row has a rollout_pct value that looks like a mistaken 0-100 percentage'
+    )
+  );
+END $$;
+
+-- Display Results (includes Checks 27-36 above)
 SELECT * FROM validation_results ORDER BY check_name;
 
 -- Summary

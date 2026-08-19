@@ -73,8 +73,6 @@ CREATE TRIGGER trg_prevent_physical_delete_courses
   FOR EACH ROW
   EXECUTE FUNCTION public.prevent_physical_delete();
 
-DROP TRIGGER IF EXISTS trg_detect_prerequisite_cycle ON public.course_prerequisites;
-
 DROP TRIGGER IF EXISTS trg_prevent_prerequisite_cycles ON public.course_prerequisites;
 
 DROP TRIGGER IF EXISTS trg_audit_lesson_state_change ON public.lessons;
@@ -153,7 +151,6 @@ CREATE TRIGGER trg_audit_lesson_state_change
   EXECUTE FUNCTION public.trg_audit_lesson_state_change();
 
 -- Apply to core tables
-DROP TRIGGER IF EXISTS prevent_delete ON public.users;
 
 DROP TRIGGER IF EXISTS prevent_delete ON public.enrollments;
 
@@ -253,14 +250,6 @@ CREATE TRIGGER trg_notifications_updated_at
   BEFORE UPDATE ON public.notifications
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
-DROP TRIGGER IF EXISTS trg_user_roles_sync_primary_role_ins_del ON public.user_roles;
-
-DROP TRIGGER IF EXISTS trg_user_roles_sync_primary_role_upd ON public.user_roles;
-
-DROP TRIGGER IF EXISTS trg_user_roles_rebuild_perm_cache_ins_del ON public.user_roles;
-
-DROP TRIGGER IF EXISTS trg_user_roles_rebuild_perm_cache_upd ON public.user_roles;
-
 DROP TRIGGER IF EXISTS trg_user_roles_sync_combined_ins_del ON public.user_roles;
 
 DROP TRIGGER IF EXISTS trg_user_roles_sync_combined_upd ON public.user_roles;
@@ -276,8 +265,6 @@ CREATE TRIGGER trg_user_roles_sync_combined_upd
   FOR EACH ROW
   WHEN (pg_trigger_depth() = 0 AND OLD IS DISTINCT FROM NEW)
   EXECUTE FUNCTION public.trg_sync_user_roles();
-
-DROP TRIGGER IF EXISTS trg_settings_cache_invalidation ON public.settings_kv;
 
 DROP TRIGGER IF EXISTS trg_settings_cache_invalidation_ins ON public.settings_kv;
 
@@ -299,8 +286,6 @@ DROP TRIGGER IF EXISTS trg_update_last_location ON public.user_location_logs;
 CREATE TRIGGER trg_update_last_location
   AFTER INSERT ON public.user_location_logs
   FOR EACH ROW EXECUTE FUNCTION public.update_user_last_location();
-
-DROP TRIGGER IF EXISTS trg_up_enrollment_progress ON public.user_progress;
 
 DROP TRIGGER IF EXISTS trg_up_enrollment_progress_ins ON public.user_progress;
 
@@ -326,8 +311,6 @@ CREATE TRIGGER trg_notification_fanout
   FOR EACH ROW
   WHEN (pg_trigger_depth() = 0)
   EXECUTE FUNCTION public.fanout_notification();
-
-DROP TRIGGER IF EXISTS trg_course_invalidations ON public.courses;
 
 DROP TRIGGER IF EXISTS trg_course_invalidations_ins_del ON public.courses;
 

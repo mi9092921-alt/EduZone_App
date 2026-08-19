@@ -87,9 +87,6 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 -- which has the identical pattern and must stay un-forced for the
 -- same reason.
 
-
-DROP POLICY IF EXISTS users_delete_policy ON public.users;
-
 ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
 
 -- AUTH-BUG-01 FIX: same reasoning as public.users above -- do NOT
@@ -104,8 +101,6 @@ ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
 -- bind_device_for_current_user() login step. RLS remains fully
 -- ENABLEd and enforced for anon/authenticated either way.
 
-DROP POLICY IF EXISTS user_roles_admin_all ON public.user_roles;
-
 ALTER TABLE public.tenant_settings ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.security_settings ENABLE ROW LEVEL SECURITY;
@@ -118,21 +113,23 @@ DROP POLICY IF EXISTS tenant_settings_select ON public.tenant_settings;
 CREATE POLICY tenant_settings_select ON public.tenant_settings
   FOR SELECT TO authenticated USING (tenant_id = public.get_current_tenant_id());
 
-
-
 ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE public.courses FORCE ROW LEVEL SECURITY;
-
-
+-- AUTH-BUG-01-style fix (same class of bug as public.users/public.user_roles
+-- above): public.has_course_access(uuid, uuid) is SECURITY DEFINER, owned by
+-- the table owner, and queries public.enrollments internally.
+-- enrollments_select_policy in turn queries public.courses, and
+-- courses_select_merged calls has_course_access(id) as one of its OR
+-- branches. FORCE ROW LEVEL SECURITY on courses/enrollments would strip the
+-- table-owner bypass that call chain relies on, turning
+-- courses -> has_course_access -> enrollments -> courses into a real
+-- infinite-recursion path (42P17) the first time that OR branch is actually
+-- evaluated. RLS remains fully ENABLEd and enforced for anon/authenticated
+-- (and service_role already carries BYPASSRLS independently of FORCE).
+-- Do not FORCE either table without first verifying has_course_access() no
+-- longer queries a FORCE-RLS table from inside a policy that can call it.
 
 ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
-
-ALTER TABLE public.enrollments FORCE ROW LEVEL SECURITY;
-
-
-
-
 
 ALTER TABLE public.user_progress ENABLE ROW LEVEL SECURITY;
 
@@ -157,7 +154,6 @@ CREATE POLICY user_progress_select_policy ON public.user_progress
       )
     )
   );
-
 
 ALTER TABLE public.session_locks ENABLE ROW LEVEL SECURITY;
 
@@ -317,21 +313,11 @@ CREATE POLICY schema_migrations_admin ON public.schema_migrations
   USING (public.is_admin_with_session_validation())
   WITH CHECK (public.is_admin_with_session_validation());
 
-
-
-DROP POLICY IF EXISTS users_select ON public.users;
-
-
-
-
-
-
 DROP POLICY IF EXISTS roles_select ON public.roles;
 
 CREATE POLICY roles_select ON public.roles
   FOR SELECT TO authenticated
   USING (tenant_id = public.system_tenant_id() OR tenant_id = public.get_current_tenant_id() OR public.is_current_user_super_admin_lite());
-
 
 DROP POLICY IF EXISTS permissions_select ON public.permissions;
 
@@ -349,7 +335,6 @@ CREATE POLICY permissions_select ON public.permissions
     )
   );
 
-
 DROP POLICY IF EXISTS role_permissions_select ON public.role_permissions;
 
 CREATE POLICY role_permissions_select ON public.role_permissions
@@ -362,11 +347,7 @@ CREATE POLICY role_permissions_select ON public.role_permissions
     )
   );
 
-
-
-
 DROP POLICY IF EXISTS settings_select ON public.settings_kv;
-
 
 DROP POLICY IF EXISTS settings_cache_select ON public.settings_cache;
 
@@ -380,7 +361,6 @@ CREATE POLICY settings_cache_select ON public.settings_cache
     )
   );
 
-
 DROP POLICY IF EXISTS feature_flags_select ON public.feature_flags;
 
 CREATE POLICY feature_flags_select ON public.feature_flags
@@ -390,13 +370,11 @@ CREATE POLICY feature_flags_select ON public.feature_flags
     OR public.user_has_permission((select auth.uid()), 'feature_flags.manage'::text, public.get_current_tenant_id())
   );
 
-
 DROP POLICY IF EXISTS tenant_feature_flags_select ON public.tenant_feature_flags;
 
 CREATE POLICY tenant_feature_flags_select ON public.tenant_feature_flags
   FOR SELECT TO authenticated
   USING (tenant_id = public.get_current_tenant_id());
-
 
 DROP POLICY IF EXISTS feature_flag_roles_select ON public.feature_flag_roles;
 
@@ -418,22 +396,7 @@ CREATE POLICY feature_flag_users_select ON public.feature_flag_users
   FOR SELECT TO authenticated
   USING (user_id = (select auth.uid()) OR public.is_admin_with_session_validation());
 
-
-DROP POLICY IF EXISTS courses_admin_teacher_all ON public.courses;
-
-DROP POLICY IF EXISTS courses_teacher_insert ON public.courses;
-
-DROP POLICY IF EXISTS courses_teacher_update ON public.courses;
-
-DROP POLICY IF EXISTS courses_admin_insert ON public.courses;
-
-DROP POLICY IF EXISTS courses_admin_update ON public.courses;
-
 DROP POLICY IF EXISTS courses_admin_delete ON public.courses;
-
-
-
-
 
 CREATE POLICY courses_admin_delete ON public.courses
   FOR DELETE TO authenticated
@@ -443,7 +406,6 @@ CREATE POLICY courses_admin_delete ON public.courses
   );
 
 -- course_prerequisites: full CRUD for teachers and admins (patch 26 hardening)
-DROP POLICY IF EXISTS course_prerequisites_select ON public.course_prerequisites;
 
 DROP POLICY IF EXISTS course_prerequisites_all ON public.course_prerequisites;
 
@@ -469,7 +431,6 @@ CREATE POLICY course_prerequisites_all ON public.course_prerequisites
   );
 
 -- course_learning_objectives: full CRUD for teachers and admins (patch 26 hardening)
-DROP POLICY IF EXISTS course_learning_objectives_select ON public.course_learning_objectives;
 
 DROP POLICY IF EXISTS course_learning_objectives_all ON public.course_learning_objectives;
 
@@ -510,21 +471,7 @@ CREATE POLICY sections_select ON public.sections
     )
   );
 
-DROP POLICY IF EXISTS sections_admin_teacher_all ON public.sections;
-
-DROP POLICY IF EXISTS sections_teacher_insert ON public.sections;
-
-DROP POLICY IF EXISTS sections_teacher_update ON public.sections;
-
-DROP POLICY IF EXISTS sections_admin_insert ON public.sections;
-
-DROP POLICY IF EXISTS sections_admin_update ON public.sections;
-
 DROP POLICY IF EXISTS sections_admin_delete ON public.sections;
-
-
-
-
 
 CREATE POLICY sections_admin_delete ON public.sections
   FOR DELETE TO authenticated
@@ -555,8 +502,6 @@ CREATE POLICY lessons_select ON public.lessons
       )
     )
   );
-
-DROP POLICY IF EXISTS lessons_admin_teacher_all ON public.lessons;
 
 DROP POLICY IF EXISTS lessons_insert ON public.lessons;
 
@@ -630,7 +575,6 @@ CREATE POLICY lesson_contents_select ON public.lesson_contents
     )
   );
 
-
 -- RLS Consolidated from Phase 4
 
 DROP POLICY IF EXISTS enrollments_teacher_select ON public.enrollments;
@@ -644,7 +588,6 @@ CREATE POLICY enrollments_teacher_select ON public.enrollments
     )
   );
 
-
 DROP POLICY IF EXISTS user_access_cache_deny_all ON private.user_access_cache;
 CREATE POLICY user_access_cache_deny_all ON private.user_access_cache
   FOR ALL TO authenticated
@@ -652,7 +595,6 @@ CREATE POLICY user_access_cache_deny_all ON private.user_access_cache
   WITH CHECK (false);
 
 -- devices & push_tokens: mutation via RPC only
-
 
 DROP POLICY IF EXISTS video_views_access ON public.video_views;
 
@@ -803,7 +745,6 @@ CREATE POLICY notifications_select ON public.notifications
     )
   );
 
-
 DROP POLICY IF EXISTS notification_targets_select ON public.notification_targets;
 
 CREATE POLICY notification_targets_select ON public.notification_targets
@@ -861,9 +802,6 @@ CREATE POLICY user_access_rules_admin ON public.user_access_rules
     AND public.is_admin_with_session_validation()
   );
 
-
-DROP POLICY IF EXISTS rate_limits_admin ON public.rate_limits;
-
 DROP POLICY IF EXISTS rate_limits_admin_insert ON public.rate_limits;
 
 DROP POLICY IF EXISTS rate_limits_admin_update ON public.rate_limits;
@@ -913,6 +851,36 @@ CREATE POLICY sessions_select_policy ON public.sessions
     AND deleted_at IS NULL
   );
 
+-- FIX: this table had FORCE ROW LEVEL SECURITY and only a SELECT policy for
+-- authenticated -- there was no way for a logged-in client to ever insert
+-- its own session row (AuthRemoteDataSource.recordSession() does a direct
+-- `sessions.insert(...)`, which was silently failing every RLS check and
+-- being swallowed by its own try/catch). This is why public.sessions was
+-- always empty even though the client-side write path, the
+-- active_sessions pointer table, session_locks, and
+-- trg_enforce_single_active_session were all already wired up for it.
+-- Scoped the same way as every other self-service insert in this file:
+-- caller may only insert a row for themselves, in their own tenant, while
+-- holding a valid session.
+DROP POLICY IF EXISTS sessions_insert_own ON public.sessions;
+
+CREATE POLICY sessions_insert_own ON public.sessions
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    public.validate_user_session()
+    AND user_id = (select auth.uid())
+    AND tenant_id = public.get_current_tenant_id()
+    AND (
+      device_id IS NULL
+      OR EXISTS (
+        SELECT 1 FROM public.devices d
+        WHERE d.id = sessions.device_id
+          AND d.user_id = (select auth.uid())
+          AND d.tenant_id = public.get_current_tenant_id()
+      )
+    )
+  );
+
 -- Deny direct access to public child partitions.
 DO $$
 DECLARE
@@ -937,9 +905,10 @@ BEGIN
   END LOOP;
 END $$;
 
--- Force RLS on critical tables to prevent service_role bypass without tenant_id
-ALTER TABLE public.enrollments FORCE ROW LEVEL SECURITY;
-
+-- Force RLS on critical tables to prevent service_role bypass without tenant_id.
+-- public.enrollments is intentionally NOT in this list -- see the
+-- AUTH-BUG-01-style comment beside its ENABLE ROW LEVEL SECURITY statement
+-- above for why forcing it reopens a real courses<->enrollments recursion.
 ALTER TABLE public.notifications FORCE ROW LEVEL SECURITY;
 
 ALTER TABLE public.user_notifications FORCE ROW LEVEL SECURITY;
@@ -1007,7 +976,6 @@ CREATE POLICY active_sessions_select_own ON public.active_sessions
 DROP POLICY IF EXISTS active_sessions_deny_insert ON public.active_sessions;
 DROP POLICY IF EXISTS active_sessions_deny_update ON public.active_sessions;
 DROP POLICY IF EXISTS active_sessions_deny_delete ON public.active_sessions;
-DROP POLICY IF EXISTS active_sessions_deny_write ON public.active_sessions;
 
 CREATE POLICY active_sessions_deny_insert ON public.active_sessions
   FOR INSERT TO authenticated
@@ -1039,7 +1007,6 @@ CREATE POLICY user_permission_cache_select_own ON public.user_permission_cache
 DROP POLICY IF EXISTS user_permission_cache_deny_insert ON public.user_permission_cache;
 DROP POLICY IF EXISTS user_permission_cache_deny_update ON public.user_permission_cache;
 DROP POLICY IF EXISTS user_permission_cache_deny_delete ON public.user_permission_cache;
-DROP POLICY IF EXISTS user_permission_cache_deny_write ON public.user_permission_cache;
 
 CREATE POLICY user_permission_cache_deny_insert ON public.user_permission_cache
   FOR INSERT TO authenticated
@@ -1103,11 +1070,20 @@ CREATE POLICY courses_select_merged ON public.courses
   );
 
 DROP POLICY IF EXISTS courses_select_policy ON public.courses;
-DROP POLICY IF EXISTS courses_select ON public.courses;
-
-DROP POLICY IF EXISTS courses_select_policy ON public.courses;
+-- FIX (real cross-tenant leak found during this cleanup pass): this policy
+-- originally also listed `authenticated` alongside `anon`. Since Postgres
+-- ORs together every permissive SELECT policy that applies to a role, any
+-- authenticated user -- from ANY tenant -- could see any OTHER tenant's
+-- published courses through this policy alone, even though
+-- courses_select_merged (above) already grants authenticated users full,
+-- correctly tenant-scoped access to published courses via its own
+-- `status = 'published'` OR-branch. `anon` is kept here on purpose (public,
+-- unauthenticated course-catalog browsing has no tenant context to scope
+-- by); `authenticator`/`dashboard_user`/`supabase_privileged_role` are
+-- Postgres/Supabase internal roles, not end-user roles, and are unaffected
+-- by removing `authenticated`.
 CREATE POLICY courses_select_policy ON public.courses
-  FOR SELECT TO anon, authenticated, authenticator, dashboard_user, supabase_privileged_role
+  FOR SELECT TO anon, authenticator, dashboard_user, supabase_privileged_role
   USING (
     status = 'published'
     AND deleted_at IS NULL
@@ -1128,16 +1104,17 @@ CREATE POLICY user_roles_select_merged ON public.user_roles
     )
   );
 
-DROP POLICY IF EXISTS user_roles_select_policy ON public.user_roles;
-DROP POLICY IF EXISTS user_roles_select ON public.user_roles;
-
 DROP POLICY IF EXISTS users_select_merged ON public.users;
 CREATE POLICY users_select_merged ON public.users
   FOR SELECT TO authenticated
   USING (
     deleted_at IS NULL
     AND (
-      public.is_admin_with_session_validation()
+      public.is_current_user_super_admin()
+      OR (
+        public.is_admin_with_session_validation()
+        AND users.tenant_id = public.get_current_tenant_id()
+      )
       OR (id = public.get_auth_user_id())
       OR (
         users.tenant_id = public.get_current_tenant_id()
@@ -1153,11 +1130,6 @@ CREATE POLICY users_select_merged ON public.users
     )
   );
 
-DROP POLICY IF EXISTS users_select_policy ON public.users;
-DROP POLICY IF EXISTS users_self ON public.users;
-DROP POLICY IF EXISTS users_teacher_students ON public.users;
-DROP POLICY IF EXISTS users_admin_select ON public.users;
-
 DROP POLICY IF EXISTS tenants_select_merged ON public.tenants;
 CREATE POLICY tenants_select_merged ON public.tenants
   FOR SELECT TO authenticated
@@ -1169,10 +1141,6 @@ CREATE POLICY tenants_select_merged ON public.tenants
       OR id = public.get_current_tenant_id()
     )
   );
-
-DROP POLICY IF EXISTS tenants_own_select ON public.tenants;
-DROP POLICY IF EXISTS tenants_superadmin_select ON public.tenants;
-DROP POLICY IF EXISTS tenants_select ON public.tenants;
 
 DROP POLICY IF EXISTS courses_insert_merged ON public.courses;
 CREATE POLICY courses_insert_merged ON public.courses
@@ -1223,14 +1191,6 @@ CREATE POLICY courses_update_merged ON public.courses
       )
     )
   );
-
-DROP POLICY IF EXISTS courses_admin_all ON public.courses;
-DROP POLICY IF EXISTS courses_admin_insert ON public.courses;
-DROP POLICY IF EXISTS courses_teacher_insert ON public.courses;
-DROP POLICY IF EXISTS courses_admin_update ON public.courses;
-DROP POLICY IF EXISTS courses_teacher_update ON public.courses;
-
-DROP POLICY IF EXISTS internal_job_queue_deny ON internal.job_queue;
 
 DROP POLICY IF EXISTS sections_insert_merged ON public.sections;
 CREATE POLICY sections_insert_merged ON public.sections
@@ -1299,11 +1259,6 @@ CREATE POLICY sections_update_merged ON public.sections
     )
   );
 
-DROP POLICY IF EXISTS sections_teacher_insert ON public.sections;
-DROP POLICY IF EXISTS sections_admin_insert ON public.sections;
-DROP POLICY IF EXISTS sections_teacher_update ON public.sections;
-DROP POLICY IF EXISTS sections_admin_update ON public.sections;
-
 DROP POLICY IF EXISTS enrollments_insert_merged ON public.enrollments;
 CREATE POLICY enrollments_insert_merged ON public.enrollments
   FOR INSERT TO authenticated
@@ -1343,12 +1298,6 @@ CREATE POLICY enrollments_delete_merged ON public.enrollments
     )
     OR (user_id = public.get_auth_user_id() AND tenant_id = public.get_current_tenant_id())
   );
-
-DROP POLICY IF EXISTS enrollments_admin_all ON public.enrollments;
-DROP POLICY IF EXISTS enrollments_insert_policy ON public.enrollments;
-DROP POLICY IF EXISTS enrollments_update_policy ON public.enrollments;
-DROP POLICY IF EXISTS enrollments_delete_policy ON public.enrollments;
-DROP POLICY IF EXISTS enrollments_self_all ON public.enrollments;
 
 DROP POLICY IF EXISTS user_progress_insert_merged ON public.user_progress;
 CREATE POLICY user_progress_insert_merged ON public.user_progress
@@ -1394,10 +1343,6 @@ CREATE POLICY user_progress_delete_merged ON public.user_progress
     )
   );
 
-DROP POLICY IF EXISTS user_progress_admin_all ON public.user_progress;
-DROP POLICY IF EXISTS user_progress_all_policy ON public.user_progress;
-DROP POLICY IF EXISTS user_progress_self_all ON public.user_progress;
-
 DROP POLICY IF EXISTS users_update_merged ON public.users;
 CREATE POLICY users_update_merged ON public.users
   FOR UPDATE TO authenticated
@@ -1426,24 +1371,11 @@ CREATE POLICY users_update_merged ON public.users
     )
   );
 
-DROP POLICY IF EXISTS users_update_policy ON public.users;
-DROP POLICY IF EXISTS users_update_self ON public.users;
-
-
-DROP POLICY IF EXISTS tenants_admin_all ON public.tenants;
-DROP POLICY IF EXISTS tenants_superadmin_all ON public.tenants;
-
 -- -- B. Admin-wide RLS fixes (patches 23, 24) --------------------------------Ã¢â€â‚¬
 
 -- Sessions: admin can see all active sessions
-DROP POLICY IF EXISTS sessions_access ON public.sessions;
-
 
 -- Devices: admin can see all devices
-DROP POLICY IF EXISTS devices_select ON public.devices;
-
-DROP POLICY IF EXISTS devices_select_policy ON public.devices;
-
 
 -- Location logs: super admin cross-tenant, admin tenant-scoped
 DROP POLICY IF EXISTS location_logs_select ON public.user_location_logs;
@@ -1459,7 +1391,6 @@ CREATE POLICY location_logs_select ON public.user_location_logs
   );
 
 -- -- C. Settings RLS fix (patch 9) --------------------------------------------
-DROP POLICY IF EXISTS settings_kv_deny_all ON public.settings_kv;
 
 CREATE POLICY settings_select ON public.settings_kv
   FOR SELECT TO authenticated, anon
@@ -1524,12 +1455,10 @@ CREATE POLICY enrollments_select_policy ON public.enrollments
     )
   );
 
-DROP POLICY IF EXISTS feature_flags_admin_all ON public.feature_flags;
 DROP POLICY IF EXISTS feature_flags_admin_insert ON public.feature_flags;
 DROP POLICY IF EXISTS feature_flags_admin_update ON public.feature_flags;
 DROP POLICY IF EXISTS feature_flags_admin_delete ON public.feature_flags;
 
-DROP POLICY IF EXISTS lesson_contents_admin_teacher_all ON public.lesson_contents;
 DROP POLICY IF EXISTS lesson_contents_admin_teacher_insert ON public.lesson_contents;
 DROP POLICY IF EXISTS lesson_contents_admin_teacher_update ON public.lesson_contents;
 DROP POLICY IF EXISTS lesson_contents_admin_teacher_delete ON public.lesson_contents;
@@ -1576,7 +1505,6 @@ CREATE POLICY lesson_contents_admin_teacher_delete ON public.lesson_contents FOR
     )
   );
 
-DROP POLICY IF EXISTS notifications_admin_write ON public.notifications;
 DROP POLICY IF EXISTS notifications_admin_insert ON public.notifications;
 DROP POLICY IF EXISTS notifications_admin_update ON public.notifications;
 DROP POLICY IF EXISTS notifications_admin_delete ON public.notifications;
@@ -1600,12 +1528,10 @@ CREATE POLICY notifications_admin_delete ON public.notifications FOR DELETE TO a
     AND public.user_has_permission((select auth.uid()), 'notifications.send'::text, tenant_id)
   );
 
-DROP POLICY IF EXISTS permissions_super_admin_all ON public.permissions;
 DROP POLICY IF EXISTS permissions_super_admin_insert ON public.permissions;
 DROP POLICY IF EXISTS permissions_super_admin_update ON public.permissions;
 DROP POLICY IF EXISTS permissions_super_admin_delete ON public.permissions;
 
-DROP POLICY IF EXISTS role_permissions_admin_all ON public.role_permissions;
 DROP POLICY IF EXISTS role_permissions_admin_insert ON public.role_permissions;
 DROP POLICY IF EXISTS role_permissions_admin_update ON public.role_permissions;
 DROP POLICY IF EXISTS role_permissions_admin_delete ON public.role_permissions;
@@ -1661,7 +1587,6 @@ CREATE POLICY role_permissions_admin_delete ON public.role_permissions FOR DELET
     )
   );
 
-DROP POLICY IF EXISTS roles_admin_all ON public.roles;
 DROP POLICY IF EXISTS roles_admin_insert ON public.roles;
 DROP POLICY IF EXISTS roles_admin_update ON public.roles;
 DROP POLICY IF EXISTS roles_admin_delete ON public.roles;
@@ -1697,7 +1622,6 @@ CREATE POLICY roles_admin_delete ON public.roles FOR DELETE TO authenticated
     )
   );
 
-DROP POLICY IF EXISTS settings_admin_all ON public.settings_kv;
 DROP POLICY IF EXISTS settings_admin_insert ON public.settings_kv;
 DROP POLICY IF EXISTS settings_admin_update ON public.settings_kv;
 DROP POLICY IF EXISTS settings_admin_delete ON public.settings_kv;
@@ -1709,7 +1633,6 @@ CREATE POLICY settings_admin_update ON public.settings_kv FOR UPDATE TO authenti
 CREATE POLICY settings_admin_delete ON public.settings_kv FOR DELETE TO authenticated
   USING (public.is_current_user_super_admin());
 
-DROP POLICY IF EXISTS tenant_feature_flags_manage ON public.tenant_feature_flags;
 DROP POLICY IF EXISTS tenant_feature_flags_insert ON public.tenant_feature_flags;
 DROP POLICY IF EXISTS tenant_feature_flags_update ON public.tenant_feature_flags;
 DROP POLICY IF EXISTS tenant_feature_flags_delete ON public.tenant_feature_flags;
@@ -1733,7 +1656,6 @@ CREATE POLICY tenant_feature_flags_delete ON public.tenant_feature_flags FOR DEL
     AND public.user_has_permission((select auth.uid()), 'feature_flags.manage'::text, public.get_current_tenant_id())
   );
 
-DROP POLICY IF EXISTS tenant_settings_admin_all ON public.tenant_settings;
 DROP POLICY IF EXISTS tenant_settings_admin_insert ON public.tenant_settings;
 DROP POLICY IF EXISTS tenant_settings_admin_update ON public.tenant_settings;
 DROP POLICY IF EXISTS tenant_settings_admin_delete ON public.tenant_settings;
@@ -1769,7 +1691,6 @@ CREATE POLICY tenant_settings_admin_delete ON public.tenant_settings FOR DELETE 
     )
   );
 
-DROP POLICY IF EXISTS tenants_write_merged ON public.tenants;
 DROP POLICY IF EXISTS tenants_write_insert ON public.tenants;
 DROP POLICY IF EXISTS tenants_write_update ON public.tenants;
 DROP POLICY IF EXISTS tenants_write_delete ON public.tenants;
@@ -1781,7 +1702,6 @@ CREATE POLICY tenants_write_update ON public.tenants FOR UPDATE TO authenticated
 CREATE POLICY tenants_write_delete ON public.tenants FOR DELETE TO authenticated
   USING (public.is_current_user_super_admin());
 
-DROP POLICY IF EXISTS user_roles_admin_all ON public.user_roles;
 DROP POLICY IF EXISTS user_roles_admin_insert ON public.user_roles;
 DROP POLICY IF EXISTS user_roles_admin_update ON public.user_roles;
 DROP POLICY IF EXISTS user_roles_admin_delete ON public.user_roles;
@@ -1843,9 +1763,7 @@ CREATE POLICY user_roles_admin_delete ON public.user_roles FOR DELETE TO authent
     )
   );
 
-DROP POLICY IF EXISTS users_admin_all ON public.users;
 DROP POLICY IF EXISTS users_admin_insert ON public.users;
-DROP POLICY IF EXISTS users_admin_update ON public.users;
 DROP POLICY IF EXISTS users_admin_delete ON public.users;
 CREATE POLICY users_admin_insert ON public.users FOR INSERT TO authenticated
   WITH CHECK (
@@ -1864,12 +1782,9 @@ CREATE POLICY users_admin_delete ON public.users FOR DELETE TO authenticated
     )
   );
 
-DROP POLICY IF EXISTS users_delete_policy ON public.users;
-
 -- AUTHZ-TENANT-01: privileged mutation must respect the row's tenant unless
 -- the caller is an actual super_admin. Admin status alone is never a
 -- cross-tenant authorization boundary.
-DROP POLICY IF EXISTS permissions_super_admin_all ON public.permissions;
 DROP POLICY IF EXISTS permissions_super_admin_insert ON public.permissions;
 DROP POLICY IF EXISTS permissions_super_admin_update ON public.permissions;
 DROP POLICY IF EXISTS permissions_super_admin_delete ON public.permissions;
@@ -1881,7 +1796,6 @@ CREATE POLICY permissions_super_admin_update ON public.permissions FOR UPDATE TO
 CREATE POLICY permissions_super_admin_delete ON public.permissions FOR DELETE TO authenticated
   USING (public.is_current_user_super_admin());
 
-DROP POLICY IF EXISTS feature_flags_admin_all ON public.feature_flags;
 DROP POLICY IF EXISTS feature_flags_admin_insert ON public.feature_flags;
 DROP POLICY IF EXISTS feature_flags_admin_update ON public.feature_flags;
 DROP POLICY IF EXISTS feature_flags_admin_delete ON public.feature_flags;
@@ -1950,6 +1864,12 @@ CREATE POLICY admin_only_all ON public.cache_invalidation_queue
 -- first verifying every SECURITY DEFINER helper that queries it is no
 -- longer called from that table's own RLS policies (directly or
 -- transitively).
+-- SAME FIX, same reason: 'courses' and 'enrollments' were also removed.
+-- public.has_course_access(uuid, uuid) is SECURITY DEFINER and queries
+-- public.enrollments; enrollments_select_policy queries public.courses;
+-- courses_select_merged calls has_course_access(id). Forcing either table
+-- strips the owner bypass that chain relies on and reopens 42P17 the first
+-- time has_course_access() is actually exercised via that OR branch.
 DO $$
 DECLARE
   _tables text[] := ARRAY[
@@ -1957,7 +1877,7 @@ DECLARE
     'sessions', 'devices',
     'roles', 'permissions', 'role_permissions',
     'settings_kv',
-    'courses', 'enrollments', 'user_progress',
+    'user_progress',
     'notifications', 'user_notifications',
     'constants', 'user_validity_cache'
   ];
@@ -1992,6 +1912,22 @@ BEGIN
   ) THEN
     EXECUTE 'ALTER TABLE public.user_roles NO FORCE ROW LEVEL SECURITY';
   END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'courses' AND c.relkind = 'r'
+  ) THEN
+    EXECUTE 'ALTER TABLE public.courses NO FORCE ROW LEVEL SECURITY';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'enrollments' AND c.relkind = 'r'
+  ) THEN
+    EXECUTE 'ALTER TABLE public.enrollments NO FORCE ROW LEVEL SECURITY';
+  END IF;
 END;
 $$;
 
@@ -2014,7 +1950,6 @@ ALTER TABLE public.download_logs ENABLE ROW LEVEL SECURITY;
 -- zero rows by default; combined with the matching REVOKE in
 -- 10_permissions.sql (which rejects the query before RLS even runs), this
 -- table is now unreachable by anything except service_role.
-DROP POLICY IF EXISTS video_cache_select ON public.video_cache;
 
 DROP POLICY IF EXISTS download_logs_select_own ON public.download_logs;
 CREATE POLICY download_logs_select_own ON public.download_logs
@@ -2189,6 +2124,14 @@ BEGIN
         'feature_flag_users',
         'feature_flag_roles'
       )
+      -- FIX: this used to drop every policy unconditionally, including the
+      -- auth_session_required_* restrictive baseline policy that the
+      -- "AUTH SESSION BASELINE (CANONICAL)" block (earlier in this file)
+      -- had already created for these tables (their RLS is enabled near
+      -- the top of this file, before that block runs). Dropping it here
+      -- and never recreating it meant these four tables silently lost the
+      -- session-validity invariant every other RLS-protected table has.
+      AND policyname NOT LIKE 'auth_session_required_%'
   LOOP
     EXECUTE format(
       'DROP POLICY IF EXISTS %I ON %I.%I',

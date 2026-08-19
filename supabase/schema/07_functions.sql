@@ -1680,6 +1680,51 @@ BEGIN
 END;
 $$;
 
+-- AUTHZ-SESSION-02: permission evaluation must never bless a revoked JWT.
+CREATE OR REPLACE FUNCTION public.user_has_permission(
+  p_user_id uuid,
+  p_permission text,
+  p_tenant_id uuid DEFAULT NULL
+)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF auth.role() <> 'service_role' THEN
+    IF p_user_id IS DISTINCT FROM auth.uid() THEN
+      RETURN false;
+    END IF;
+    IF NOT public.validate_user_session() THEN
+      RETURN false;
+    END IF;
+  END IF;
+
+  RETURN (
+    EXISTS (
+      SELECT 1
+      FROM public.user_permission_cache pc
+      WHERE pc.user_id = p_user_id
+        AND pc.permission_name = p_permission
+        AND pc.tenant_id = coalesce(p_tenant_id, public.system_tenant_id())
+        AND (pc.expires_at IS NULL OR pc.expires_at > pg_catalog.now())
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM public.user_roles ur
+      JOIN public.role_permissions rp ON rp.role_id = ur.role_id
+      JOIN public.permissions pm ON pm.id = rp.permission_id
+      WHERE ur.user_id = p_user_id
+        AND ur.is_active = true
+        AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
+        AND pm.name = p_permission
+        AND ur.tenant_id = coalesce(p_tenant_id, public.system_tenant_id())
+    )
+  );
+END;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- v12-compatible safe RPC layer
 -- These functions preserve useful app/admin APIs without reintroducing v12 RLS,
@@ -4121,43 +4166,12 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.is_feature_enabled(
-  p_key text,
-  p_user_id uuid DEFAULT auth.uid()
-)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER SET search_path = public, pg_temp
-AS $$
-  SELECT coalesce((
-    SELECT ff.is_enabled
-      AND (
-        ff.rollout_pct = 100
-        OR EXISTS (
-          SELECT 1
-          FROM public.feature_flag_users ffu
-          WHERE ffu.flag_id = ff.id
-            AND ffu.user_id = p_user_id
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM public.feature_flag_roles ffr
-          JOIN public.user_roles ur ON ur.role_id = ffr.role_id
-          WHERE ffr.flag_id = ff.id
-            AND ur.user_id = p_user_id
-            AND ur.is_active
-            AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
-        )
-        OR (
-          ff.rollout_pct > 0
-          AND (abs(hashtext(coalesce(p_user_id::text, auth.uid()::text, 'anonymous') || ':' || ff.key)) % 100) < ff.rollout_pct
-        )
-      )
-    FROM public.feature_flags ff
-    WHERE ff.key = p_key
-  ), false);
-$$;
+-- NOTE: public.is_feature_enabled(text, uuid) is defined once, later in this file,
+-- as a thin delegator to public.is_feature_enabled_for_user() (which adds the
+-- caller-identity/tenant/account-status checks). An earlier, less-safe inline
+-- implementation that duplicated this signature without those checks has been
+-- removed so only the hardened, canonical definition remains.
+
 
 CREATE OR REPLACE FUNCTION private.prune_expired_access_cache()
 RETURNS integer
@@ -5484,51 +5498,6 @@ BEGIN
 END;
 $$;
 
--- AUTHZ-SESSION-02: permission evaluation must never bless a revoked JWT.
-CREATE OR REPLACE FUNCTION public.user_has_permission(
-  p_user_id uuid,
-  p_permission text,
-  p_tenant_id uuid DEFAULT NULL
-)
-RETURNS boolean
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER SET search_path = public, pg_temp
-AS $$
-BEGIN
-  IF auth.role() <> 'service_role' THEN
-    IF p_user_id IS DISTINCT FROM auth.uid() THEN
-      RETURN false;
-    END IF;
-    IF NOT public.validate_user_session() THEN
-      RETURN false;
-    END IF;
-  END IF;
-
-  RETURN (
-    EXISTS (
-      SELECT 1
-      FROM public.user_permission_cache pc
-      WHERE pc.user_id = p_user_id
-        AND pc.permission_name = p_permission
-        AND pc.tenant_id = coalesce(p_tenant_id, public.system_tenant_id())
-        AND (pc.expires_at IS NULL OR pc.expires_at > pg_catalog.now())
-    )
-    OR EXISTS (
-      SELECT 1
-      FROM public.user_roles ur
-      JOIN public.role_permissions rp ON rp.role_id = ur.role_id
-      JOIN public.permissions pm ON pm.id = rp.permission_id
-      WHERE ur.user_id = p_user_id
-        AND ur.is_active = true
-        AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
-        AND pm.name = p_permission
-        AND ur.tenant_id = coalesce(p_tenant_id, public.system_tenant_id())
-    )
-  );
-END;
-$$;
-
 -- AUTH-REV-01: logout must revoke the current JWT, not only close session rows.
 CREATE OR REPLACE FUNCTION public.logout_current_user()
 RETURNS void
@@ -5714,6 +5683,14 @@ BEGIN
          last_login = CASE
            WHEN p_record_login THEN pg_catalog.now()
            ELSE last_login
+         END,
+         -- FIX: nothing anywhere (client or DB) ever incremented this column;
+         -- app_user.dart/student_profile.dart only ever read it. This is the
+         -- one call in the login path that knows a real login just happened
+         -- (p_record_login=true), so it is the right place to count it.
+         login_count = CASE
+           WHEN p_record_login THEN login_count + 1
+           ELSE login_count
          END
    WHERE id = v_uid
      AND tenant_id = v_tenant_id;
@@ -6186,15 +6163,26 @@ DECLARE
   v_before jsonb;
   v_after jsonb;
 BEGIN
-  v_flag_id := CASE
-    WHEN TG_TABLE_NAME = 'feature_flags' THEN coalesce(NEW.id, OLD.id)
-    ELSE coalesce(NEW.flag_id, OLD.flag_id)
-  END;
-
-  v_tenant_id := CASE
-    WHEN TG_TABLE_NAME = 'feature_flags' THEN public.system_tenant_id()
-    ELSE coalesce(NEW.tenant_id, OLD.tenant_id, public.system_tenant_id())
-  END;
+  -- FIX: the previous CASE-expression form of these two assignments
+  -- referenced NEW.id/OLD.id in one branch and NEW.flag_id/OLD.flag_id /
+  -- NEW.tenant_id/OLD.tenant_id in the other. PL/pgSQL sends a CASE
+  -- expression to the SQL engine as a single statement bound to NEW/OLD's
+  -- actual composite type for whichever table fired the trigger, so *every*
+  -- field referenced anywhere in the CASE must exist on that table's row
+  -- type even when its branch is not the one taken. public.feature_flags
+  -- has no flag_id/tenant_id column, and
+  -- tenant_feature_flags/feature_flag_users/feature_flag_roles have no id
+  -- column, so this trigger failed with "record NEW has no field ..." on
+  -- every single INSERT/UPDATE/DELETE to any of the four tables it is
+  -- attached to. IF/ELSIF assigns each branch as its own independently
+  -- planned statement, which only type-checks the branch actually taken.
+  IF TG_TABLE_NAME = 'feature_flags' THEN
+    v_flag_id := coalesce(NEW.id, OLD.id);
+    v_tenant_id := public.system_tenant_id();
+  ELSE
+    v_flag_id := coalesce(NEW.flag_id, OLD.flag_id);
+    v_tenant_id := coalesce(NEW.tenant_id, OLD.tenant_id, public.system_tenant_id());
+  END IF;
 
   SELECT ff.key INTO v_key
     FROM public.feature_flags ff
