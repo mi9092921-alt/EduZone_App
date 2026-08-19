@@ -5,10 +5,10 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../../core/constants/app_constants.dart';
-import '../../../../../core/error/failures.dart';
 import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../shared/cross_feature/downloads_shared.dart';
 import '../../../../../shared/utils/app_snackbar.dart';
+import '../../../../../shared/utils/error_handler.dart';
 import '../../../../downloads/domain/entities/download_enums.dart';
 import '../../../application/providers/courses_provider.dart';
 import '../../../data/services/watched_lessons_service.dart';
@@ -259,7 +259,14 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
       if (!mounted) return;
       AppSnackbar.showError(
         context: context,
-        message: l10n.downloadStartFailed(e.toString()),
+        // e is a typed AppException (see courses_remote_ds_impl.dart's
+        // NetworkGuard/NetworkExceptionMapper wiring) whose `.toString()`
+        // was previously interpolated directly into this l10n string --
+        // an internal, unlocalized diagnostic ("AppException(code):
+        // message"), not something meant for a user-facing snackbar.
+        // Classify it the same way every other network-error display in
+        // the app does.
+        message: l10n.downloadStartFailed(ErrorHandler.getMessage(context, e)),
       );
       return;
     }
@@ -323,10 +330,9 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
             );
           } catch (e) {
             if (!mounted) return;
-            final message = e is Failure ? e.message : e.toString();
             AppSnackbar.showError(
               context: context,
-              message: l10n.downloadStartFailed(message),
+              message: l10n.downloadStartFailed(ErrorHandler.getMessage(context, e)),
             );
           }
         },
@@ -335,7 +341,7 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
       if (!mounted) return;
       AppSnackbar.showError(
         context: context,
-        message: l10n.videoInfoFetchFailed(e.toString()),
+        message: l10n.videoInfoFetchFailed(ErrorHandler.getMessage(context, e)),
       );
     }
   }

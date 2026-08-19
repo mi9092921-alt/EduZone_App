@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:app/shared/utils/global_error_handler.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -23,14 +21,14 @@ void main() {
 
     test('prints the error message to the debug console', () {
       final logs = <String>[];
-      runZoned(
-        () => GlobalErrorHandler.logError(Exception('unique-marker-42'), null),
-        zoneSpecification: ZoneSpecification(
-          print: (self, parent, zone, line) => logs.add(line),
-        ),
-      );
-
-      expect(logs.any((line) => line.contains('unique-marker-42')), isTrue);
+      final originalDebugPrint = debugPrint;
+      debugPrint = (message, {wrapWidth}) => logs.add(message ?? '');
+      try {
+        GlobalErrorHandler.logError(Exception('unique-marker-42'), null);
+        expect(logs.any((line) => line.contains('unique-marker-42')), isTrue);
+      } finally {
+        debugPrint = originalDebugPrint;
+      }
     });
   });
 

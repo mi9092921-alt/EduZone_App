@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+import '../../../auth/application/providers/auth_di_providers.dart';
 import '../../data/datasources/video_player_remote_ds.dart';
 import '../../data/repositories/video_player_repo_impl.dart';
 import '../../domain/entities/lesson_progress_sync_item.dart';
@@ -15,7 +18,9 @@ part 'video_provider.g.dart';
 
 @riverpod
 VideoPlayerRemoteDataSource videoPlayerRemoteDataSource(Ref ref) {
-  return VideoPlayerRemoteDataSource();
+  return VideoPlayerRemoteDataSource(
+    ref.watch(supabaseClientProvider),
+  );
 }
 
 @riverpod

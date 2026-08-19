@@ -127,7 +127,9 @@ void main() {
       // disposed." — that was the original bug this test guards against.
       expect(() => container.dispose(), returnsNormally);
 
-      await Future<void>.delayed(Duration.zero);
+      for (var i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
 
       verify(
         () => mockSync.batch(

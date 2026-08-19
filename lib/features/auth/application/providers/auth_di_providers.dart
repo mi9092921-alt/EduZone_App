@@ -36,7 +36,8 @@ part 'auth_di_providers.g.dart';
 SupabaseClient supabaseClient(Ref ref) => SupabaseService.client;
 
 @Riverpod(keepAlive: true)
-AuthRemoteDataSource authRemoteDataSource(Ref ref) => AuthRemoteDataSource();
+AuthRemoteDataSource authRemoteDataSource(Ref ref) =>
+    AuthRemoteDataSource(ref.watch(supabaseClientProvider));
 
 @Riverpod(keepAlive: true)
 AuthRepository authRepository(Ref ref) =>

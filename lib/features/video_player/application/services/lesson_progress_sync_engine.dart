@@ -49,7 +49,9 @@ class LessonProgressSyncEngine {
 
   Future<Either<Failure, void>> flush() async {
     final activeFlush = _activeFlush;
-    if (activeFlush != null) return activeFlush;
+    if (activeFlush != null) {
+      return activeFlush.then((_) => flush());
+    }
 
     late final Future<Either<Failure, void>> operation;
     operation = _flushPending().whenComplete(() {

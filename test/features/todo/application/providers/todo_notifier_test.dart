@@ -1,8 +1,10 @@
-import 'dart:async';
-
+import 'package:app/core/logging/infrastructure/event_bus.dart';
+import 'package:app/core/logging/logging_providers.dart';
+import 'package:app/features/auth/domain/entities/auth_state.dart';
 import 'package:app/features/todo/application/providers/todo_provider.dart';
 import 'package:app/features/todo/domain/entities/todo_item.dart';
 import 'package:app/features/todo/domain/repositories/todo_repository.dart';
+import 'package:app/shared/cross_feature/auth_shared.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
@@ -11,6 +13,13 @@ import 'package:mocktail/mocktail.dart';
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
 class MockTodoRepository extends Mock implements TodoRepository {}
+
+class MockEventBus extends Mock implements EventBus {}
+
+class _FakeAuthNotifier extends Auth {
+  @override
+  AuthState build() => const AuthUnauthenticated();
+}
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -29,12 +38,22 @@ Future<void> _settle() async {
 
 void main() {
   late MockTodoRepository repository;
+  late MockEventBus eventBus;
   late ProviderContainer container;
+
+  setUpAll(() {
+    registerFallbackValue(_todo('fallback'));
+  });
 
   setUp(() {
     repository = MockTodoRepository();
+    eventBus = MockEventBus();
     container = ProviderContainer(
-      overrides: [todoRepositoryProvider.overrideWithValue(repository)],
+      overrides: [
+        todoRepositoryProvider.overrideWithValue(repository),
+        authProvider.overrideWith(() => _FakeAuthNotifier()),
+        eventBusProvider.overrideWithValue(eventBus),
+      ],
     );
     addTearDown(container.dispose);
   });
