@@ -117,7 +117,7 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
                     final isCollapsed = top <= (MediaQuery.paddingOf(context).top + kToolbarHeight + 10);
                     
                     return AnimatedOpacity(
-                      duration: const Duration(milliseconds: 200),
+                      duration: AppMotion.fast,
                       opacity: isCollapsed ? 1.0 : 0.0,
                       child: Text(
                         course.title,

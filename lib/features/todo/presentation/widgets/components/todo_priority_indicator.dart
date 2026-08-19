@@ -61,13 +61,7 @@ class TodoPriorityIndicator extends StatelessWidget {
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: 0.4),
-                blurRadius: 4,
-                spreadRadius: 1,
-              ),
-            ],
+            boxShadow: AppShadows.level1,
           ),
         );
     }

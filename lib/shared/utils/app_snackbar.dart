@@ -102,13 +102,7 @@ class FeedbackService {
           color: style.bg,
           borderRadius: AppRadius.mdBorder,
           border: Border.all(color: style.text.withValues(alpha: 0.2)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          boxShadow: AppShadows.level2,
         ),
         child: Row(
           children: [
@@ -208,7 +202,7 @@ class _ToastWidgetState extends State<_ToastWidget>
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 400),
+      duration: AppMotion.medium,
       vsync: this,
     );
 
@@ -249,13 +243,7 @@ class _ToastWidgetState extends State<_ToastWidget>
                 border: Border.all(
                   color: widget.style.text.withValues(alpha: 0.1),
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 12,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
+                boxShadow: AppShadows.level2,
               ),
               child: Row(
                 children: [

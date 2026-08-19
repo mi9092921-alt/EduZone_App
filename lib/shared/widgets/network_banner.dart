@@ -89,13 +89,7 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
                   decoration: BoxDecoration(
                     color: ds.error,
                     borderRadius: AppRadius.smBorder,
-                    boxShadow: [
-                      BoxShadow(
-                        color: ds.error.withValues(alpha: 0.3),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+                    boxShadow: AppShadows.level2,
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,

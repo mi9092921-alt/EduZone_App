@@ -25,7 +25,7 @@ class TodoCheckbox extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.md),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
+            duration: AppMotion.fast,
             curve: Curves.easeOutBack,
             width: 24,
             height: 24,
@@ -38,19 +38,11 @@ class TodoCheckbox extends StatelessWidget {
                     : AppColors.of(context).textMuted.withValues(alpha: 0.5),
                 width: 2,
               ),
-              boxShadow: value
-                  ? [
-                      BoxShadow(
-                        color: AppColors.success.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ]
-                  : [],
+              boxShadow: value ? AppShadows.level1 : [],
             ),
             child: Center(
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
+                duration: AppMotion.fast,
                 transitionBuilder: (child, animation) =>
                     ScaleTransition(scale: animation, child: child),
                 child: value

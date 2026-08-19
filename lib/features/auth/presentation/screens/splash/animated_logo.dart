@@ -77,19 +77,7 @@ class SplashAnimatedLogo extends StatelessWidget {
                             : Colors.white.withValues(alpha: 0.9),
                         width: 1.5,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.12),
-                          blurRadius: 24,
-                          offset: const Offset(0, 8),
-                          spreadRadius: 2,
-                        ),
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.05),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
+                      boxShadow: AppShadows.level2,
                     ),
                     // ✅ Glassmorphism حقيقي بـ BackdropFilter
                     child: ClipRRect(

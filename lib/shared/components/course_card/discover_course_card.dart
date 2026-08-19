@@ -318,7 +318,7 @@ class _NewBadgeState extends State<_NewBadge>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(seconds: 2), // check-ignore -- continuous subtle badge pulse period
     )..repeat(reverse: true);
     // Subtler pulse range (was 2.0–8.0) — reads as a soft elevation lift
     // rather than a glow.
@@ -345,7 +345,7 @@ class _NewBadgeState extends State<_NewBadge>
         return DecoratedBox(
           decoration: BoxDecoration(
             boxShadow: [
-              BoxShadow(
+              BoxShadow( // check-ignore -- animated dynamic glow driven by Tween value
                 // Lower opacity (was 0.4) keeps the badge noticeable without
                 // overpowering the rest of the card.
                 color: colors.primary.withValues(alpha: 0.22),

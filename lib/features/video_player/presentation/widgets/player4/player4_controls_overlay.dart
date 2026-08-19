@@ -83,7 +83,7 @@ class Player4ControlsOverlay extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         child: AnimatedOpacity(
           opacity: showControls ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 200),
+          duration: AppMotion.fast,
           child: IgnorePointer(
             ignoring: !showControls,
             child: Stack(

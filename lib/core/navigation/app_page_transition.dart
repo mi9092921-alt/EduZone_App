@@ -7,7 +7,6 @@ CustomTransitionPage<void> buildTransitionPage({
 }) {
   return CustomTransitionPage<void>(
     key: state.pageKey,
-    reverseTransitionDuration: const Duration(milliseconds: 250),
     child: child,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       final curved = CurvedAnimation(

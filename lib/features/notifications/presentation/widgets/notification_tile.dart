@@ -170,15 +170,7 @@ class NotificationTile extends ConsumerWidget {
                     ? ds.border
                     : typeColor.withValues(alpha: 0.3),
               ),
-              boxShadow: notification.isRead
-                  ? null
-                  : [
-                      BoxShadow(
-                        color: typeColor.withValues(alpha: 0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+              boxShadow: notification.isRead ? null : AppShadows.level1,
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,

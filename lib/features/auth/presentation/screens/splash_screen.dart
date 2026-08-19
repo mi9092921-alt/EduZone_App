@@ -105,12 +105,12 @@ class _SplashScreenState extends State<SplashScreen>
 
     _main = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1200), // check-ignore -- multi-step splash brand entrance sequence
     );
 
     _pulse = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 1000), // check-ignore -- continuous subtle background pulse period
     )..repeat(reverse: true);
 
     _buildLogoAnimations();

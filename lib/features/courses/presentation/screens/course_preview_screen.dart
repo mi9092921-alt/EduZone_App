@@ -54,7 +54,7 @@ class _CoursePreviewScreenState extends ConsumerState<CoursePreviewScreen>
 
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: AppMotion.slow,
     );
 
     _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
@@ -227,7 +227,7 @@ class _CoursePreviewScreenState extends ConsumerState<CoursePreviewScreen>
                     final isCollapsed = top <= (MediaQuery.paddingOf(context).top + kToolbarHeight + 10);
                     
                     return AnimatedOpacity(
-                      duration: const Duration(milliseconds: 200),
+                      duration: AppMotion.fast,
                       opacity: isCollapsed ? 1.0 : 0.0,
                       child: Text(
                         course.title,

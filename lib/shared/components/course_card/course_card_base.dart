@@ -59,7 +59,7 @@ class _CourseCardBaseState extends State<CourseCardBase> {
           duration: AppMotion.fast,
           curve: Curves.easeOut,
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
+            duration: AppMotion.fast,
             decoration: BoxDecoration(
               color: colors.surface,
               borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -107,13 +107,7 @@ class _CourseCardBaseState extends State<CourseCardBase> {
                 border: Border.all(
                   color: colors.border.withValues(alpha: 0.25),
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: colors.border.withValues(alpha: 0.1),
-                    blurRadius: 3,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                boxShadow: AppShadows.level1,
               ),
               child: widget.image,
             ),
@@ -168,13 +162,7 @@ class _CourseCardBaseState extends State<CourseCardBase> {
                   border: Border.all(
                     color: colors.border.withValues(alpha: 0.25),
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: colors.border.withValues(alpha: 0.1),
-                      blurRadius: 3,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+                  boxShadow: AppShadows.level1,
                 ),
                 child: widget.image,
               ),
