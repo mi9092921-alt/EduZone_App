@@ -206,6 +206,7 @@ class Auth extends _$Auth {
                   : null,
             ),
           );
+          openUserProgressSession(ref);
 
           // Track activity and session in the background (device already validated/re-bound above)
           await ref
@@ -341,6 +342,7 @@ class Auth extends _$Auth {
           debugPrint('[Auth] Passive revocation detected. Cleaning up.');
           _accessService?.stop();
           _accessService = null;
+          closeUserProgressSession(ref);
           _invalidateAllUserProviders();
           _safeSetState(const AuthUnauthenticated());
         }
@@ -388,6 +390,7 @@ class Auth extends _$Auth {
 
         _safeSetState(AuthAuthenticated(user: appUser, access: access));
         if (!_isCurrentAuthOperation(generation)) return;
+        openUserProgressSession(ref);
 
         // Offline downloads account isolation (P6.20): purge any local
         // download files/keys left behind by a *different* account that
@@ -442,7 +445,9 @@ class Auth extends _$Auth {
           // the restricted screen either way, but a real Supabase session
           // may remain locally active until it naturally expires.
           GlobalErrorHandler.logError(e, st);
-          debugPrint('[Auth] Restricted login sign-out failed: ${e.runtimeType}');
+          debugPrint(
+            '[Auth] Restricted login sign-out failed: ${e.runtimeType}',
+          );
         }
         _safeSetState(AuthRestricted(status: access.status, access: access));
       }
@@ -471,14 +476,18 @@ class Auth extends _$Auth {
       // signInWithPassword() already succeeded, so it is always worth a
       // full diagnostic record.
       if (AuthErrorPolicy.isTransient(e)) {
-        debugPrint('[Auth] Login failed due to transient error: ${e.runtimeType}');
+        debugPrint(
+          '[Auth] Login failed due to transient error: ${e.runtimeType}',
+        );
       } else if (e is InvalidCredentialsException ||
           e is EmailNotConfirmedException ||
           e is RateLimitedException) {
         debugPrint('[Auth] Login failed with ${e.runtimeType}');
       } else {
         GlobalErrorHandler.logError(e, st);
-        debugPrint('[Auth] Login failed post-authentication with ${e.runtimeType}');
+        debugPrint(
+          '[Auth] Login failed post-authentication with ${e.runtimeType}',
+        );
       }
 
       // Sign out from Supabase if we got an exception after successfully logging in.
@@ -506,11 +515,14 @@ class Auth extends _$Auth {
           .emit(
             ErrorOccurredEvent(
               timestamp: DateTime.now(),
-              errorMessage: 'Login failed: ${AuthErrorPolicy.mapExceptionToKey(e)}',
+              errorMessage:
+                  'Login failed: ${AuthErrorPolicy.mapExceptionToKey(e)}',
             ),
           );
 
-      _safeSetState(AuthUnauthenticated(error: AuthErrorPolicy.mapExceptionToKey(e)));
+      _safeSetState(
+        AuthUnauthenticated(error: AuthErrorPolicy.mapExceptionToKey(e)),
+      );
     }
   }
 
@@ -560,7 +572,9 @@ class Auth extends _$Auth {
       // to that's better than what's already showing, so we log and let
       // the user retry explicitly.
       if (AuthErrorPolicy.isTransient(e)) {
-        debugPrint('[Auth] Verify access deferred due to transient error: ${e.runtimeType}');
+        debugPrint(
+          '[Auth] Verify access deferred due to transient error: ${e.runtimeType}',
+        );
       } else {
         // Background/system-triggered call, not direct user input — an
         // unexpected exception type here is worth investigating.
@@ -577,7 +591,9 @@ class Auth extends _$Auth {
       final appUser = await ref.read(getCurrentUserUseCaseProvider)();
       if (appUser != null && state is AuthAuthenticated) {
         final currentState = state as AuthAuthenticated;
-        _safeSetState(AuthAuthenticated(user: appUser, access: currentState.access));
+        _safeSetState(
+          AuthAuthenticated(user: appUser, access: currentState.access),
+        );
       }
     } catch (e, st) {
       // Called from the profile screen after an update, not user input —
@@ -624,6 +640,7 @@ class Auth extends _$Auth {
       cancellationManager: ref.read(requestCancellationManagerProvider),
       fcmConfigured: AppConfig.fcmEnabled,
     );
+    await flushAndCloseUserProgressSession(ref);
     await orchestrator.forceLocalCleanup();
     _invalidateAllUserProviders();
   }
@@ -689,7 +706,9 @@ class Auth extends _$Auth {
             ),
           );
     } catch (e) {
-      debugPrint('[Logout] Server cleanup error (non-critical): ${e.runtimeType}');
+      debugPrint(
+        '[Logout] Server cleanup error (non-critical): ${e.runtimeType}',
+      );
     }
 
     // A new login/passive revocation may have superseded this logout while

@@ -33,7 +33,10 @@ class LessonProgressSyncEngine {
     final previous = _pending[item.key];
     _pending[item.key] = previous == null ? item : previous.merge(item);
 
-    if (flushNow || _pending.length >= maxBatchSize || item.completed || _isDisposed) {
+    if (flushNow ||
+        _pending.length >= maxBatchSize ||
+        item.completed ||
+        _isDisposed) {
       unawaited(flush());
       return;
     }
@@ -67,17 +70,14 @@ class LessonProgressSyncEngine {
     _pending.clear();
 
     final result = await _syncLessonProgress.batch(batch);
-    result.match(
-      (_) {
-        if (!_discardAfterFlush && _sessionOpen) {
-          for (final item in batch) {
-            final current = _pending[item.key];
-            _pending[item.key] = current == null ? item : item.merge(current);
-          }
+    result.match((_) {
+      if (!_discardAfterFlush) {
+        for (final item in batch) {
+          final current = _pending[item.key];
+          _pending[item.key] = current == null ? item : item.merge(current);
         }
-      },
-      (_) {},
-    );
+      }
+    }, (_) {});
 
     _isFlushing = false;
     if (_pending.isNotEmpty && !_isDisposed && _sessionOpen) {
@@ -90,13 +90,16 @@ class LessonProgressSyncEngine {
     return result;
   }
 
-  /// Stops accepting progress for the ended account and drops anything that
-  /// could otherwise be retried under a future account's Supabase session.
-  void closeSession() {
+  /// Flushes the current account's pending progress, then stops accepting
+  /// progress and drops anything that could be retried under a future
+  /// account's Supabase session.
+  Future<void> closeSession({bool flushPending = false}) async {
     _sessionOpen = false;
-    _discardAfterFlush = true;
     _flushTimer?.cancel();
     _flushTimer = null;
+    _discardAfterFlush = false;
+    if (flushPending) await flush();
+    _discardAfterFlush = true;
     _pending.clear();
   }
 

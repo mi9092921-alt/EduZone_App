@@ -91,6 +91,51 @@ void main() {
     verifyNever(() => repository.syncProgressBatch(any()));
   });
 
+  test('flushes and seals the queue at a session boundary', () async {
+    engine.enqueue(
+      const LessonProgressSyncItem(
+        courseId: 'old-course',
+        lessonId: 'old-lesson',
+        completed: false,
+        progressPct: 45,
+      ),
+    );
+
+    await engine.closeSession(flushPending: true);
+
+    verify(
+      () => repository.syncProgressBatch(
+        any(
+          that: predicate<List<LessonProgressSyncItem>>(
+            (items) => items.single.courseId == 'old-course',
+          ),
+        ),
+      ),
+    ).called(1);
+
+    engine.openSession();
+    engine.enqueue(
+      const LessonProgressSyncItem(
+        courseId: 'new-course',
+        lessonId: 'new-lesson',
+        completed: false,
+        progressPct: 10,
+      ),
+      flushNow: true,
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    verify(
+      () => repository.syncProgressBatch(
+        any(
+          that: predicate<List<LessonProgressSyncItem>>(
+            (items) => items.single.courseId == 'new-course',
+          ),
+        ),
+      ),
+    ).called(1);
+  });
+
   test('requeues the batch when sync fails', () async {
     when(
       () => repository.syncProgressBatch(any()),

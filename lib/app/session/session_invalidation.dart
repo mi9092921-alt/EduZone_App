@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:app/features/home/application/providers/home_provider.dart';
@@ -40,4 +42,24 @@ void invalidateAllUserScopedProviders(Ref ref) {
   invalidateNotificationsProviders(ref);
   invalidateDownloadsProviders(ref);
   invalidateVideoProgressProviders(ref);
+}
+
+/// Closes the shared lesson-progress queue at a logout boundary. Manual
+/// logout calls this before clearing Supabase's local session so pending
+/// progress still has the correct user's token available for one final flush.
+Future<void> flushAndCloseUserProgressSession(Ref ref) {
+  return ref
+      .read(lessonProgressSyncEngineProvider)
+      .closeSession(flushPending: true);
+}
+
+/// Discards the shared lesson-progress queue immediately after a passive
+/// revocation or rejected session. No retry may run under a future account.
+void closeUserProgressSession(Ref ref) {
+  unawaited(ref.read(lessonProgressSyncEngineProvider).closeSession());
+}
+
+/// Reopens the shared queue after a new authenticated session is established.
+void openUserProgressSession(Ref ref) {
+  ref.read(lessonProgressSyncEngineProvider).openSession();
 }
