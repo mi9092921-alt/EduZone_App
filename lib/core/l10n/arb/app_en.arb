@@ -452,6 +452,7 @@
   "statusMaintenance": "Maintenance",
   "statusUnauthenticated": "Unauthenticated",
   "statusAppLocked": "App Locked",
+  "statusUnrecognized": "Unknown",
   "downloadNotFound": "Download not found",
   "downloadNotReady": "Download not ready — please wait for it to finish",
   "offlineModeLabel": "Offline mode",

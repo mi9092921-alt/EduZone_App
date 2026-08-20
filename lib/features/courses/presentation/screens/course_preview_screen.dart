@@ -30,7 +30,7 @@ class CoursePreviewScreen extends ConsumerStatefulWidget {
 }
 
 class _CoursePreviewScreenState extends ConsumerState<CoursePreviewScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late TabController _tabController;
   late AnimationController _animController;
   late Animation<double> _fadeAnim;

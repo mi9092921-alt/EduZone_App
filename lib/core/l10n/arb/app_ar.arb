@@ -455,6 +455,7 @@
   "statusMaintenance": "صيانة",
   "statusUnauthenticated": "غير مسجل",
   "statusAppLocked": "التطبيق مقفل",
+  "statusUnrecognized": "غير معروف",
   "downloadNotFound": "الملف غير موجود",
   "downloadNotReady": "الملف غير جاهز يرجى الانتظار",
   "offlineModeLabel": "وضع عدم الاتصال",

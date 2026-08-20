@@ -16,6 +16,7 @@ const _chipForeground = <AccountStatus, Color>{
   AccountStatus.maintenance: AppColors.warning,
   AccountStatus.unauthenticated: AppColors.neutral500,
   AccountStatus.appLocked: AppColors.error,
+  AccountStatus.unrecognized: AppColors.neutral500,
 };
 
 class StatusChip extends StatelessWidget {
@@ -33,6 +34,7 @@ class StatusChip extends StatelessWidget {
       AccountStatus.maintenance => l10n.statusMaintenance,
       AccountStatus.unauthenticated => l10n.statusUnauthenticated,
       AccountStatus.appLocked => l10n.statusAppLocked,
+      AccountStatus.unrecognized => l10n.statusUnrecognized,
     };
   }
 

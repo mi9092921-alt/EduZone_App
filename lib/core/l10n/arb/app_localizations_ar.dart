@@ -902,6 +902,9 @@ class AppLocalizationsAr extends AppLocalizations {
   String get statusAppLocked => 'التطبيق مقفل';
 
   @override
+  String get statusUnrecognized => 'غير معروف';
+
+  @override
   String get downloadNotFound => 'الملف غير موجود';
 
   @override

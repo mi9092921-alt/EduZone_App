@@ -110,6 +110,15 @@ GoRouter router(Ref ref) {
         case AppAuthState.initializing:
           return location == AppRoutes.splash ? null : AppRoutes.splash;
 
+        // Login form submitted, waiting for the server response. Stay
+        // put on /login (or /splash, if reached that way) instead of
+        // forcing a navigation to /splash — LoginScreen shows its own
+        // loading overlay for this state. See AppAuthState.authenticating.
+        case AppAuthState.authenticating:
+          return (location == AppRoutes.login || location == AppRoutes.splash)
+              ? null
+              : AppRoutes.splash;
+
         // A local session exists but couldn't be verified yet because of
         // a transient/network error — stay on splash and let the Auth
         // notifier retry in the background. Deliberately NOT treated

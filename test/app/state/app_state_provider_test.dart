@@ -37,10 +37,24 @@ void main() {
       expect(_appStateFor(const AuthInitializing()), AppAuthState.initializing);
     });
 
-    test('AuthAuthenticating → initializing (still on splash)', () {
+    // Regression test: AuthAuthenticating previously mapped to
+    // AppAuthState.initializing, which made the Router force-navigate
+    // from /login to /splash the instant the login button was pressed —
+    // before LoginScreen's own loading overlay (keyed on this same
+    // AuthAuthenticating state) had a chance to render. It must resolve
+    // to a distinct state so the Router's redirect can special-case it
+    // and stay on /login instead.
+    test(
+        'AuthAuthenticating → authenticating (NOT initializing, so the '
+        'Router does not yank the user off /login)', () {
+      final result = _appStateFor(const AuthAuthenticating());
+      expect(result, AppAuthState.authenticating);
       expect(
-        _appStateFor(const AuthAuthenticating()),
-        AppAuthState.initializing,
+        result,
+        isNot(AppAuthState.initializing),
+        reason: 'a login-in-flight state must never be routed the same '
+            'way as cold-start session verification, or the Router '
+            'force-navigates away from /login mid-tap',
       );
     });
 

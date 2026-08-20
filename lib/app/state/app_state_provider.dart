@@ -16,7 +16,10 @@ AppAuthState appState(Ref ref) {
   final authState = ref.watch(authProvider);
   return switch (authState) {
     AuthInitializing()   => AppAuthState.initializing,
-    AuthAuthenticating() => AppAuthState.initializing,
+    // See AppAuthState.authenticating's doc comment: this must stay
+    // distinct from `initializing` so the Router doesn't force-navigate
+    // away from /login while a login request is in flight.
+    AuthAuthenticating() => AppAuthState.authenticating,
     AuthAuthenticated()  => AppAuthState.authenticated,
     AuthUnauthenticated() => AppAuthState.unauthenticated,
     AuthLoggingOut()     => AppAuthState.loggingOut,

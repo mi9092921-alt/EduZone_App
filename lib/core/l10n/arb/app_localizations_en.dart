@@ -906,6 +906,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get statusAppLocked => 'App Locked';
 
   @override
+  String get statusUnrecognized => 'Unknown';
+
+  @override
   String get downloadNotFound => 'Download not found';
 
   @override

@@ -13,6 +13,17 @@ enum AppAuthState {
   /// Initial state — session check in progress.
   initializing,
 
+  /// Login form submitted — waiting for the server response.
+  /// Deliberately distinct from [initializing]: this fires from /login
+  /// (see [AuthAuthenticating]'s doc comment), and the Router must NOT
+  /// force-navigate away from /login to /splash for it. LoginScreen
+  /// renders its own loading overlay for this state
+  /// (`isLoading = authState is AuthAuthenticating`), so forcing a
+  /// navigation to /splash mid-tap fought that overlay and made
+  /// pressing "Login" look like nothing happened until the request
+  /// resolved.
+  authenticating,
+
   /// Session is valid and the user has access.
   authenticated,
 

@@ -19,6 +19,29 @@ void main() {
       expect(unauthAccess.isAllowed, isFalse);
     });
 
+    // Regression test for the fail-open authorization bug: AccountStatus
+    // .fromString used to default any unrecognized reason string to
+    // `active`, so an explicit server denial (`allowed: false`) carrying
+    // a `reason` this client didn't know about (e.g. a new server-side
+    // reason, or `token_version_mismatch`, which is a real value the
+    // Realtime security channel already sends) silently became
+    // `isAllowed == true`. See AccountStatus.unrecognized's doc comment.
+    test(
+        'isAllowed returns false for an unrecognized status (fail-closed, '
+        'not fail-open)', () {
+      final access = UserAccess(
+        status: AccountStatus.fromString('some_future_denial_reason'),
+      );
+
+      expect(access.status, AccountStatus.unrecognized);
+      expect(
+        access.isAllowed,
+        isFalse,
+        reason: 'an unrecognized denial reason must never be treated as '
+            'active/allowed access',
+      );
+    });
+
     test('unauthenticated factory creates correct state', () {
       const access = UserAccess.unauthenticated();
 

@@ -8,7 +8,26 @@ enum AccountStatus {
   banned,
   maintenance,
   unauthenticated,
-  appLocked;
+  appLocked,
+
+  /// Fail-closed sentinel for any `reason`/`account_status` string this
+  /// client doesn't recognize (a new server-side reason it predates, a
+  /// typo, malformed data, etc).
+  ///
+  /// SECURITY: this must NEVER default to [active]. `checkUserAccess()`
+  /// (`auth_remote_ds.dart`) only reaches [fromString] when the server
+  /// has already returned `allowed: false` — an explicit denial. Silently
+  /// mapping an unrecognized denial reason to [active] would make
+  /// `UserAccess.isAllowed` (`status == AccountStatus.active`) evaluate
+  /// to `true`, granting full app access despite the server's explicit
+  /// refusal — a fail-open authorization bypass reachable simply by the
+  /// backend adding a new `reason` value the client hasn't shipped
+  /// support for yet. [unrecognized] falls through
+  /// `AuthRestricted() => AppAuthState.unauthenticated` in
+  /// `app_state_provider.dart`, so the safe/default outcome for any
+  /// status this client doesn't understand is "treat as logged out",
+  /// never "treat as active".
+  unrecognized;
 
   /// Deserialize from DB string or RPC reason.
   static AccountStatus fromString(String value) {
@@ -21,7 +40,7 @@ enum AccountStatus {
       'maintenance' || 'maintenance_mode' => AccountStatus.maintenance,
       'unauthenticated' || 'auth_required' => AccountStatus.unauthenticated,
       'appLocked' || 'app_locked' => AccountStatus.appLocked,
-      _ => AccountStatus.active,
+      _ => AccountStatus.unrecognized,
     };
   }
 
@@ -35,5 +54,6 @@ enum AccountStatus {
         maintenance => 'maintenance',
         unauthenticated => 'unauthenticated',
         appLocked => 'appLocked',
+        unrecognized => 'unrecognized',
       };
 }

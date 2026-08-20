@@ -1718,6 +1718,12 @@ abstract class AppLocalizations {
   /// **'App Locked'**
   String get statusAppLocked;
 
+  /// No description provided for @statusUnrecognized.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get statusUnrecognized;
+
   /// No description provided for @downloadNotFound.
   ///
   /// In en, this message translates to:
