@@ -50,12 +50,13 @@ class CourseCurriculumPreview extends StatelessWidget {
             final section = course.sections![index];
             final lessons = section.lessons ?? [];
 
-            return DecoratedBox(
-              decoration: BoxDecoration(
-                color: ds.surface2,
+            return Material(
+              color: ds.surface2,
+              shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: ds.border),
+                side: BorderSide(color: ds.border),
               ),
+              clipBehavior: Clip.antiAlias,
               child: Theme(
                 data: Theme.of(
                   context,
