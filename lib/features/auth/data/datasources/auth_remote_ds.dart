@@ -99,6 +99,11 @@ class AuthRemoteDataSource {
           .maybeSingle();
 
       if (userData == null) {
+        // Sign out to prevent an orphaned Supabase Auth session: the user has
+        // a valid JWT but no matching row in public.users, so every subsequent
+        // getCurrentUser() call would return null while currentSession is
+        // non-null, putting the app in an unrecoverable state.
+        await _client.auth.signOut();
         throw const ServerException('User profile not found'); // check-ignore
       }
 
