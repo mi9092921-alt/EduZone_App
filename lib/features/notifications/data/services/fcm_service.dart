@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -12,12 +14,33 @@ class FcmService {
   static final _localNotificationsPlugin = FlutterLocalNotificationsPlugin();
   static GoRouter? _router;
 
+  // Section 20 (Memory and Resource Safety) hardening: `init()` wires up
+  // three long-lived stream listeners (token refresh, foreground messages,
+  // notification taps). Nothing previously guarded against `init()` being
+  // invoked more than once in the same process, in which case each call
+  // would register another set of listeners on top of the existing ones —
+  // the exact "same listener added more than once" hazard the project's
+  // own Memory/Resource Safety and Performance docs call out for Firebase
+  // Messaging (duplicate deep-link navigation / duplicate local
+  // notifications per incoming message). `init()` is currently only called
+  // once, from `AppInitializer`, so this guard is defense-in-depth rather
+  // than a fix for an observed production duplication — but it makes the
+  // service safe against any future call site (retry logic, a
+  // re-initialization flow, etc.) that invokes it again.
+  static bool _initialized = false;
+  static StreamSubscription<String>? _tokenRefreshSubscription;
+  static StreamSubscription<RemoteMessage>? _onMessageSubscription;
+  static StreamSubscription<RemoteMessage>? _onMessageOpenedAppSubscription;
+
   /// Register the app router for deep link handling from notifications.
   static void registerRouter(GoRouter router) {
     _router = router;
   }
 
   static Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
+
     try {
       await Firebase.initializeApp();
       
@@ -35,19 +58,24 @@ class FcmService {
       }
 
       // Listen to token refresh
-      messaging.onTokenRefresh.listen((newToken) {
+      await _tokenRefreshSubscription?.cancel();
+      _tokenRefreshSubscription = messaging.onTokenRefresh.listen((newToken) {
         _saveToken(newToken);
       });
 
       await _setupLocalNotifications();
       
       // Handle foreground notifications
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      await _onMessageSubscription?.cancel();
+      _onMessageSubscription =
+          FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         _showLocalNotification(message);
       });
 
       // Handle deep linking when tapping on notifications in background
-      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      await _onMessageOpenedAppSubscription?.cancel();
+      _onMessageOpenedAppSubscription =
+          FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
         _handleDeepLink(message);
       });
 

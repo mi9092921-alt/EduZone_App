@@ -34,6 +34,11 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
   YoutubePlayerController? _controller;
   bool _isPlayerReady = false;
   String? _lastVideoId;
+  // Guards against scheduling more than one pending post-frame
+  // controller-swap callback for the same videoId (e.g. if build() runs
+  // again — because of an unrelated provider change — before the
+  // previously-scheduled callback has executed).
+  String? _pendingVideoId;
 
   // P8.5/P8.22 fix: YoutubePlayerController's listener fires on every
   // internal position tick (multiple times per second) for the whole
@@ -47,14 +52,20 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
   // VideoProgress.updateProgress() is unaffected/unchanged by this.
   DateTime _lastProgressReport = DateTime.fromMillisecondsSinceEpoch(0);
 
-  void _initController(String? youtubeUrl) {
-    if (youtubeUrl == null || youtubeUrl.isEmpty) return;
-
-    final videoId = YoutubePlayer.convertUrlToId(youtubeUrl);
-    if (videoId == null) return;
-
-    if (_lastVideoId == videoId) return;
-
+  /// Disposes the previous controller (if any) and creates a new one for
+  /// [videoId].
+  ///
+  /// MUST NOT be called directly from build(): disposing a
+  /// `YoutubePlayerController` that a just-returned `CustomYoutubePlayer`
+  /// may still be attached to, as a side effect of building, is exactly the
+  /// "controller created -> widget rebuilt -> another controller created"
+  /// hazard called out in the project's Memory/Resource Safety guidance,
+  /// and Section 7 explicitly bans side effects inside build methods. See
+  /// call site in [build] — this is only ever invoked from a post-frame
+  /// callback, scheduled with a matching `setState` so the framework
+  /// finishes the current frame with the old controller before this swaps
+  /// it out and triggers a fresh, clean rebuild.
+  void _initController(String videoId) {
     _lastVideoId = videoId;
     _controller?.dispose();
     _controller = YoutubePlayerController(
@@ -65,6 +76,21 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
     )..addListener(_videoListener);
 
     _isPlayerReady = false;
+  }
+
+  /// Schedules [_initController] for after the current frame instead of
+  /// running it inline during build(). Deduplicates against an
+  /// already-pending swap for the same [videoId] so a rebuild that happens
+  /// to fire again before the callback runs doesn't queue a second one.
+  void _scheduleControllerSwap(String videoId) {
+    if (_pendingVideoId == videoId) return;
+    _pendingVideoId = videoId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_pendingVideoId != videoId) return; // superseded meanwhile
+      _pendingVideoId = null;
+      setState(() => _initController(videoId));
+    });
   }
 
   void _videoListener() {
@@ -135,7 +161,13 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
 
     return lessonContentAsync.when(
       data: (content) {
-        _initController(content.videoUrl);
+        final youtubeUrl = content.videoUrl;
+        final videoId = (youtubeUrl == null || youtubeUrl.isEmpty)
+            ? null
+            : YoutubePlayer.convertUrlToId(youtubeUrl);
+        if (videoId != null && videoId != _lastVideoId) {
+          _scheduleControllerSwap(videoId);
+        }
 
         if (_controller == null) {
           return const Center(child: CircularProgressIndicator());
