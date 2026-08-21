@@ -5,6 +5,7 @@ import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/network_exception_mapper.dart';
 import '../../../../core/network/network_guard.dart';
 import '../../../../core/network/supabase_client.dart';
+import '../../../../shared/utils/global_error_handler.dart';
 import '../../../courses/domain/entities/course.dart';
 import '../../../todo/domain/entities/todo_item.dart';
 import '../../domain/entities/resume_lesson.dart';
@@ -74,8 +75,18 @@ class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
         return ResumeLesson.fromJson(json);
       });
     } catch (e, stack) {
-      debugPrint('[HomeRemoteDataSource] getResumeLesson Error: ${e.runtimeType}');
-      debugPrint('Stack: $stack');
+      // Section 15: `debugPrint` is NOT release-gated in this codebase
+      // (see GlobalErrorHandler.logError's doc comment) — a raw
+      // `debugPrint('Stack: $stack')` here printed the full stack trace
+      // unconditionally in every build, including release, while also
+      // giving this failure zero Sentry/observability visibility (the
+      // resume-lesson card would just silently disappear from Home with
+      // no diagnostic record anywhere). Routing through
+      // GlobalErrorHandler.logError matches every other datasource in
+      // this codebase: safe exception-type-only console output in
+      // release, full detail gated to kDebugMode, and forwarded to
+      // Sentry either way.
+      GlobalErrorHandler.logError(e, stack);
       return null;
     }
   }

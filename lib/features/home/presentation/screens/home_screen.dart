@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -188,9 +189,15 @@ class _RecentCoursesSection extends ConsumerWidget {
                       ),
                     );
                   } catch (e) {
-                    debugPrint(
-                      '[HomeScreen] Rendering error for course at index $index: $e',
-                    );
+                    // Section 15: debugPrint is not release-gated in this
+                    // codebase — gate raw exception detail behind
+                    // kDebugMode, consistent with every other catch block
+                    // touched in this pass.
+                    if (kDebugMode) {
+                      debugPrint(
+                        '[HomeScreen] Rendering error for course at index $index: $e',
+                      );
+                    }
                     return const SizedBox.shrink();
                   }
                 },

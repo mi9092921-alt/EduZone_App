@@ -51,8 +51,23 @@ class SentryService {
         options.tracesSampleRate =
             AppConstants.appEnv == 'production' ? 0.2 : 1.0;
 
-        // Attach screenshots on crashes (release builds only).
-        options.attachScreenshot = !kDebugMode;
+        // Deliberately NOT enabling `attachScreenshot`. Sentry's screenshot
+        // capture renders the current widget tree directly via Flutter's
+        // own Skia pipeline (RenderRepaintBoundary), which happens
+        // entirely inside the app process and is therefore NOT blocked
+        // by ScreenshotGuard's OS-level FLAG_SECURE / iOS
+        // preventScreenshotOn() protection (core/security/guards/
+        // screenshot_guard.dart) — that only stops the *system*
+        // screenshot/recording APIs from capturing the window. A crash
+        // during video playback or on the profile/todo screens would
+        // silently exfiltrate licensed course content or personal data
+        // in a full-resolution image attached to every crash report,
+        // directly defeating the screen-protection threat model in
+        // Section 11 and violating Section 15 ("Do not log ... sensitive
+        // personal data"). Leaving this off is the fail-safe default;
+        // do not re-enable without a redaction/allowlist strategy for
+        // which screens are safe to capture.
+        options.attachScreenshot = false;
 
         // Don't send PII automatically — we control user context
         // explicitly via [setUserContext].

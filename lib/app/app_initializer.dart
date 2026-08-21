@@ -17,6 +17,7 @@ import '../features/downloads/data/datasources/download_local_ds.dart';
 import '../features/downloads/data/services/download_manager.dart';
 import '../features/downloads/data/services/download_recovery_service.dart';
 import '../features/notifications/data/services/fcm_service.dart';
+import '../shared/utils/global_error_handler.dart';
 
 class AppInitializer {
   static late final SharedPreferences prefs;
@@ -82,13 +83,26 @@ class AppInitializer {
       unawaited(
         CleanupScheduler.initialize()
             .then((_) => CleanupScheduler.scheduleCleanup())
-            .catchError((Object e) {
+            .catchError((Object e, StackTrace stack) {
           debugPrint('⚠️ CleanupScheduler init failed: ${e.runtimeType}');
+          // Section 15 ("background-task failures" is explicitly in the
+          // audit list): this used to be debugPrint-only, so a
+          // CleanupScheduler init failure in production had zero
+          // observability — the offline-download expiry/orphan sweep
+          // would simply never run again with no diagnostic record
+          // anywhere. Sentry is already configured by this point (see
+          // handleTokenRefresh's identical precedent in
+          // download_manager.dart) so this is safe to call unconditionally.
+          GlobalErrorHandler.logError(e, stack);
         }),
       );
       unawaited(
-        FileDownloader().start().catchError((Object e) {
+        FileDownloader().start().catchError((Object e, StackTrace stack) {
           debugPrint('⚠️ FileDownloader start failed: ${e.runtimeType}');
+          // Same rationale as CleanupScheduler above: a FileDownloader
+          // start failure silently disables all background downloads for
+          // the session with no prior observability signal.
+          GlobalErrorHandler.logError(e, stack);
         }),
       );
 
@@ -103,11 +117,16 @@ class AppInitializer {
           localDataSource: DownloadLocalDataSource(
             StorageService(secureStorage: const FlutterSecureStorage()),
           ),
-        ).reconcile().catchError((Object e) {
+        ).reconcile().catchError((Object e, StackTrace stack) {
           debugPrint(
             '⚠️ Durable download recovery failed: '
             '${e.runtimeType}',
           );
+          // Section 15: a reconcile() failure here means potentially
+          // corrupted/half-written encrypted downloads are never
+          // detected/repaired for this launch — worth Sentry visibility,
+          // not just a local console line.
+          GlobalErrorHandler.logError(e, stack);
           return const DownloadRecoveryReport(
             sessionsScanned: 0,
             chunksReset: 0,
@@ -125,11 +144,19 @@ class AppInitializer {
           localDataSource: DownloadLocalDataSource(
             StorageService(secureStorage: const FlutterSecureStorage()),
           ),
-        ).reconcileOrphanedPlaintextPlaybackFiles().catchError((Object e) {
+        ).reconcileOrphanedPlaintextPlaybackFiles().catchError((
+          Object e,
+          StackTrace stack,
+        ) {
           debugPrint(
             '⚠️ Orphaned plaintext playback file cleanup failed: '
             '${e.runtimeType}',
           );
+          // Section 15 + P6.14 (offline security architecture): a failure
+          // here means leftover *plaintext* decrypted video may remain on
+          // disk indefinitely with nothing scheduled to catch it — this is
+          // exactly the kind of failure that must never go unobserved.
+          GlobalErrorHandler.logError(e, stack);
           return 0;
         }),
       );

@@ -37,10 +37,18 @@ class DownloadQueryService {
         try {
           downloads.add(_mapToEntity(data));
         } catch (e, stack) {
-          debugPrint(
-            '⚠️ Skipping corrupt download record '
-            '(id=${data['id']}): $e\n$stack',
-          );
+          // Section 15: `debugPrint` is not release-gated in this codebase
+          // (see GlobalErrorHandler's doc comment) — this used to print
+          // unconditionally in every build. Corrupt-row parsing failures
+          // are expected/recoverable (the row is just skipped), so this
+          // stays local-console-only rather than going to Sentry, but it
+          // must not print the full exception/stack in release builds.
+          if (kDebugMode) {
+            debugPrint(
+              '⚠️ Skipping corrupt download record '
+              '(id=${data['id']}): $e\n$stack',
+            );
+          }
         }
       }
       if (kDebugMode) {
@@ -112,10 +120,14 @@ class DownloadQueryService {
         try {
           expired.add(_mapToEntity(data));
         } catch (e) {
-          debugPrint(
-            '⚠️ Skipping corrupt expired download record '
-            '(id=${data['id']}): $e',
-          );
+          // Section 15: same rationale as getDownloads() above — gate
+          // behind kDebugMode since debugPrint is not release-gated.
+          if (kDebugMode) {
+            debugPrint(
+              '⚠️ Skipping corrupt expired download record '
+              '(id=${data['id']}): $e',
+            );
+          }
         }
       }
       return Right(expired);

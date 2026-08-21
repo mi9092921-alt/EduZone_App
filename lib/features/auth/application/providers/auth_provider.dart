@@ -16,6 +16,7 @@ import '../../../../core/logging/logging_providers.dart';
 import '../../../../core/network/request_cancellation_manager.dart';
 import '../../../../core/services/device_service.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/services/sentry_service.dart';
 import '../../../../shared/cross_feature/downloads_shared.dart';
 import '../../../../shared/utils/global_error_handler.dart';
 import '../../data/datasources/auth_remote_ds.dart';
@@ -213,6 +214,14 @@ class Auth extends _$Auth {
           // path has already correctly closed the shared progress-sync
           // session -- reopening it here would undo that.
           if (!_isCurrentAuthOperation(operationGeneration)) return;
+
+          // Section 15 ("user identification policy"): also attach on
+          // session restoration (cold start), not just interactive
+          // login() — this path is how most authenticated sessions in
+          // production actually start, so skipping it here left almost
+          // all crash reports without a user identifier attached.
+          SentryService.setUserContext(appUser.id);
+
           openUserProgressSession(ref);
 
           // Track activity and session in the background (device already validated/re-bound above)
@@ -397,6 +406,13 @@ class Auth extends _$Auth {
 
         _safeSetState(AuthAuthenticated(user: appUser, access: access));
         if (!_isCurrentAuthOperation(generation)) return;
+
+        // Section 15 ("user identification policy"): attach the opaque
+        // user UUID to every subsequent Sentry event so production crash
+        // reports for an authenticated session can be triaged/correlated.
+        // No email/name/PII is sent — see SentryService.setUserContext doc.
+        SentryService.setUserContext(appUser.id);
+
         openUserProgressSession(ref);
 
         // Offline downloads account isolation (P6.20): purge any local
@@ -650,6 +666,12 @@ class Auth extends _$Auth {
     await flushAndCloseUserProgressSession(ref);
     await orchestrator.forceLocalCleanup();
     _invalidateAllUserProviders();
+
+    // Defense-in-depth companion to the logout() call site: this helper
+    // is also reachable directly (device rejected, non-student blocked)
+    // without going through logout(), so clear unconditionally here too
+    // — a no-op if setUserContext was never called for this session.
+    SentryService.clearUserContext();
   }
 
   // ─── Logout (Centralized) ────────────────────────────────────────────────
@@ -678,6 +700,12 @@ class Auth extends _$Auth {
 
     // ── Phase 1: Set Logging Out state ──────────────────────────────────────
     _safeSetState(const AuthLoggingOut());
+
+    // Clear the Sentry user context immediately: from this point the
+    // session is being torn down, so subsequent crash events (including
+    // ones raised by this very logout's cleanup phases) must not keep
+    // being attributed to the outgoing user.
+    SentryService.clearUserContext();
 
     // Stop security monitoring immediately
     _accessService?.stop();

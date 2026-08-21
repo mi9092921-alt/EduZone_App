@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/utils/device_info_helper.dart';
+import '../../../../shared/utils/global_error_handler.dart';
 
 class FcmService {
   static final _localNotificationsPlugin = FlutterLocalNotificationsPlugin();
@@ -56,9 +57,17 @@ class FcmService {
         _handleDeepLink(initialMessage);
       }
       
-    } catch (e) {
+    } catch (e, st) {
       // Firebase might not be configured yet during dev, ignore gracefully
+      // for the user-facing flow (push notifications simply won't work),
+      // but Section 15 ("notification subsystem" / "startup failures" are
+      // explicitly in the audit list) requires this be observable in
+      // production — previously this was debugPrint-only with zero Sentry
+      // signal, so a broken FCM bootstrap on real devices (bad
+      // google-services config, permission plugin mismatch, etc.) was
+      // silently invisible.
       debugPrint('FCM Init Error: ${e.runtimeType}');
+      GlobalErrorHandler.logError(e, st);
     }
   }
 
@@ -127,8 +136,13 @@ class FcmService {
           _router?.push('${AppRoutes.home}/notifications');
         },
       );
-    } catch (e) {
+    } catch (e, st) {
+      // Local notification channel setup failing means notification taps
+      // won't deep-link anywhere — a real UX regression with no prior
+      // production observability. Same Section 15 rationale as init()
+      // above.
       debugPrint('Local Notifications Init Error: ${e.runtimeType}');
+      GlobalErrorHandler.logError(e, st);
     }
   }
 
