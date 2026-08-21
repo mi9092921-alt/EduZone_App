@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
+import '../../../../core/network/network_config.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../../../shared/cross_feature/courses_shared.dart';
@@ -124,6 +125,11 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
     }
   }
 
+  /// Best-effort analytics ping: failure here must never block or
+  /// interrupt playback (see catch block below). Previously had no
+  /// timeout, so a stalled connection could leave this hanging
+  /// indefinitely despite being written as fire-and-forget. See Section
+  /// 13 ("Networking Reliability") of the project instructions.
   Future<void> _logLessonStarted() async {
     final userId = SupabaseService.client.auth.currentUser?.id;
     if (userId == null) return;
@@ -140,7 +146,7 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
             'player': 'youtube',
           },
         },
-      );
+      ).timeout(NetworkConfig.telemetryTimeout);
     } catch (_) {
       // Best-effort analytics ping: failure here must never block or
       // interrupt playback, and there is nothing actionable for the user

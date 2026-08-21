@@ -41,4 +41,19 @@ class NetworkConfig {
 
   /// Base delay for exponential backoff between retried read attempts.
   static const Duration retryBaseDelay = Duration(milliseconds: 400);
+
+  /// Budget for best-effort, fire-and-forget telemetry/analytics calls
+  /// (activity pings, FCM token upsert, session heartbeats) whose
+  /// failure is already unconditionally swallowed by the caller. These
+  /// were found with *no* bound at all across auth activity sync, video
+  /// playback "lesson started" pings (all four player wrappers), and FCM
+  /// token registration -- meaning a stalled connection left each of
+  /// those `await`s (and, transitively, whatever awaited them) hanging
+  /// indefinitely even though the surrounding `try/catch` was written to
+  /// make the call look like it could never block anything. Deliberately
+  /// shorter than [readTimeout]: a swallowed-on-failure call should fail
+  /// fast rather than hold a connection/battery for as long as a request
+  /// whose result something actually depends on. See Section 13
+  /// ("Networking Reliability") of the project instructions.
+  static const Duration telemetryTimeout = Duration(seconds: 8);
 }

@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../../core/network/network_config.dart';
 import '../../../../../core/network/supabase_client.dart';
 import '../../../../../core/utils/device_info_helper.dart';
 import '../../../../../design_system/design_system.dart';
@@ -392,6 +393,11 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
     }
   }
 
+  /// Best-effort analytics ping: failure here must never block or
+  /// interrupt playback (see catch block below). Previously had no
+  /// timeout, so a stalled connection could leave this hanging
+  /// indefinitely despite being written as fire-and-forget. See Section
+  /// 13 ("Networking Reliability") of the project instructions.
   void _logLessonStartedOnce() async {
     if (_loggedStarted) return;
     _loggedStarted = true;
@@ -410,7 +416,7 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
             'player': 'player4',
           },
         },
-      );
+      ).timeout(NetworkConfig.telemetryTimeout);
     } catch (_) {
       // Best-effort analytics ping: failure here must never block or
       // interrupt playback, and there is nothing actionable for the user

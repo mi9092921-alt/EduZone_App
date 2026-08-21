@@ -8,6 +8,66 @@
 ## [Unreleased]
 
 ### Added / Fixed
+- **Reliability (Section 13 — Networking Reliability)**: audited every
+  Supabase Postgrest/RPC/Auth/Edge-Function call site against the
+  established `NetworkConfig`/`NetworkGuard`/`NetworkExceptionMapper`
+  pattern (already applied correctly to `courses`, `home`,
+  `notifications`, `profile`, and `todo`) and found it missing entirely
+  from the two most security/UX-critical paths, plus several
+  fire-and-forget telemetry calls:
+  - **Critical — app-startup blocker.** `UpdateRemoteDataSource
+    .fetchConfig()` (`lib/features/auth/data/datasources/update_remote_ds.dart`)
+    runs as the first network call of `Auth._initializeSession()` on
+    every cold start and had zero timeout. `UpdateService.checkForUpdate()`
+    documents itself as "never throws / fail-safe", but that only
+    protects against a *thrown* error — a *stalled* connection never
+    throws, so the try/catch never engaged and the app could hang on the
+    splash screen indefinitely on a degraded network. Routed through
+    `NetworkGuard.read`.
+  - **`AuthRemoteDataSource`** (`lib/features/auth/data/datasources/auth_remote_ds.dart`):
+    all 9 methods, including `login()`, had no client-side timeout at
+    all — a stalled connection during sign-in hung the login button
+    forever with no failure ever reaching the UI. Fixed per-method,
+    choosing bound-with-no-retry (`login`, `bindDevice`, `logout`,
+    `recordSession`, `_recordCurrentUserActivity`) vs. bound-with-retry
+    (`checkUserAccess`, `getCurrentUser`, `validateDeviceExists`) based
+    on whether the call is a pure idempotent read or has server-side
+    side effects, per the project's explicit rule against blindly
+    retrying auth operations. `login()` specifically uses direct
+    per-await timeouts rather than a single wrapping `NetworkGuard`
+    budget, so that the trailing best-effort activity-telemetry call
+    can't cause an already-successful sign-in to be reported to the user
+    as a timeout failure.
+  - **`DownloadRemoteDataSource`** (`lib/features/downloads/data/datasources/download_remote_ds.dart`):
+    zero timeout coverage, including `authorizeOfflineDownload()` and
+    `revalidateOfflineEntitlement()` — the P6 offline-entitlement gate
+    that decides whether a download or offline playback is allowed at
+    all. `getVideoInfo()` in this file was invoking the same `video-info`
+    Edge Function as `Player4RemoteDataSource.getVideoInfo()`, which
+    already had the correct `NetworkGuard.read(timeout: heavyTimeout)`
+    fix applied — the fix is now applied consistently to both call
+    sites.
+  - **Five unbounded best-effort telemetry calls**, relying only on
+    `catch(_)` (which doesn't protect against a hang, only a thrown
+    error): `VideoPlayerRemoteDataSource.logActivity`,
+    `FcmService._saveToken`, and the near-identical
+    `_logLessonStarted()`/`_logLessonStartedOnce()` in all four video
+    player wrappers (modern, player4, proxy, youtube). Added a new
+    `NetworkConfig.telemetryTimeout` (8s — deliberately shorter than
+    `readTimeout`, since a swallowed-on-failure call should fail fast
+    rather than hold a connection/battery as long as a call something
+    actually depends on) and applied it to all five.
+  - **Documented, not fixed — residual gap**: `RequestCancellationManager`
+    (`lib/core/network/request_cancellation_manager.dart`) is wired into
+    logout but its `CancelToken` is structurally inert for the vast
+    majority of the app's network traffic, because Supabase's client
+    runs on `package:http`, not Dio — this token can never actually
+    cancel a Postgrest/RPC/Auth request (it would only affect a raw Dio
+    call, and no call site in the app currently attaches it to one).
+    Fixing this properly would require swapping Supabase's transport
+    layer, which is a materially larger, riskier change than a Section
+    13 timeout-hardening pass; flagged honestly here rather than
+    papered over.
 - **Security/Observability (Section 15 — Logging and Observability)**:
   audited the entire client logging/observability pipeline and fixed four
   genuine gaps:

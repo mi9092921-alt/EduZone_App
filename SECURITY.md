@@ -159,6 +159,40 @@ redirects immediately, regardless of the transient-error path above.
   Traffic to other hosts (e.g. the video proxy, see `PROXY_BASE_URL`) is
   **not** pinned.
 
+## Networking reliability (Section 13)
+
+Every Supabase Postgrest/RPC/Auth/Edge-Function call site is expected to
+go through `lib/core/network/network_guard.dart`'s `NetworkGuard.read`
+(bounded timeout, retried only for genuine transient
+connectivity/timeout failures — never for a business/validation
+outcome) or `NetworkGuard.write` (bounded timeout, never auto-retried —
+for mutations, per the project rule against blindly retrying
+non-idempotent operations), or, where a shared closure structure would
+compound timeout budgets across sequential calls (`login()`
+specifically), a direct per-`await` `.timeout()` with the resulting
+`TimeoutException` mapped to a typed `RequestTimeoutException`.
+Budgets are centralized in `lib/core/network/network_config.dart`
+(`readTimeout` 15s, `writeTimeout` 20s, `heavyTimeout` 25s for Edge
+Functions doing external work, `telemetryTimeout` 8s for best-effort
+fire-and-forget calls). As of this pass this is applied consistently
+across `courses`, `home`, `notifications`, `profile`, `todo`, `auth`,
+`downloads`, and `video_player`.
+
+**Known, documented, unfixed gap:**
+`RequestCancellationManager` (`lib/core/network/request_cancellation_manager.dart`)
+is wired into logout and exposes a Dio `CancelToken`, but Supabase's
+client runs on `package:http`, not Dio — this token cannot actually
+cancel a Postgrest/RPC/Auth request, and no call site in the app
+currently attaches it to a Dio request either. In its current state it
+provides no real cancellation-on-logout guarantee for in-flight network
+calls; user-scoped Riverpod provider state is separately invalidated on
+logout (see `auth_provider.dart`'s generation-counter guard), which
+prevents *stale data* from a request that completes after logout, but
+does not stop the request itself from continuing to run. Fixing this
+would require swapping Supabase's HTTP transport for a cancellable one,
+which is out of scope for a networking-timeout hardening pass and has
+not been attempted here.
+
 ## Device integrity (freeRASP)
 
 Configured in `lib/core/security/freerasp_config.dart`. Detects

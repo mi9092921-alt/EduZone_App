@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/exceptions.dart';
+import '../../../../core/network/network_config.dart';
 import '../../../../core/network/network_exception_mapper.dart';
 import '../../../../core/network/network_guard.dart';
 import '../../../../core/network/supabase_client.dart';
@@ -95,6 +96,12 @@ class VideoPlayerRemoteDataSource {
   }
 
   /// Logs an activity event (best-effort, never throws).
+  ///
+  /// Previously had no timeout -- every failure was already swallowed
+  /// below, but a stalled connection doesn't fail, it hangs, so this
+  /// could sit open indefinitely despite being written as fire-and-forget
+  /// telemetry. See Section 13 ("Networking Reliability") of the project
+  /// instructions.
   Future<void> logActivity({
     required String eventType,
     required Map<String, dynamic> metadata,
@@ -107,7 +114,7 @@ class VideoPlayerRemoteDataSource {
         'p_user_id': userId,
         'p_type': eventType,
         'p_details': metadata,
-      });
+      }).timeout(NetworkConfig.telemetryTimeout);
     } catch (_) {
       // Best-effort — ignore non-critical analytics errors
     }

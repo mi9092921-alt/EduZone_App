@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../core/network/network_config.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../../../design_system/design_system.dart';
@@ -32,6 +33,11 @@ class ProxyPlayerWrapper extends ConsumerStatefulWidget {
 class _ProxyPlayerWrapperState extends ConsumerState<ProxyPlayerWrapper> {
   bool _logged = false;
 
+  /// Best-effort analytics ping: failure here must never block or
+  /// interrupt playback (see catch block below). Previously had no
+  /// timeout, so a stalled connection could leave this hanging
+  /// indefinitely despite being written as fire-and-forget. See Section
+  /// 13 ("Networking Reliability") of the project instructions.
   Future<void> _logLessonStarted() async {
     if (_logged) return;
     final userId = SupabaseService.client.auth.currentUser?.id;
@@ -49,7 +55,7 @@ class _ProxyPlayerWrapperState extends ConsumerState<ProxyPlayerWrapper> {
             'device_platform': DeviceInfoHelper.platform,
           },
         },
-      );
+      ).timeout(NetworkConfig.telemetryTimeout);
       _logged = true;
     } catch (_) {
       // Best-effort analytics ping: failure here must never block or

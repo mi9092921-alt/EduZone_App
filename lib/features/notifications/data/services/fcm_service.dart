@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/network/network_config.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../../../shared/utils/global_error_handler.dart';
@@ -111,6 +112,10 @@ class FcmService {
     }
   }
 
+  /// Best-effort — every failure is swallowed below. Previously had no
+  /// timeout on either call, so a stalled connection left this hanging
+  /// indefinitely instead of failing fast. See Section 13 ("Networking
+  /// Reliability") of the project instructions.
   static Future<void> _saveToken(String fcmToken) async {
     final uid = SupabaseService.client.auth.currentUser?.id;
     if (uid == null) return;
@@ -120,7 +125,8 @@ class FcmService {
           .from('users')
           .select('tenant_id')
           .eq('id', uid)
-          .maybeSingle();
+          .maybeSingle()
+          .timeout(NetworkConfig.telemetryTimeout);
       final tenantId = profile?['tenant_id'] as String?;
       if (tenantId == null || tenantId.isEmpty) return;
 
@@ -132,7 +138,7 @@ class FcmService {
         'device_info': DeviceInfoHelper.deviceInfoJson,
         'is_active': true,
         'updated_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'token');
+      }, onConflict: 'token').timeout(NetworkConfig.telemetryTimeout);
     } catch (e) {
       debugPrint('Error saving FCM token: ${e.runtimeType}');
     }

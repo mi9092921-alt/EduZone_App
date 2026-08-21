@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/error/exceptions.dart';
+import '../../../../core/network/network_config.dart';
+import '../../../../core/network/network_guard.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../domain/entities/app_user.dart';
 import '../../domain/entities/bind_device_result.dart';
@@ -35,54 +39,79 @@ class AuthRemoteDataSource {
 
   /// Calls the `check_user_access()` RPC and maps the response
   /// to a [UserAccess] entity with [AccountStatus].
+  ///
+  /// Previously had no client-side timeout -- a stalled connection meant
+  /// this `Future` never completed. Routed through `NetworkGuard.read`:
+  /// bounded timeout, retried only for genuine transient
+  /// connectivity/timeout failures (never for a real access-denial
+  /// business outcome, which must reach the caller immediately). See
+  /// Section 13 ("Networking Reliability") of the project instructions.
   Future<UserAccess> checkUserAccess() async {
-    try {
-      final res = await _client.rpc('check_user_access');
+    return NetworkGuard.read(() async {
+      try {
+        final res = await _client.rpc('check_user_access');
 
-      if (res == null) {
-        // Missing authorization data is not proof of access. Treat an
-        // unknown authorization decision as a server failure so callers
-        // fail closed instead of granting an implicit active session.
-        throw const ServerException(
-          'Authentication access check returned no data', // check-ignore
+        if (res == null) {
+          // Missing authorization data is not proof of access. Treat an
+          // unknown authorization decision as a server failure so callers
+          // fail closed instead of granting an implicit active session.
+          throw const ServerException(
+            'Authentication access check returned no data', // check-ignore
+          );
+        }
+
+        final data = res as Map<String, dynamic>;
+        final allowed = data['allowed'] as bool? ?? false;
+        final reason = data['reason'] as String?;
+        final role = UserRole.fromString(
+          data['role'] as String? ?? data['primary_role'] as String? ?? 'student',
         );
+
+        if (allowed) {
+          return UserAccess(status: AccountStatus.active, role: role);
+        }
+
+        final status = AccountStatus.fromString(reason ?? 'locked');
+        return UserAccess(
+          status: status,
+          role: role,
+          until: data['until'] != null ? DateTime.tryParse(data['until']) : null,
+          endsAt: data['ends_at'] != null
+              ? DateTime.tryParse(data['ends_at'])
+              : null,
+        );
+      } on PostgrestException catch (e) {
+        throw _mapRpcException(e);
       }
-
-      final data = res as Map<String, dynamic>;
-      final allowed = data['allowed'] as bool? ?? false;
-      final reason = data['reason'] as String?;
-      final role = UserRole.fromString(
-        data['role'] as String? ?? data['primary_role'] as String? ?? 'student',
-      );
-
-      if (allowed) {
-        return UserAccess(status: AccountStatus.active, role: role);
-      }
-
-      final status = AccountStatus.fromString(reason ?? 'locked');
-      return UserAccess(
-        status: status,
-        role: role,
-        until: data['until'] != null ? DateTime.tryParse(data['until']) : null,
-        endsAt: data['ends_at'] != null
-            ? DateTime.tryParse(data['ends_at'])
-            : null,
-      );
-    } on PostgrestException catch (e) {
-      throw _mapRpcException(e);
-    }
+    });
   }
 
   // ─── Login ────────────────────────────────────────────────────
 
   /// Signs in with email + password.
   /// On success, fetches the user row from the `users` table.
+  ///
+  /// Previously neither the sign-in call nor the profile fetch had a
+  /// client-side timeout -- a stalled connection left `login()` (and the
+  /// login button's loading state) hanging indefinitely, with no
+  /// distinction from a legitimate slow network. Each await below is now
+  /// individually bounded rather than the whole method wrapped in a single
+  /// `NetworkGuard` budget, because `_recordCurrentUserActivity` (a
+  /// separately-bounded, already best-effort, swallowed-on-failure call)
+  /// runs after these two succeed -- sharing one outer timeout budget
+  /// across all three would risk a login that actually succeeded
+  /// server-side being reported to the user as a timeout failure just
+  /// because the trailing telemetry call was slow. Deliberately no
+  /// automatic retry on timeout: the project instructions explicitly
+  /// forbid blindly retrying authentication operations, and a sign-in
+  /// that timed out client-side may already have succeeded server-side.
+  /// See Section 13 ("Networking Reliability") of the project
+  /// instructions.
   Future<AppUser> login(String email, String password) async {
     try {
-      final response = await _client.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
+      final response = await _client.auth
+          .signInWithPassword(email: email, password: password)
+          .timeout(NetworkConfig.writeTimeout);
 
       if (response.user == null) {
         throw const InvalidCredentialsException();
@@ -96,23 +125,28 @@ class AuthRemoteDataSource {
           .from('users')
           .select()
           .eq('id', response.user!.id)
-          .maybeSingle();
+          .maybeSingle()
+          .timeout(NetworkConfig.readTimeout);
 
       if (userData == null) {
         // Sign out to prevent an orphaned Supabase Auth session: the user has
         // a valid JWT but no matching row in public.users, so every subsequent
         // getCurrentUser() call would return null while currentSession is
         // non-null, putting the app in an unrecoverable state.
-        await _client.auth.signOut();
+        await _client.auth.signOut().timeout(NetworkConfig.writeTimeout);
         throw const ServerException('User profile not found'); // check-ignore
       }
 
       // Best-effort telemetry. Authenticated clients intentionally do not
       // have direct UPDATE on public.users, so this goes through a narrowly
-      // scoped SECURITY DEFINER RPC.
+      // scoped SECURITY DEFINER RPC. Independently bounded and
+      // exception-swallowed inside _recordCurrentUserActivity itself -- see
+      // its doc comment.
       await _recordCurrentUserActivity(recordLogin: true);
 
       return _mapUserData(userData);
+    } on TimeoutException {
+      throw const RequestTimeoutException();
     } on AuthException catch (e) {
       // NOTE: AuthRetryableFetchException is a subtype of AuthException and
       // is intentionally NOT caught separately here — it is classified
@@ -147,6 +181,12 @@ class AuthRemoteDataSource {
   }
 
   /// Records a new session entry.
+  ///
+  /// Best-effort (every failure is already swallowed below), but
+  /// previously had no timeout on either call, so a stalled connection
+  /// left this hanging indefinitely instead of failing fast like the
+  /// surrounding `catch` implies. See Section 13 ("Networking
+  /// Reliability") of the project instructions.
   Future<void> recordSession({
     required String userId,
     required String tenantId,
@@ -164,7 +204,8 @@ class AuthRemoteDataSource {
             .select('id')
             .eq('user_id', userId)
             .eq('device_id', deviceFingerprint)
-            .maybeSingle();
+            .maybeSingle()
+            .timeout(NetworkConfig.telemetryTimeout);
         internalDeviceId = device?['id'] as String?;
       }
 
@@ -178,7 +219,7 @@ class AuthRemoteDataSource {
         'is_active': true,
         'started_at': DateTime.now().toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
-      });
+      }).timeout(NetworkConfig.telemetryTimeout);
     } catch (e) {
       debugPrint('[Auth] Record session error: ${e.runtimeType}');
     }
@@ -187,64 +228,89 @@ class AuthRemoteDataSource {
   // ─── Bind Device ──────────────────────────────────────────────
 
   /// Calls `bind_device_for_current_user()` RPC.
+  ///
+  /// Previously had no client-side timeout. Routed through
+  /// `NetworkGuard.write` (bounded timeout, never auto-retried) rather
+  /// than `.read` -- device binding is a mutation with server-side side
+  /// effects (claims a device slot), so blindly retrying it on a
+  /// client-perceived timeout risks the request having actually
+  /// succeeded server-side already. See Section 13 ("Networking
+  /// Reliability") of the project instructions.
   Future<BindDeviceResult> bindDevice(
     String deviceId,
     Map<String, dynamic> deviceInfo,
     String platform,
   ) async {
-    try {
-      final res = await _client.rpc(
-        'bind_device_for_current_user',
-        params: {
-          'p_device_id': deviceId,
-          'p_device_info': deviceInfo,
-          'p_fingerprint_version': deviceInfo['fingerprint_version'] ?? 'v1',
-          'p_platform': platform,
-        },
-      );
+    return NetworkGuard.write(() async {
+      try {
+        final res = await _client.rpc(
+          'bind_device_for_current_user',
+          params: {
+            'p_device_id': deviceId,
+            'p_device_info': deviceInfo,
+            'p_fingerprint_version': deviceInfo['fingerprint_version'] ?? 'v1',
+            'p_platform': platform,
+          },
+        );
 
-      final status = (res is Map && res['status'] == 'verified')
-          ? BindDeviceStatus.verified
-          : BindDeviceStatus.bound;
+        final status = (res is Map && res['status'] == 'verified')
+            ? BindDeviceStatus.verified
+            : BindDeviceStatus.bound;
 
-      return BindDeviceResult(status: status);
-    } on PostgrestException catch (e) {
-      throw _mapRpcException(e);
-    }
+        return BindDeviceResult(status: status);
+      } on PostgrestException catch (e) {
+        throw _mapRpcException(e);
+      }
+    });
   }
 
   // ─── Logout ───────────────────────────────────────────────────
 
   /// Calls `logout_current_user()` RPC then `auth.signOut()`.
+  ///
+  /// Both calls previously had no timeout -- a stalled connection left
+  /// `logout()` (and, transitively, whatever awaits it) hanging
+  /// indefinitely, defeating the whole point of a "best-effort, RPC may
+  /// fail" comment on the first call. See Section 13 ("Networking
+  /// Reliability") of the project instructions. Note: the primary logout
+  /// path is `LogoutOrchestrator`, not this method -- see its doc
+  /// comment on `LogoutUser` for why this one still exists.
   Future<void> logout() async {
     try {
-      await _client.rpc('logout_current_user');
+      await _client.rpc('logout_current_user').timeout(NetworkConfig.writeTimeout);
     } catch (_) {
       // Best-effort — RPC may fail if session already expired
     }
-    await _client.auth.signOut();
+    await _client.auth.signOut().timeout(NetworkConfig.writeTimeout);
   }
 
   // ─── Validate Device ──────────────────────────────────────────
 
   /// Checks if a device fingerprint is registered and active for a user.
+  ///
+  /// Previously had no client-side timeout. Routed through
+  /// `NetworkGuard.read` -- a pure lookup with no side effects, so safe
+  /// to retry on a genuine transient connectivity failure. See Section 13
+  /// ("Networking Reliability") of the project instructions.
   Future<bool> validateDeviceExists(String userId, String fingerprint) async {
-    try {
-      final result = await _client
-          .from('devices')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('device_id', fingerprint)
-          .eq('is_active', true)
-          .maybeSingle();
+    return NetworkGuard.read(() async {
+      try {
+        final result = await _client
+            .from('devices')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('device_id', fingerprint)
+            .eq('is_active', true)
+            .maybeSingle();
 
-      return result != null;
-    } on PostgrestException catch (e) {
-      // A database/RLS/network failure is not proof that the device is
-      // missing. Preserve the failure so startup cannot silently turn a
-      // verification outage into an automatic device re-bind/logout path.
-      throw _mapRpcException(e);
-    }
+        return result != null;
+      } on PostgrestException catch (e) {
+        // A database/RLS/network failure is not proof that the device is
+        // missing. Preserve the failure so startup cannot silently turn a
+        // verification outage into an automatic device re-bind/logout path.
+        throw _mapRpcException(e);
+      }
+    });
   }
 
   // ─── Get Current User ─────────────────────────────────────────
@@ -260,26 +326,42 @@ class AuthRemoteDataSource {
   /// blip. See AUTH-00 audit note in
   /// EduZone_Authentication_Session_Security_Architecture.md, phase 6
   /// ("transient network error must never directly cause logout").
+  ///
+  /// Previously had no client-side timeout on the network call below (the
+  /// null-session short-circuit above is local and always instant).
+  /// Routed through `NetworkGuard.read` -- a pure lookup with no side
+  /// effects, so safe to retry on a genuine transient connectivity
+  /// failure without disturbing the "transient failure must stay
+  /// distinguishable from no-such-user" contract documented above. See
+  /// Section 13 ("Networking Reliability") of the project instructions.
   Future<AppUser?> getCurrentUser() async {
     final session = _client.auth.currentSession;
     if (session == null) return null;
 
-    try {
-      final userData = await _client
-          .from('users')
-          .select()
-          .eq('id', _client.auth.currentUser!.id)
-          .maybeSingle();
+    return NetworkGuard.read(() async {
+      try {
+        final userData = await _client
+            .from('users')
+            .select()
+            .eq('id', _client.auth.currentUser!.id)
+            .maybeSingle();
 
-      if (userData == null) return null;
-      return _mapUserData(userData);
-    } on PostgrestException catch (e) {
-      throw _mapRpcException(e);
-    }
+        if (userData == null) return null;
+        return _mapUserData(userData);
+      } on PostgrestException catch (e) {
+        throw _mapRpcException(e);
+      }
+    });
   }
 
   // ─── Helpers ──────────────────────────────────────────────────
 
+  /// Best-effort telemetry (every failure is already swallowed below),
+  /// but previously had no timeout -- and, critically, this is awaited
+  /// synchronously inside `login()`, so a stalled connection here left
+  /// `login()` itself hanging even after credentials had already been
+  /// verified. See Section 13 ("Networking Reliability") of the project
+  /// instructions.
   Future<void> _recordCurrentUserActivity({
     bool recordLogin = false,
     String? deviceFingerprint,
@@ -291,7 +373,7 @@ class AuthRemoteDataSource {
           'p_record_login': recordLogin,
           'p_device_id': deviceFingerprint,
         },
-      );
+      ).timeout(NetworkConfig.telemetryTimeout);
     } catch (e) {
       debugPrint('[Auth] Activity telemetry failed: ${e.runtimeType}');
     }
