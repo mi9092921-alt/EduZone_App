@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
@@ -33,9 +34,47 @@ class FcmService {
   static StreamSubscription<RemoteMessage>? _onMessageSubscription;
   static StreamSubscription<RemoteMessage>? _onMessageOpenedAppSubscription;
 
+  /// Deep-link target for a notification tap that arrived before the
+  /// router was registered (see [_deepLinkTo] doc comment below).
+  static String? _pendingDeepLinkPath;
+
+  static const String _notificationsDeepLinkPath =
+      '${AppRoutes.home}/notifications';
+
   /// Register the app router for deep link handling from notifications.
+  ///
+  /// `AppInitializer.init()` kicks off `FcmService.init()` with
+  /// `unawaited(...)` *before* `runApp()`/the router exist (see
+  /// `app_initializer.dart`). A cold-start notification tap resolved via
+  /// `getInitialMessage()` can therefore complete before this method is
+  /// ever called, which used to drop the deep link silently (`_router`
+  /// was null, so `_router?.push(...)` was a no-op). Any such link is now
+  /// queued in [_pendingDeepLinkPath] and replayed once the router becomes
+  /// available.
   static void registerRouter(GoRouter router) {
     _router = router;
+    final pending = _pendingDeepLinkPath;
+    if (pending != null) {
+      _pendingDeepLinkPath = null;
+      // Defer to the next frame: this is invoked from EduZoneApp.build(),
+      // and pushing synchronously here would trigger navigation while a
+      // different widget is still mid-build.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _router?.push(pending);
+      });
+    }
+  }
+
+  /// Pushes [path] if the router is registered yet, otherwise queues it to
+  /// be replayed by [registerRouter]. Centralizes the same-router-not-ready
+  /// guard used by both the FCM and local-notification tap handlers below.
+  static void _deepLinkTo(String path) {
+    final router = _router;
+    if (router != null) {
+      router.push(path);
+    } else {
+      _pendingDeepLinkPath = path;
+    }
   }
 
   static Future<void> init() async {
@@ -167,7 +206,7 @@ class FcmService {
       await _localNotificationsPlugin.initialize(
         settings: initSettings,
         onDidReceiveNotificationResponse: (details) {
-          _router?.push('${AppRoutes.home}/notifications');
+          _deepLinkTo(_notificationsDeepLinkPath);
         },
       );
     } catch (e, st) {
@@ -211,6 +250,6 @@ class FcmService {
   }
 
   static void _handleDeepLink(RemoteMessage message) {
-    _router?.push('${AppRoutes.home}/notifications');
+    _deepLinkTo(_notificationsDeepLinkPath);
   }
 }

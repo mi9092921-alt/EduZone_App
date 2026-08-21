@@ -1,9 +1,11 @@
+import 'package:app/design_system/design_system.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/l10n/arb/app_localizations.dart';
 import '../../core/navigation/app_page_transition.dart';
 import '../../core/security/security_service.dart';
 import '../../features/auth/domain/entities/auth_state.dart';
@@ -88,6 +90,17 @@ GoRouter router(Ref ref) {
     initialLocation: AppRoutes.splash,
     refreshListenable: notifier,
     observers: [if (kDebugMode) AppNavigatorObserver()],
+
+    // Section 21 (Navigation) gap fix: previously any unmatched/invalid
+    // location (bad deep link, stale notification link, typo'd path,
+    // removed route) fell through to go_router's built-in error page,
+    // which renders the raw GoException/exception message to the user —
+    // unlocalized, unstyled, and a minor internal-detail leak. This keeps
+    // the failure inside the app's normal navigation/redirect flow instead:
+    // the screen below still passes through `redirect` on every subsequent
+    // navigation attempt (e.g. tapping "Home"), so an unauthenticated user
+    // hitting a bad link is still safely bounced to /login rather than home.
+    errorBuilder: (context, state) => const _RouteNotFoundScreen(),
 
     redirect: (context, state) {
       final appState = ref.read(appStateProvider);
@@ -438,6 +451,31 @@ GoRouter router(Ref ref) {
       ),
     ],
   );
+}
+
+/// Shown for any location that doesn't match a defined route (invalid/stale
+/// deep link, removed route, typo'd path). Reuses existing design-system
+/// primitives and localization keys only — no new copy/keys were added so
+/// this doesn't require a localization regeneration step.
+class _RouteNotFoundScreen extends StatelessWidget {
+  const _RouteNotFoundScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return AppScreen(
+      child: AppEmptyState(
+        icon: AppIcons.error,
+        title: l10n.errorGeneric,
+        actionLabel: l10n.homeTab,
+        // Deliberately context.go (not push) through the normal router API
+        // so the top-level `redirect` above still applies: an unauthenticated
+        // user landing here via a bad/expired link is bounced to /login,
+        // not silently handed the home screen.
+        onActionPressed: () => context.go(AppRoutes.home),
+      ),
+    );
+  }
 }
 
 /// Bridges Riverpod → GoRouter's Listenable refresh API.
