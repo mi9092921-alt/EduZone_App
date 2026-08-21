@@ -16,8 +16,10 @@ import 'src/iframe_registrar.dart'; // conditional: web → dart:html, mobile �
 /// ```
 ///
 /// ### ملاحظات
-/// - كل نسخة من الـ widget تُولّد [_viewId] فريدًا بالوقت لتجنّب
-///   تعارض `platformViewRegistry`.
+/// - [_viewId] مبني على [videoId] فقط (وليس بختم زمني لكل نسخة)، بحيث تُعاد
+///   القيمة نفسها عند زيارة نفس الدرس مرة أخرى ويُعاد استخدام تسجيل
+///   `platformViewRegistry` بدل تسجيله من جديد في كل مرة (انظر التعليق على
+///   `_registeredViewIds`).
 /// - [aspectRatio] افتراضيه 16/11 ويتوافق مع نافذة 984×670.
 class ProxyVideoPlayerWidget extends StatefulWidget {
   final String videoId;
@@ -36,21 +38,48 @@ class ProxyVideoPlayerWidget extends StatefulWidget {
 }
 
 class _ProxyVideoPlayerWidgetState extends State<ProxyVideoPlayerWidget> {
-  /// معرّف فريد لكل نسخة — يمنع تسجيل نفس viewId مرتين
+  /// Tracks which viewIds have already been registered with dart:ui_web's
+  /// `platformViewRegistry` for the lifetime of this app/tab.
+  ///
+  /// Section 20 (unbounded caches / navigation-leak hazard): Flutter Web
+  /// exposes no API to *unregister* a view factory once registered. The
+  /// previous implementation suffixed [_viewId] with
+  /// `DateTime.now().millisecondsSinceEpoch` specifically so each new
+  /// widget instance wouldn't collide with an existing registration — but
+  /// that means every single navigation to a video screen (Home -> Course
+  /// -> Video -> back, repeated) permanently grows this registry with no
+  /// upper bound for as long as the tab stays open (see M37/M39
+  /// "Navigation/Long-Session Leak Tests").
+  ///
+  /// Keying the id by `videoId` instead and registering each distinct
+  /// video's factory only once caps growth at "one entry per distinct
+  /// video opened this session" — and is also the idiomatic way to use
+  /// `platformViewRegistry`: the registered `viewType` is a reusable
+  /// factory, while `HtmlElementView` instances (and the DOM element the
+  /// factory callback creates) are per-instantiation. Re-registering per
+  /// widget instance was never necessary to get a fresh DOM element.
+  static final Set<String> _registeredViewIds = {};
+
+  /// معرّف الفيديو نفسه — لا يتغيّر بين عمليات إعادة الزيارة لنفس الدرس،
+  /// فيسمح بإعادة استخدام تسجيل platformViewRegistry بدل تسجيله من جديد.
   late final String _viewId;
   WebViewController? _webViewController;
 
   @override
   void initState() {
     super.initState();
-    _viewId =
-        'yt-proxy-${widget.videoId}-${DateTime.now().millisecondsSinceEpoch}';
+    _viewId = 'yt-proxy-${widget.videoId}';
     final url = AppConfig.buildVideoUrl(widget.videoId);
 
     if (kIsWeb) {
       // registerIframe → web: dart:html + platformViewRegistry
       //                → mobile: no-op stub
-      registerIframe(_viewId, url);
+      // Guarded so repeat visits to the same lesson reuse the existing
+      // factory instead of growing the registry or throwing "factory
+      // already registered for viewId".
+      if (_registeredViewIds.add(_viewId)) {
+        registerIframe(_viewId, url);
+      }
     } else {
       _webViewController = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)

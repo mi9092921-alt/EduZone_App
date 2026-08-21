@@ -112,12 +112,14 @@ class AppInitializer {
       // Constructed directly (not via Riverpod) because no ProviderScope
       // exists yet at this point in startup — same constraint
       // CleanupScheduler's isolate callback already has.
-      unawaited(
-        DownloadRecoveryService(
-          localDataSource: DownloadLocalDataSource(
-            StorageService(secureStorage: const FlutterSecureStorage()),
-          ),
-        ).reconcile().catchError((Object e, StackTrace stack) {
+      unawaited(() async {
+        final recoveryStorageService =
+            StorageService(secureStorage: const FlutterSecureStorage());
+        try {
+          return await DownloadRecoveryService(
+            localDataSource: DownloadLocalDataSource(recoveryStorageService),
+          ).reconcile();
+        } catch (e, stack) {
           debugPrint(
             '⚠️ Durable download recovery failed: '
             '${e.runtimeType}',
@@ -132,22 +134,34 @@ class AppInitializer {
             chunksReset: 0,
             chunksInvalidated: 0,
           );
-        }),
-      );
+        } finally {
+          // Section 20 SQLite lifecycle (M25/M26): this is a one-shot,
+          // pre-ProviderScope `StorageService`/`Database` handle distinct
+          // from the app-wide `storageServiceProvider` instance (see the
+          // comment above on why it can't reuse that provider yet). Without
+          // an explicit close(), this connection would otherwise be left
+          // open for the rest of the app's life with nothing left holding
+          // a reference to it. Best-effort: a close failure must not turn
+          // an otherwise-successful recovery pass into a reported failure.
+          try {
+            await recoveryStorageService.close();
+          } catch (_) {}
+        }
+      }());
 
       // 7b. Same crash-recovery pass, but for leftover *plaintext* offline
       // playback temp files (see the method's doc comment) rather than
       // half-written encrypted downloads — a separate on-disk location and
       // failure mode, so it gets its own best-effort, non-blocking sweep.
-      unawaited(
-        OfflineCrashRecovery(
-          localDataSource: DownloadLocalDataSource(
-            StorageService(secureStorage: const FlutterSecureStorage()),
-          ),
-        ).reconcileOrphanedPlaintextPlaybackFiles().catchError((
-          Object e,
-          StackTrace stack,
-        ) {
+      unawaited(() async {
+        final crashRecoveryStorageService =
+            StorageService(secureStorage: const FlutterSecureStorage());
+        try {
+          return await OfflineCrashRecovery(
+            localDataSource:
+                DownloadLocalDataSource(crashRecoveryStorageService),
+          ).reconcileOrphanedPlaintextPlaybackFiles();
+        } catch (e, stack) {
           debugPrint(
             '⚠️ Orphaned plaintext playback file cleanup failed: '
             '${e.runtimeType}',
@@ -158,8 +172,15 @@ class AppInitializer {
           // exactly the kind of failure that must never go unobserved.
           GlobalErrorHandler.logError(e, stack);
           return 0;
-        }),
-      );
+        } finally {
+          // See matching comment on the DownloadRecoveryService pass above
+          // — same one-shot, pre-ProviderScope StorageService that must be
+          // explicitly closed since nothing else will release it.
+          try {
+            await crashRecoveryStorageService.close();
+          } catch (_) {}
+        }
+      }());
 
     } catch (e) {
       debugPrint('CRITICAL INITIALIZATION ERROR: ${e.runtimeType}');

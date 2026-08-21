@@ -147,19 +147,36 @@ class CleanupScheduler {
         final localDs = DownloadLocalDataSource(storageService);
         final encryptionService = EncryptionService(secureStorage);
 
-        final result = await runCleanup(
-          localDs: localDs,
-          encryptionService: encryptionService,
-        );
-
-        if (kDebugMode) {
-          debugPrint(
-            '[CleanupScheduler] Removed ${result.removed} '
-            'of ${result.total} expired download(s)'
-            '${result.keyDeletionFailures > 0 ? ' (${result.keyDeletionFailures} key-deletion failure(s), retried next cycle)' : ''}',
+        try {
+          final result = await runCleanup(
+            localDs: localDs,
+            encryptionService: encryptionService,
           );
+
+          if (kDebugMode) {
+            debugPrint(
+              '[CleanupScheduler] Removed ${result.removed} '
+              'of ${result.total} expired download(s)'
+              '${result.keyDeletionFailures > 0 ? ' (${result.keyDeletionFailures} key-deletion failure(s), retried next cycle)' : ''}',
+            );
+          }
+          return true;
+        } finally {
+          // Section 20 (M31 "Background Worker Lifecycle" / M25-M26 SQLite
+          // resource lifecycle): this callback opens a fresh SQLite
+          // connection every time WorkManager fires the task, in its own
+          // short-lived isolate. The isolate itself is torn down by the
+          // system afterward, but that isn't a substitute for explicitly
+          // releasing the native database handle — an unclosed connection
+          // held open until isolate teardown is exactly the "open a
+          // database connection per call without a matching close" pattern
+          // the project's own SQLite guidance warns against. Best-effort:
+          // a close failure here must not turn a successful (or already
+          // caught) cleanup run into a reported failure.
+          try {
+            await storageService.close();
+          } catch (_) {}
         }
-        return true;
       } catch (e, stack) {
         if (kDebugMode) {
           debugPrint('[CleanupScheduler] Cleanup failed: $e\n$stack');
