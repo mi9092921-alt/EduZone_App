@@ -22,7 +22,11 @@ class RecentCourseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
 
-    final imageWidget = courseCardImage(data.thumbnailUrl, colors);
+    final imageWidget = courseCardImage(
+      data.thumbnailUrl,
+      colors,
+      context: context,
+    );
 
     final contentWidget = Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -32,13 +32,36 @@ Widget courseCardFallbackImage() {
 /// Builds the cached network thumbnail used by every course card variant,
 /// falling back to [courseCardFallbackImage] when there is no URL or the
 /// image fails to load.
-Widget courseCardImage(String thumbnailUrl, DesignSystemColors colors) {
+///
+/// [context] is optional (kept nullable for source-compat with any other
+/// callers outside this reviewed set) and, when supplied, is used to bound
+/// in-memory decode size to [maxDecodeWidth] logical pixels scaled by the
+/// device pixel ratio. Card thumbnails render at ~95-200 logical px wide
+/// (see MyCourseCard/DiscoverCourseCard/RecentCourseCard call sites); CMS
+/// thumbnails are frequently 1500px+. Without this bound, every card in a
+/// scrolling grid/list decodes and keeps a full-resolution bitmap in the
+/// Flutter image cache — a direct contributor to the "image memory" /
+/// "unbounded cache" risk called out for course lists in the performance
+/// and memory-safety docs. 480 is a conservative cap covering the widest
+/// current usage (DiscoverCourseCard horizontal, 136px) at up to 3x DPR
+/// with headroom, without needing per-call-site exact pixel plumbing.
+Widget courseCardImage(
+  String thumbnailUrl,
+  DesignSystemColors colors, {
+  BuildContext? context,
+  double maxDecodeWidth = 480,
+}) {
   if (thumbnailUrl.trim().isEmpty) {
     return courseCardFallbackImage();
   }
+  final dpr = context != null
+      ? MediaQuery.devicePixelRatioOf(context)
+      : 2.0;
+  final decodeWidth = (maxDecodeWidth * dpr).round();
   return CachedNetworkImage(
     imageUrl: thumbnailUrl,
     cacheManager: AppImageCacheManager.instance,
+    memCacheWidth: decodeWidth,
     fit: BoxFit.cover,
     placeholder: (context, url) => Container(color: colors.surface2),
     errorWidget: (context, url, error) => courseCardFallbackImage(),

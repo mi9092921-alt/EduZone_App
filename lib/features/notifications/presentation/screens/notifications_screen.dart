@@ -76,6 +76,11 @@ class NotificationsScreen extends ConsumerWidget {
               AppSpacing.lg,
             ),
             sliver: SliverList(
+              // P8.8 fix: stable keys so list diffing matches tiles by
+              // notification identity, not slot position, when the list
+              // is re-filtered (all/unread) or a new notification arrives
+              // — mirrors the key: ValueKey(...) pattern already used on
+              // course-card items (e.g. DiscoverCourseCard).
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   if (index.isOdd) {
@@ -83,7 +88,10 @@ class NotificationsScreen extends ConsumerWidget {
                   }
 
                   final notification = filteredList[index ~/ 2];
-                  return NotificationTile(notification: notification);
+                  return NotificationTile(
+                    key: ValueKey(notification.id),
+                    notification: notification,
+                  );
                 },
                 childCount: filteredList.isEmpty
                     ? 0

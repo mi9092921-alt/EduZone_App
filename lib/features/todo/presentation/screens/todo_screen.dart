@@ -147,9 +147,15 @@ class TodoScreen extends ConsumerWidget {
     }
 
     return SliverList(
+      // P8.8 fix: stable per-item keys so list diffing matches tiles by
+      // todo identity, not slot position, when the list reorders (due_at/
+      // priority resort after a toggle) or shrinks (delete) — consistent
+      // with the key: ValueKey(...) already used on course-card items
+      // elsewhere (e.g. DiscoverCourseCard).
       delegate: SliverChildBuilderDelegate((context, index) {
         final todo = todos[index];
         return TodoListTile(
+          key: ValueKey(todo.id),
           todo: todo,
           onStatusChanged: (value) {
             if (value != null) {

@@ -176,6 +176,12 @@ class _RecentCoursesSection extends ConsumerWidget {
                     return SizedBox(
                       width: 208,
                       child: RecentCourseCard(
+                        // P8.8 fix: stable key so list diffing matches
+                        // cards by course identity, not slot position,
+                        // when recentCoursesProvider re-emits a reordered
+                        // list — mirrors DiscoverCourseCard's existing
+                        // key: ValueKey(course.id).
+                        key: ValueKey(course.id),
                         data: vm,
                         onTap: () =>
                             context.push('${AppRoutes.courses}/${course.id}'),
@@ -263,7 +269,14 @@ class _DailyTasksSection extends ConsumerWidget {
               physics: const NeverScrollableScrollPhysics(),
               itemCount: todos.length,
               itemBuilder: (context, index) {
-                return TodoPreviewTile(todo: _toDisplayTodoItem(todos[index]));
+                final todo = todos[index];
+                // P8.8 fix: stable key so list diffing matches tiles by
+                // todo identity, not slot position, when this preview
+                // list re-sorts/shrinks.
+                return TodoPreviewTile(
+                  key: ValueKey(todo.id),
+                  todo: _toDisplayTodoItem(todo),
+                );
               },
             );
           },

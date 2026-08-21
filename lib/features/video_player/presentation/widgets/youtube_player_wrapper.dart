@@ -35,6 +35,18 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
   bool _isPlayerReady = false;
   String? _lastVideoId;
 
+  // P8.5/P8.22 fix: YoutubePlayerController's listener fires on every
+  // internal position tick (multiple times per second) for the whole
+  // playback session, not just once per meaningful change. Without a
+  // throttle here, every tick called updateProgress() -> Riverpod state
+  // write -> rebuild of video_player_screen.dart (which does
+  // `ref.watch(videoProgressProvider(...))` to drive the progress bar),
+  // for the entire duration of every lesson watched. Mirrors the same
+  // 5-second throttle already used by Player4Wrapper._reportProgress()
+  // for the same reason; the debounced DB/network sync inside
+  // VideoProgress.updateProgress() is unaffected/unchanged by this.
+  DateTime _lastProgressReport = DateTime.fromMillisecondsSinceEpoch(0);
+
   void _initController(String? youtubeUrl) {
     if (youtubeUrl == null || youtubeUrl.isEmpty) return;
 
@@ -62,6 +74,12 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
       _isPlayerReady = true;
       _logLessonStarted();
     }
+
+    final now = DateTime.now();
+    if (now.difference(_lastProgressReport) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastProgressReport = now;
 
     final duration = _controller!.metadata.duration;
     final position = _controller!.value.position;

@@ -69,6 +69,18 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
   String? _lastVideoId;
   String? _pendingVideoId;
 
+  // P8.5/P8.22 fix: the JS bridge posts a `VideoState` message on every
+  // playback tick (see the catch-block comment below: "this fires on
+  // every playback tick"), so without a throttle here every tick drove a
+  // Riverpod state write -> rebuild of video_player_screen.dart (which
+  // does `ref.watch(videoProgressProvider(...))` for the progress bar)
+  // for the entire duration of every lesson watched. Mirrors the same
+  // 5-second throttle already used by Player4Wrapper._reportProgress()
+  // and YoutubePlayerWrapper._videoListener() for the same reason; the
+  // debounced DB/network sync inside VideoProgress.updateProgress() is
+  // unaffected/unchanged by this.
+  DateTime _lastProgressReport = DateTime.fromMillisecondsSinceEpoch(0);
+
   @override
   void initState() {
     super.initState();
@@ -232,13 +244,25 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
           final duration = double.tryParse(state['duration']?.toString() ?? '') ?? 0.0;
 
           if (duration > 0) {
-            final pct = ((current / duration) * 100.0).clamp(0.0, 100.0);
-            ref.read(videoProgressProvider(widget.courseId, widget.lessonId).notifier).updateProgress(
-                  pct,
-                  current.toInt(),
-                  widget.courseId,
-                  widget.lessonId,
-                );
+            final now = DateTime.now();
+            if (now.difference(_lastProgressReport) >=
+                const Duration(seconds: 5)) {
+              _lastProgressReport = now;
+              final pct = ((current / duration) * 100.0).clamp(0.0, 100.0);
+              ref
+                  .read(
+                    videoProgressProvider(
+                      widget.courseId,
+                      widget.lessonId,
+                    ).notifier,
+                  )
+                  .updateProgress(
+                    pct,
+                    current.toInt(),
+                    widget.courseId,
+                    widget.lessonId,
+                  );
+            }
           }
         }
       }

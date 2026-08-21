@@ -27,9 +27,17 @@ class AppAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (url != null && url!.isNotEmpty) {
+      // P8.10 fix: bound in-memory decode to the actual avatar diameter
+      // (dpr-scaled) instead of decoding the source photo at full
+      // resolution for a circle that may render at 24–40px radius.
+      final dpr = MediaQuery.devicePixelRatioOf(context);
+      final decodeSize = (radius * 2 * dpr).round();
+
       return CachedNetworkImage(
         imageUrl: url!,
         cacheManager: AppImageCacheManager.instance,
+        memCacheWidth: decodeSize,
+        memCacheHeight: decodeSize,
         imageBuilder: (context, imageProvider) =>
             CircleAvatar(radius: radius, backgroundImage: imageProvider),
         placeholder: (context, url) => CircleAvatar(

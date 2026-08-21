@@ -43,7 +43,7 @@ class DiscoverCourseCard extends StatelessWidget {
     final imageWidget = Stack(
       fit: StackFit.expand,
       children: [
-        courseCardImage(data.thumbnailUrl, colors),
+        courseCardImage(data.thumbnailUrl, colors, context: context),
         if (showLevelBadge && data.level != null && data.level!.isNotEmpty)
           PositionedDirectional(
             top: AppSpacing.sm,
