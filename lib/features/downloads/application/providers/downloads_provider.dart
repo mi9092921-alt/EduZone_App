@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/providers/storage_provider.dart';
+import '../../../../core/security/secure_storage_config.dart';
 import '../../../../core/services/encryption_service.dart';
 import '../../data/datasources/download_local_ds.dart';
 import '../../data/datasources/download_remote_ds.dart';
@@ -28,7 +28,7 @@ part 'downloads_provider.g.dart';
 /// Provides the EncryptionService instance.
 @Riverpod(keepAlive: true)
 EncryptionService encryptionService(Ref ref) {
-  return EncryptionService(const FlutterSecureStorage());
+  return EncryptionService(hardenedSecureStorage);
 }
 
 /// Provides the DownloadManager instance.

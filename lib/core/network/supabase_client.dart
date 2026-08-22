@@ -1,8 +1,8 @@
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/io_client.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../constants/app_constants.dart';
+import '../security/secure_storage_config.dart';
 import 'certificate_pinning.dart';
 
 class SupabaseService {
@@ -44,17 +44,17 @@ class SecureLocalStorage extends LocalStorage {
 
   @override
   Future<String?> accessToken() async {
-    return const FlutterSecureStorage().read(key: 'supabase_access_token');
+    return hardenedSecureStorage.read(key: 'supabase_access_token');
   }
 
   @override
   Future<bool> hasAccessToken() async {
-    return const FlutterSecureStorage().containsKey(key: 'supabase_access_token');
+    return hardenedSecureStorage.containsKey(key: 'supabase_access_token');
   }
 
   @override
   Future<void> persistSession(String session) async {
-    await const FlutterSecureStorage().write(
+    await hardenedSecureStorage.write(
       key: 'supabase_access_token',
       value: session,
     );
@@ -62,6 +62,6 @@ class SecureLocalStorage extends LocalStorage {
 
   @override
   Future<void> removePersistedSession() async {
-    await const FlutterSecureStorage().delete(key: 'supabase_access_token');
+    await hardenedSecureStorage.delete(key: 'supabase_access_token');
   }
 }

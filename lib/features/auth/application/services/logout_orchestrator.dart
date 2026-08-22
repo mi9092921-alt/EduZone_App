@@ -119,8 +119,12 @@ class LogoutOrchestrator {
     //   3. NOT make any network call (no risk of hanging)
     //
     // We do this FIRST because it's the one that fixes "app restart = still
-    // logged in". The SDK uses its own SharedPreferences key internally;
-    // we must let it handle that key itself.
+    // logged in". The SDK's internal storage is our own `SecureLocalStorage`
+    // (see core/network/supabase_client.dart, wired via
+    // FlutterAuthClientOptions.localStorage) — a flutter_secure_storage-backed
+    // implementation, not SharedPreferences — so this call clears the
+    // Keystore/Keychain-held 'supabase_access_token' entry; we must let the
+    // SDK handle that key itself rather than deleting it out from under it.
     try {
       const localScope = SignOutScope.local;
       await _supabase.auth

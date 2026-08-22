@@ -4,8 +4,9 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:uuid/uuid.dart';
+
+import '../security/secure_storage_config.dart';
 
 /// Production-grade device fingerprinting system per PRD §9.
 ///
@@ -29,7 +30,7 @@ import 'package:uuid/uuid.dart';
 class DeviceInfoHelper {
   static const String fingerprintVersion = 'v2';
   static final DeviceInfoPlugin _plugin = DeviceInfoPlugin();
-  static const FlutterSecureStorage _storage = FlutterSecureStorage();
+  static const _storage = hardenedSecureStorage;
   static const String _installIdKey = 'device_install_id_v1';
 
   static bool _initialized = false;

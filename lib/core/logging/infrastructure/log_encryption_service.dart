@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:encrypt/encrypt.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../../security/secure_storage_config.dart';
+
 /// AES-256-GCM encryption service for audit event details.
 ///
 /// Keys are stored in [FlutterSecureStorage] and auto-generated on first use.
@@ -19,7 +21,7 @@ class LogEncryptionService {
   Key? _cachedKey;
 
   LogEncryptionService([FlutterSecureStorage? storage])
-    : _secureStorage = storage ?? const FlutterSecureStorage();
+    : _secureStorage = storage ?? hardenedSecureStorage;
 
   /// Get or create the encryption key for the current version.
   Future<Key> _getKey() async {

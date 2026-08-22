@@ -4,7 +4,6 @@ import 'dart:async';
 
 import 'package:app/app/session/session_invalidation.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
@@ -14,6 +13,7 @@ import '../../../../core/error/exceptions.dart';
 import '../../../../core/logging/domain/app_event.dart';
 import '../../../../core/logging/logging_providers.dart';
 import '../../../../core/network/request_cancellation_manager.dart';
+import '../../../../core/security/secure_storage_config.dart';
 import '../../../../core/services/device_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/sentry_service.dart';
@@ -659,7 +659,7 @@ class Auth extends _$Auth {
   Future<void> _forceLocalSignOutOnly(SupabaseClient client) async {
     final orchestrator = LogoutOrchestrator(
       supabase: client,
-      secureStorage: const FlutterSecureStorage(),
+      secureStorage: hardenedSecureStorage,
       cancellationManager: ref.read(requestCancellationManagerProvider),
       fcmConfigured: AppConfig.fcmEnabled,
     );
@@ -717,7 +717,7 @@ class Auth extends _$Auth {
 
     final orchestrator = LogoutOrchestrator(
       supabase: client,
-      secureStorage: const FlutterSecureStorage(),
+      secureStorage: hardenedSecureStorage,
       cancellationManager: ref.read(requestCancellationManagerProvider),
       fcmConfigured: AppConfig.fcmEnabled,
     );

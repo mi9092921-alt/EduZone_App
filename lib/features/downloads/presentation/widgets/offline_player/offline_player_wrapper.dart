@@ -5,12 +5,12 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../core/logging/logging_providers.dart';
+import '../../../../../core/security/secure_storage_config.dart';
 import '../../../../../core/services/encryption_service.dart'
     show detectContainerExt;
 import '../../../../../core/services/offline_playback_service.dart';
@@ -123,7 +123,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
       // Real secure-storage-backed clock guard (P6.16) — see
       // OfflinePolicyEngine's constructor doc comment for why this must be
       // passed explicitly rather than relying on the default.
-      clockGuard: OfflineClockGuard(secureStorage: const FlutterSecureStorage()),
+      clockGuard: OfflineClockGuard(secureStorage: hardenedSecureStorage),
       // P6.36/P6.37 security telemetry — see OfflinePolicyEngine's
       // constructor doc comment. Wires playback authorize/deny outcomes
       // into the same EventBus → AuditHandler pipeline already used by

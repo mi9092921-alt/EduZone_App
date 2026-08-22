@@ -1,5 +1,5 @@
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../security/secure_storage_config.dart';
 import '../services/storage_service.dart';
 
 part 'storage_provider.g.dart';
@@ -20,5 +20,5 @@ part 'storage_provider.g.dart';
 /// working without a platform channel.
 @Riverpod(keepAlive: true)
 StorageService storageService(Ref ref) {
-  return StorageService(secureStorage: const FlutterSecureStorage());
+  return StorageService(secureStorage: hardenedSecureStorage);
 }

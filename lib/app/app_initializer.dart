@@ -3,11 +3,11 @@ import 'dart:ui';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/network/supabase_client.dart';
+import '../core/security/secure_storage_config.dart';
 import '../core/security/security_service.dart';
 import '../core/services/cleanup_scheduler.dart';
 import '../core/services/storage_service.dart';
@@ -114,7 +114,7 @@ class AppInitializer {
       // CleanupScheduler's isolate callback already has.
       unawaited(() async {
         final recoveryStorageService =
-            StorageService(secureStorage: const FlutterSecureStorage());
+            StorageService(secureStorage: hardenedSecureStorage);
         try {
           return await DownloadRecoveryService(
             localDataSource: DownloadLocalDataSource(recoveryStorageService),
@@ -155,7 +155,7 @@ class AppInitializer {
       // failure mode, so it gets its own best-effort, non-blocking sweep.
       unawaited(() async {
         final crashRecoveryStorageService =
-            StorageService(secureStorage: const FlutterSecureStorage());
+            StorageService(secureStorage: hardenedSecureStorage);
         try {
           return await OfflineCrashRecovery(
             localDataSource:

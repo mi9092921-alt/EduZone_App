@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:workmanager/workmanager.dart';
 
 // Architecture exception (reviewed): CleanupScheduler.callbackDispatcher runs
@@ -15,6 +14,7 @@ import 'package:workmanager/workmanager.dart';
 // features/downloads/data/ at all. Tracked as a known architecture debt
 // item rather than silently allowed.
 import '../../features/downloads/data/datasources/download_local_ds.dart'; // check-ignore
+import '../security/secure_storage_config.dart';
 import '../services/encryption_service.dart';
 import '../services/storage_service.dart';
 
@@ -142,7 +142,7 @@ class CleanupScheduler {
       if (task != _cleanupTask) return false;
 
       try {
-        const secureStorage = FlutterSecureStorage();
+        const secureStorage = hardenedSecureStorage;
         final storageService = StorageService(secureStorage: secureStorage);
         final localDs = DownloadLocalDataSource(storageService);
         final encryptionService = EncryptionService(secureStorage);

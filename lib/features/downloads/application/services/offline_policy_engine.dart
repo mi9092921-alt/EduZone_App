@@ -132,9 +132,9 @@ class OfflinePolicyEngine {
         // detect rollback" rather than throwing) so every existing
         // construction site — including every existing test — keeps
         // working unchanged. Production call sites should pass a real
-        // `OfflineClockGuard(secureStorage: const FlutterSecureStorage())`
+        // `OfflineClockGuard(secureStorage: hardenedSecureStorage)`
         // explicitly, mirroring `EncryptionService`'s convention — see
-        // `offline_player_wrapper.dart`.
+        // `offline_player_wrapper.dart` and `core/security/secure_storage_config.dart`.
         _clockGuard = clockGuard ?? OfflineClockGuard(),
         // Optional (P6.36/P6.37 security telemetry): every existing
         // construction site, including every existing test, keeps working
