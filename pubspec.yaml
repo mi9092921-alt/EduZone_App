@@ -34,7 +34,7 @@ dependencies:
 
   # Local Integration & Utilities
   permission_handler: ^11.3.1
-  geolocator: ^13.0.2
+  geolocator: ^14.0.2
   device_info_plus: ^12.4.0
   package_info_plus: ^9.0.1
   connectivity_plus: ^7.1.1
