@@ -4,9 +4,9 @@ import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../design_system/design_system.dart';
 import 'player_option_tile.dart';
 
-/// Opens the "choose a player" bottom sheet with the four available player
+/// Opens the "choose a player" bottom sheet with the three available player
 /// implementations. [onPlayerSelected] is called with `'youtube'`,
-/// `'proxy'`, `'modern'`, or `'player4'` once the user picks one.
+/// `'modern'`, or `'player4'` once the user picks one.
 Future<void> showPlayerChoiceSheet(
   BuildContext context, {
   required ValueChanged<String> onPlayerSelected,
@@ -69,13 +69,6 @@ class PlayerChoiceSheet extends StatelessWidget {
               subtitle: l10n.youtubePlayerSubtitle,
               icon: Icons.smart_display_rounded,
               onTap: () => onPlayerSelected('youtube'),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            PlayerOptionTile(
-              title: l10n.proxyPlayer,
-              subtitle: l10n.proxyPlayerSubtitle,
-              icon: Icons.shield_rounded,
-              onTap: () => onPlayerSelected('proxy'),
             ),
             const SizedBox(height: AppSpacing.md),
             PlayerOptionTile(

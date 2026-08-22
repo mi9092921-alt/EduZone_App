@@ -108,8 +108,6 @@
   "chooseVideoPlayer": "Choose video player",
   "youtubePlayer": "YouTube Player",
   "youtubePlayerSubtitle": "Standard Flutter player",
-  "proxyPlayer": "Proxy Player",
-  "proxyPlayerSubtitle": "Ad-free player",
   "modernPlayer": "Modern Player",
   "modernPlayerSubtitle": "WebView experience with UI cleanup",
   "directPlayer": "Direct Player",

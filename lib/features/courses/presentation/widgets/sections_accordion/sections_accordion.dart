@@ -225,9 +225,7 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
     Lesson lesson,
     String playerType,
   ) {
-    final subPath = playerType == 'proxy'
-        ? 'lesson2'
-        : playerType == 'modern'
+    final subPath = playerType == 'modern'
         ? 'lesson3'
         : playerType == 'player4'
         ? 'lesson4'

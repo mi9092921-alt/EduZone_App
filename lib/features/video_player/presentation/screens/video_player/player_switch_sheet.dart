@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'player_type.dart';
 
 /// App-bar action that opens a bottom sheet letting the user switch
-/// between the 4 available video-player backends.
+/// between the 3 available video-player backends.
 ///
 /// Extracted from `video_player_screen.dart` (previously private
 /// `_PlayerSwitchButton`) — depends only on [courseId]/[lessonId]/
@@ -27,9 +27,7 @@ class PlayerSwitchButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppIconButton(
-      icon: playerType == PlayerType.proxy
-          ? Icons.shield_rounded
-          : playerType == PlayerType.modern
+      icon: playerType == PlayerType.modern
           ? Icons.auto_awesome_rounded
           : playerType == PlayerType.player4
           ? Icons.play_circle_outline_rounded
@@ -74,21 +72,6 @@ class PlayerSwitchButton extends StatelessWidget {
                 if (playerType != PlayerType.youtube) {
                   context.pushReplacement(
                     '${AppRoutes.courses}/$courseId/lesson/$lessonId',
-                  );
-                }
-              },
-            ),
-            const SizedBox(height: AppSpacing.md),
-            PlayerOptionTile(
-              icon: Icons.shield_rounded,
-              title: AppLocalizations.of(context)!.proxyPlayer,
-              subtitle: AppLocalizations.of(context)!.proxyPlayerSubtitle,
-              isActive: playerType == PlayerType.proxy,
-              onTap: () {
-                context.pop();
-                if (playerType != PlayerType.proxy) {
-                  context.pushReplacement(
-                    '${AppRoutes.courses}/$courseId/lesson2/$lessonId',
                   );
                 }
               },

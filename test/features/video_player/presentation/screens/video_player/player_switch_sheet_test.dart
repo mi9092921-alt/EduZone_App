@@ -18,18 +18,18 @@ void main() {
       await tester.pumpWidget(
         buildTestable(
           PlayerOptionTile(
-            icon: Icons.shield_rounded,
-            title: 'Proxy',
-            subtitle: 'Safer streaming',
+            icon: Icons.auto_awesome_rounded,
+            title: 'Modern',
+            subtitle: 'Modern streaming',
             isActive: false,
             onTap: () {},
           ),
         ),
       );
 
-      expect(find.text('Proxy'), findsOneWidget);
-      expect(find.text('Safer streaming'), findsOneWidget);
-      expect(find.byIcon(Icons.shield_rounded), findsOneWidget);
+      expect(find.text('Modern'), findsOneWidget);
+      expect(find.text('Modern streaming'), findsOneWidget);
+      expect(find.byIcon(Icons.auto_awesome_rounded), findsOneWidget);
     });
 
     testWidgets('shows a check mark only when isActive is true', (
@@ -38,9 +38,9 @@ void main() {
       await tester.pumpWidget(
         buildTestable(
           PlayerOptionTile(
-            icon: Icons.shield_rounded,
-            title: 'Proxy',
-            subtitle: 'Safer streaming',
+            icon: Icons.auto_awesome_rounded,
+            title: 'Modern',
+            subtitle: 'Modern streaming',
             isActive: true,
             onTap: () {},
           ),
@@ -51,9 +51,9 @@ void main() {
       await tester.pumpWidget(
         buildTestable(
           PlayerOptionTile(
-            icon: Icons.shield_rounded,
-            title: 'Proxy',
-            subtitle: 'Safer streaming',
+            icon: Icons.auto_awesome_rounded,
+            title: 'Modern',
+            subtitle: 'Modern streaming',
             isActive: false,
             onTap: () {},
           ),
@@ -99,23 +99,7 @@ void main() {
       expect(find.byIcon(Icons.smart_display_rounded), findsOneWidget);
     });
 
-    testWidgets('shows the icon matching the proxy player type', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        buildTestable(
-          const PlayerSwitchButton(
-            courseId: 'c1',
-            lessonId: 'l1',
-            playerType: PlayerType.proxy,
-          ),
-        ),
-      );
-
-      expect(find.byIcon(Icons.shield_rounded), findsOneWidget);
-    });
-
-    testWidgets('tapping the button opens a sheet listing all 4 players', (
+    testWidgets('tapping the button opens a sheet listing all 3 players', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -131,7 +115,7 @@ void main() {
       await tester.tap(find.byType(PlayerSwitchButton));
       await tester.pumpAndSettle();
 
-      expect(find.byType(PlayerOptionTile), findsNWidgets(4));
+      expect(find.byType(PlayerOptionTile), findsNWidgets(3));
     });
 
     testWidgets('marks the current playerType as the active option in the sheet', (

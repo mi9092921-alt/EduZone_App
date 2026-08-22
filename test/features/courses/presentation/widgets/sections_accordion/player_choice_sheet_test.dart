@@ -6,7 +6,7 @@ import 'sections_accordion_test_helpers.dart';
 
 void main() {
   group('showPlayerChoiceSheet', () {
-    testWidgets('shows all four player options', (WidgetTester tester) async {
+    testWidgets('shows all three player options', (WidgetTester tester) async {
       await tester.pumpWidget(
         buildTestableWidget(
           Builder(
@@ -23,12 +23,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('YouTube Player'), findsOneWidget);
-      expect(find.text('Proxy Player'), findsOneWidget);
       expect(find.text('Modern Player'), findsOneWidget);
-      // The 4th option's title comes from AppLocalizations (l10n.directPlayer),
-      // so just confirm 4 tappable option rows exist rather than hardcoding
+      // The 3rd option's title comes from AppLocalizations (l10n.directPlayer),
+      // so just confirm 3 tappable option rows exist rather than hardcoding
       // its localized text.
-      expect(find.byType(InkWell), findsNWidgets(5));
+      expect(find.byType(InkWell), findsNWidgets(4));
     });
 
     testWidgets('tapping an option calls onPlayerSelected with the right key', (
@@ -53,10 +52,10 @@ void main() {
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Proxy Player'));
+      await tester.tap(find.text('Modern Player'));
       await tester.pump();
 
-      expect(selected, 'proxy');
+      expect(selected, 'modern');
     });
   });
 }

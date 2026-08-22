@@ -31,7 +31,6 @@ import '../../features/todo/presentation/screens/todo_screen.dart';
 import '../../features/video_player/presentation/screens/video_player_screen.dart';
 import '../../features/video_player/presentation/widgets/modern_player_wrapper.dart';
 import '../../features/video_player/presentation/widgets/player4_wrapper.dart';
-import '../../features/video_player/presentation/widgets/proxy_player_wrapper.dart';
 import '../../features/video_player/presentation/widgets/youtube_player_wrapper.dart';
 import '../state/app_state_provider.dart';
 import 'main_shell.dart';
@@ -349,27 +348,6 @@ GoRouter router(Ref ref) {
                             lessonId: state.pathParameters['lessonId']!,
                             playerBuilder: (context, isFS, toggleFS, isVertical) =>
                                 YoutubePlayerWrapper(
-                              courseId: state.pathParameters['courseId']!,
-                              lessonId: state.pathParameters['lessonId']!,
-                              isFullScreen: isFS,
-                              onToggleFullScreen: toggleFS,
-                              isVertical: isVertical,
-                            ),
-                          ),
-                        ),
-                      ),
-                      // مسار المشغّل الوسيط (Proxy Player)
-                      GoRoute(
-                        path: 'lesson2/:lessonId',
-                        parentNavigatorKey: _rootNavigatorKey,
-                        pageBuilder: (context, state) => buildTransitionPage(
-                          state: state,
-                          child: VideoPlayerScreen(
-                            courseId: state.pathParameters['courseId']!,
-                            lessonId: state.pathParameters['lessonId']!,
-                            playerType: PlayerType.proxy,
-                            playerBuilder: (context, isFS, toggleFS, isVertical) =>
-                                ProxyPlayerWrapper(
                               courseId: state.pathParameters['courseId']!,
                               lessonId: state.pathParameters['lessonId']!,
                               isFullScreen: isFS,

@@ -108,8 +108,6 @@
   "chooseVideoPlayer": "اختر مشغل الفيديو",
   "youtubePlayer": "مشغل YouTube",
   "youtubePlayerSubtitle": "المشغل القياسي في Flutter",
-  "proxyPlayer": "مشغل البروكسي",
-  "proxyPlayerSubtitle": "مشغل بدون إعلانات",
   "modernPlayer": "المشغل الحديث",
   "modernPlayerSubtitle": "تجربة WebView مع إزالة العناصر غير الضرورية",
   "directPlayer": "المشغل المباشر",

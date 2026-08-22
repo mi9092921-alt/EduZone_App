@@ -22,7 +22,7 @@ export 'video_player/player_type.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // مشغّل الدروس الموحّد (Universal Video Player Screen)
 //
-// يستقبل [playerBuilder] لبناء المشغّل المناسب (YouTube أو Proxy)،
+// يستقبل [playerBuilder] لبناء المشغّل المناسب،
 // مما يوحد واجهة المستخدم ومنطق التحكم بالكامل.
 //
 // هذا الملف كان أصلاً 566 سطرًا بملف واحد. بعد التقسيم:
@@ -257,9 +257,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                       currentLessonId: widget.lessonId,
                       onLessonTap: (newId) {
                         if (newId != widget.lessonId) {
-                          final route = widget.playerType == PlayerType.proxy
-                              ? 'lesson2'
-                              : widget.playerType == PlayerType.modern
+                          final route = widget.playerType == PlayerType.modern
                               ? 'lesson3'
                               : widget.playerType == PlayerType.player4
                               ? 'lesson4'

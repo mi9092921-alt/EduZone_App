@@ -208,12 +208,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get youtubePlayerSubtitle => 'Standard Flutter player';
 
   @override
-  String get proxyPlayer => 'Proxy Player';
-
-  @override
-  String get proxyPlayerSubtitle => 'Ad-free player';
-
-  @override
   String get modernPlayer => 'Modern Player';
 
   @override
