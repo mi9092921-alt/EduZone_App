@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../network/network_config.dart';
 import '../../network/supabase_client.dart';
 import '../domain/event_metadata.dart';
 
@@ -54,11 +55,13 @@ class LogRemoteDataSource {
             'p_details': entry.details,
             'p_risk_level': entry.riskLevel,
           },
-        );
+        ).timeout(NetworkConfig.telemetryTimeout);
       }
       return true;
     } on PostgrestException catch (e) {
-      debugPrint('[LogRemoteDS] Supabase RPC failed: ${e.message}');
+      debugPrint(
+        '[LogRemoteDS] Supabase RPC failed: ${e.code ?? 'unknown'}',
+      );
       return false;
     } catch (e) {
       debugPrint('[LogRemoteDS] Unexpected error: ${e.runtimeType}');

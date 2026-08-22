@@ -34,6 +34,7 @@ class SyncEngine {
   int _consecutiveFailures = 0;
   int _totalFlushes = 0;
   int _successfulFlushes = 0;
+  bool _isFlushing = false;
   final List<int> _recentLatencies = [];
 
   static const _flushIntervalBase = Duration(seconds: 10);
@@ -68,7 +69,23 @@ class SyncEngine {
 
   /// Flush pending entries to Supabase.
   Future<void> flush() async {
-    if (_queue.length == 0) return;
+    if (_queue.length == 0 || _isFlushing) return;
+    _isFlushing = true;
+    try {
+      await _flushOnce();
+    } catch (error) {
+      // A timer callback must not produce an uncaught async error. The
+      // remote data source reports normal failures as false; this catches
+      // unexpected failures such as a connectivity plugin exception.
+      if (kDebugMode) {
+        debugPrint('[SyncEngine] Flush failed: ${error.runtimeType}');
+      }
+    } finally {
+      _isFlushing = false;
+    }
+  }
+
+  Future<void> _flushOnce() async {
 
     // Connectivity gate
     final connectivity = await Connectivity().checkConnectivity();

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/error/exceptions.dart';
 import '../../core/error/failures.dart';
 import '../../core/l10n/arb/app_localizations.dart';
+import '../../core/l10n/arb/app_localizations_en.dart';
 import 'app_snackbar.dart';
 
 class ErrorHandler {
@@ -21,7 +22,7 @@ class ErrorHandler {
       // leak this whole utility exists to prevent (see the ServerException
       // case below) -- so use a fixed, non-localized-but-safe English
       // string instead of the caught error's own text.
-      return 'An error occurred';
+      return AppLocalizationsEn().errorGeneric;
     }
 
     // Some providers re-throw the repository's `Failure` object directly
@@ -37,11 +38,8 @@ class ErrorHandler {
     } else if (classified is NoInternetException) {
       return l10n.errorNetwork;
     } else if (classified is RequestTimeoutException) {
-      // No dedicated l10n key yet (see Section 22 follow-up); a timed-out
-      // request reads to the user the same way "no internet" does --
-      // "try again" -- so reuse errorNetwork rather than leaking the raw
-      // internal message, matching the UnauthenticatedException fallback
-      // pattern below.
+      // Keep timeout and offline failures on the same safe retry message.
+      // This is also the established UI contract used across the app.
       return l10n.errorNetwork;
     } else if (classified is MaxDevicesReachedException) {
       return l10n.errorMaxDevices;

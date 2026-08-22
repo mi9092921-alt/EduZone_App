@@ -135,6 +135,10 @@ class FcmService {
       // silently invisible.
       debugPrint('FCM Init Error: ${e.runtimeType}');
       GlobalErrorHandler.logError(e, st);
+      // Permit a later foreground retry after a transient Firebase/plugin
+      // startup failure. Keeping this true would permanently disable push
+      // setup for the rest of the process.
+      _initialized = false;
     }
   }
 
@@ -190,7 +194,8 @@ class FcmService {
        await SupabaseService.client
           .from('push_tokens')
           .update({'is_active': false})
-          .eq('user_id', uid);
+          .eq('user_id', uid)
+          .timeout(NetworkConfig.telemetryTimeout);
     } catch (e) {
       debugPrint('Error deactivating FCM token: ${e.runtimeType}');
     }
@@ -227,7 +232,7 @@ class FcmService {
     final android = message.notification?.android;
 
     if (notification != null && android != null) {
-      _localNotificationsPlugin.show(
+      unawaited(_localNotificationsPlugin.show(
         id: notification.hashCode,
         title: notification.title,
         body: notification.body,
@@ -244,7 +249,9 @@ class FcmService {
             presentSound: true,
           ),
         ),
-      );
+      ).catchError((Object error, StackTrace stack) {
+        GlobalErrorHandler.logError(error, stack);
+      }));
     }
   }
 

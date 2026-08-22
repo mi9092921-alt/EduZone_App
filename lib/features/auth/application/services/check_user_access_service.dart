@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/network/network_config.dart';
 import '../../../../shared/utils/global_error_handler.dart';
 import '../../domain/entities/user_access.dart';
 import '../../domain/enums/account_status.dart';
@@ -124,7 +126,12 @@ class CheckUserAccessService {
   Future<void> _check() async {
     if (!_active) return;
     try {
-      final response = await _supabase.rpc('check_user_access');
+      // Wrap the PostgREST builder in a real Future before applying the
+      // timeout. Besides keeping the production timeout, this avoids calling
+      // a builder-specific timeout override in lightweight test doubles.
+      final response = await Future<dynamic>.value(
+        _supabase.rpc('check_user_access'),
+      ).timeout(NetworkConfig.readTimeout);
       if (!_active) return;
 
       final data = response as Map<String, dynamic>;

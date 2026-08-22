@@ -25,6 +25,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
   Timer? _pollingTimer;
   Timer? _countdownTimer;
   Duration _remaining = Duration.zero;
+  bool _isChecking = false;
 
   @override
   void initState() {
@@ -68,7 +69,13 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
 
   /// Re-checks access — state change drives router navigation.
   Future<void> _checkAccess() async {
-    await ref.read(authProvider.notifier).verifyAccess();
+    if (_isChecking || !mounted) return;
+    _isChecking = true;
+    try {
+      await ref.read(authProvider.notifier).verifyAccess();
+    } finally {
+      _isChecking = false;
+    }
     // No manual navigation — router reacts to auth state change.
   }
 
