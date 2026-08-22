@@ -458,18 +458,6 @@ abstract class AppLocalizations {
   /// **'Standard Flutter player'**
   String get youtubePlayerSubtitle;
 
-  /// No description provided for @proxyPlayer.
-  ///
-  /// In en, this message translates to:
-  /// **'Proxy Player'**
-  String get proxyPlayer;
-
-  /// No description provided for @proxyPlayerSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Ad-free player'**
-  String get proxyPlayerSubtitle;
-
   /// No description provided for @modernPlayer.
   ///
   /// In en, this message translates to:

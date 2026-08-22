@@ -206,12 +206,6 @@ class AppLocalizationsAr extends AppLocalizations {
   String get youtubePlayerSubtitle => 'المشغل القياسي في Flutter';
 
   @override
-  String get proxyPlayer => 'مشغل البروكسي';
-
-  @override
-  String get proxyPlayerSubtitle => 'مشغل بدون إعلانات';
-
-  @override
   String get modernPlayer => 'المشغل الحديث';
 
   @override
