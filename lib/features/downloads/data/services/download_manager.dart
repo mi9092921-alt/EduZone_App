@@ -162,6 +162,43 @@ class DownloadManager {
   static const int _parallelDownloadMinBytes = 8 * 1024 * 1024;
   static const int _parallelDownloadLargeBytes = 80 * 1024 * 1024;
 
+  // ── Outbound CDN headers (Section 13 "Networking Reliability") ───────────
+  //
+  // Both `startDownload` and `startEncryptedDownload` need a browser-like
+  // User-Agent/Referer to fetch a YouTube/Google-Video-CDN-served source
+  // URL; previously each defined its own copy of this map, so the two
+  // could silently drift out of sync.
+  //
+  // "Android 10; K" is NOT a stale/inaccurate device report to "fix" by
+  // substituting the real OS version -- it is Chrome's actual current
+  // User-Agent Reduction output. Since Chrome froze/reduced the Android
+  // WebView UA (all Android Chrome installs report a fixed "Android 10"
+  // and a fixed "K" device placeholder regardless of real OS/model, as a
+  // privacy/fingerprinting-surface reduction), reverting this to a real
+  // per-device Android version would make the request look LESS like
+  // genuine Chrome traffic to the CDN, not more -- the opposite of the
+  // reliability goal. Verified against Chrome's current release
+  // (currently on the 4-week cadence, stable milestone 151 as of Aug
+  // 2026) before this comment was written; re-check chrome://version /
+  // the Chrome release blog before changing this string again.
+  //
+  // `_chromeMajorVersion` IS the part that goes stale: unlike the OS/model
+  // segment, Chrome's own version number is not frozen and increments
+  // roughly every 4 weeks. This can't be queried at runtime from a plain
+  // Dio/background_downloader request (no WebView/JS context here to ask
+  // the OS for the live value, unlike `modern_player_wrapper.dart`'s
+  // `InAppWebViewController.getDefaultUserAgent()`), so it is a periodic
+  // manual bump rather than a permanent fix -- tracked as a single named
+  // constant instead of a magic literal duplicated at each call site so
+  // that bump is a one-line change instead of a grep-and-replace.
+  static const String _chromeMajorVersion = '151';
+  static const Map<String, String> _defaultCdnHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/$_chromeMajorVersion.0.0.0 Mobile Safari/537.36',
+    'Referer': 'https://www.youtube.com/',
+  };
+
   // ── Range-worker resilience (P4 networking reliability) ──────────────────
   //
   // Every range/chunk-group GET below deliberately sets `receiveTimeout:
@@ -365,10 +402,7 @@ class DownloadManager {
     };
 
     final effectiveHeaders = <String, String>{
-      'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) '
-          'AppleWebKit/537.36 (KHTML, like Gecko) '
-          'Chrome/120.0.0.0 Mobile Safari/537.36',
-      'Referer': 'https://www.youtube.com/',
+      ..._defaultCdnHeaders,
       ...?headers,
     };
 
@@ -554,10 +588,7 @@ class DownloadManager {
         downloadId ?? DateTime.now().millisecondsSinceEpoch.toString();
 
     final effectiveHeaders = <String, String>{
-      'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) '
-          'AppleWebKit/537.36 (KHTML, like Gecko) '
-          'Chrome/120.0.0.0 Mobile Safari/537.36',
-      'Referer': 'https://www.youtube.com/',
+      ..._defaultCdnHeaders,
       ...?headers,
     };
 

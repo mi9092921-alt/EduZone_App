@@ -41,29 +41,46 @@ class ProfileRemoteDataSource {
     });
   }
 
-  /// Update user profile fields. Only non-null params are sent.
+  /// Update user profile fields via the `api_update_profile` RPC.
+  ///
+  /// Previously this issued `.from('users').update(...)` directly, which
+  /// `10_permissions.sql` explicitly blocks for `authenticated`
+  /// (`REVOKE UPDATE ON public.users FROM authenticated`, with only
+  /// `last_login`/`last_seen_at` re-granted) -- so every profile-name
+  /// update silently failed with a Postgres permission-denied error in
+  /// production while `flutter test` stayed green, because the mocked
+  /// data source in `profile_repo_impl_test.dart` never touches real
+  /// RLS/grants. `api_update_profile` is the SECURITY DEFINER RPC that
+  /// was already defined in `07_functions.sql` for exactly this
+  /// operation but was never called from any Dart file and never had a
+  /// matching `GRANT EXECUTE` -- see the accompanying
+  /// `supabase/schema/10_permissions.sql` change. See Section 8/9
+  /// ("Authorization must ultimately be enforced server-side" /
+  /// "the client must never assume hiding a UI element provides
+  /// authorization") and Section 13/14 hardening notes elsewhere in this
+  /// file.
+  ///
+  /// The RPC returns `void` (it only performs the `UPDATE`), so on
+  /// success this re-fetches the row via [getProfile] to return the
+  /// caller's expected `StudentProfile` -- same external contract as
+  /// before, only the write path changed.
   Future<StudentProfile> updateProfile({
     String? firstName,
     String? lastName,
   }) async {
     return NetworkGuard.write(() async {
       try {
-        final uid = SupabaseService.client.auth.currentUser!.id;
-        final updates = <String, dynamic>{};
+        if (firstName == null && lastName == null) return getProfile();
 
-        if (firstName != null) updates['first_name'] = firstName;
-        if (lastName != null) updates['last_name'] = lastName;
+        await SupabaseService.client.rpc(
+          'api_update_profile',
+          params: {
+            'p_first_name': ?firstName,
+            'p_last_name': ?lastName,
+          },
+        );
 
-        if (updates.isEmpty) return getProfile();
-
-        final response = await SupabaseService.client
-            .from('users')
-            .update(updates)
-            .eq('id', uid)
-            .select()
-            .single();
-
-        return StudentProfile.fromJson(response);
+        return getProfile();
       } on PostgrestException catch (e) {
         throw ServerException(e.message, e.code); // check-ignore
       } catch (e) {
@@ -106,11 +123,16 @@ class ProfileRemoteDataSource {
               .from('avatars')
               .getPublicUrl(storagePath);
 
-          // Update user record with new avatar URL
-          await SupabaseService.client
-              .from('users')
-              .update({'avatar_url': publicUrl})
-              .eq('id', uid);
+          // Update user record with new avatar URL via `api_update_profile`
+          // -- same RLS/permission constraint as `updateProfile` above: a
+          // direct `.from('users').update(...)` here is blocked by
+          // `10_permissions.sql` and previously failed silently after a
+          // successful (and now orphaned) storage upload. See the
+          // `updateProfile` doc comment above for the full root cause.
+          await SupabaseService.client.rpc(
+            'api_update_profile',
+            params: {'p_avatar_url': publicUrl},
+          );
 
           return publicUrl;
         } on StorageException catch (e) {

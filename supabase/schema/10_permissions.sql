@@ -333,6 +333,23 @@ GRANT EXECUTE ON FUNCTION public.bind_device_for_current_user(text, jsonb, text,
 REVOKE ALL ON FUNCTION public.record_current_user_activity(boolean, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.record_current_user_activity(boolean, text) TO authenticated, service_role;
 
+-- PROFILE-BUG-01 FIX: api_update_profile() (5.3 Profile Update RPC, in
+-- 07_functions.sql) is the intended SECURITY DEFINER write path for a
+-- user's own first_name/last_name/avatar_url/timezone/locale -- the
+-- direct `.from('users').update(...)` calls it exists specifically to
+-- replace are blocked below by `REVOKE UPDATE ON public.users FROM
+-- authenticated` (only `last_login`/`last_seen_at` are re-granted as
+-- narrow telemetry columns). Same root cause and same fix pattern as
+-- bind_device_for_current_user/get_lesson_content above: SECURITY
+-- DEFINER alone does not grant EXECUTE once this file's default-privilege
+-- REVOKE has stripped the implicit PUBLIC grant, so every profile-name
+-- update and every avatar upload's follow-up column write was landing on
+-- PostgREST as permission-denied. See profile_remote_ds.dart for the
+-- matching client-side change (updateProfile()/uploadAvatar() now call
+-- this RPC instead of updating public.users directly).
+REVOKE ALL ON FUNCTION public.api_update_profile(varchar, varchar, text, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.api_update_profile(varchar, varchar, text, text, text) TO authenticated, service_role;
+
 REVOKE EXECUTE ON FUNCTION public.validate_user_session() FROM anon;
 GRANT EXECUTE ON FUNCTION public.validate_user_session() TO authenticated, service_role;
 

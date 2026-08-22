@@ -5,8 +5,12 @@ check_memory_hygiene.py - lifecycle guard for EduZone App.
 The project default is strict auto-disposal:
   - generated Riverpod providers use @riverpod unless explicitly allow-listed
   - hand-written Riverpod providers must use AutoDispose provider variants
-  - owned controllers, timers, stream subscriptions, and stream controllers
-    must have a disposal hook in the same hand-written source file
+  - owned controllers (Text/Animation/Scroll/Tab/PageController, FocusNode),
+    timers, stream subscriptions, and stream controllers must have a
+    disposal hook in the same hand-written source file
+  - a `.addListener(` registration (on a self-owned or externally-passed
+    ChangeNotifier-based object) must have a matching `.removeListener(`
+    or the owning controller's `.dispose(` in the same file
 
 Exit code: 0 = OK, 1 = violations found.
 """
@@ -84,9 +88,22 @@ RESOURCE_PATTERNS = (
     ("AnimationController", r"\bAnimationController\("),
     ("ScrollController", r"\bScrollController\("),
     ("TabController", r"\bTabController\("),
+    ("PageController", r"\bPageController\("),
+    ("FocusNode", r"\bFocusNode\("),
     ("Timer", r"\bTimer(?:\.periodic)?\("),
     ("StreamSubscription", r"(?:\bfinal\b|\bvar\b|\blate\b|[_a-zA-Z]\w*\s*=).*\.listen\("),
     ("StreamController", r"\bStreamController(?:<[^>]+>)?\("),
+    # Not a constructor -- `.addListener(` registers a callback on any
+    # ChangeNotifier-based object (own AnimationController/FocusNode/
+    # ScrollController above, or one owned by a parent and passed in, e.g.
+    # `widget.controller`). Flagged separately from the owning controller
+    # checks above because the two can diverge: a widget can own-and-
+    # dispose a controller it never listens to, or listen to a controller
+    # it does NOT own (so the controller-specific dispose() checks above
+    # don't apply) and still be responsible for detaching that one
+    # listener. See M3/M13 in the resource-safety roadmap ("listener
+    # added in initState... old listener remains").
+    ("Listener", r"\baddListener\("),
 )
 
 DISPOSAL_PATTERNS = {
@@ -94,9 +111,19 @@ DISPOSAL_PATTERNS = {
     "AnimationController": re.compile(r"\.dispose\("),
     "ScrollController": re.compile(r"\.dispose\("),
     "TabController": re.compile(r"\.dispose\("),
+    "PageController": re.compile(r"\.dispose\("),
+    "FocusNode": re.compile(r"\.dispose\("),
     "Timer": re.compile(r"\.cancel\("),
     "StreamSubscription": re.compile(r"\.cancel\("),
     "StreamController": re.compile(r"\.close\("),
+    # Disposing the owning controller implicitly detaches every listener
+    # registered on it, so `.dispose(` alone (no explicit `.removeListener(`
+    # required) is accepted here too -- the common, correct pattern for a
+    # self-owned controller. `.removeListener(` is what covers the
+    # not-self-owned case (e.g. `widget.controller?.addListener(...)`,
+    # where this widget cannot call `.dispose()` on a controller it does
+    # not own and must detach its own listener explicitly instead).
+    "Listener": re.compile(r"\.removeListener\(|\.dispose\("),
 }
 
 
@@ -173,13 +200,12 @@ def main() -> None:
             "Use @riverpod/AutoDispose*Provider by default. If a provider must "
             "be keepAlive, add it to LONG_LIVED_PROVIDER_ALLOWLIST with a "
             "short rationale. Dispose controllers, cancel timers/subscriptions, "
-            "and close stream controllers from dispose() or ref.onDispose()."
+            "close stream controllers, and detach addListener( registrations "
+            "(.removeListener(, or .dispose( on a self-owned controller) from "
+            "dispose() or ref.onDispose()."
         ),
     )
 
 
 if __name__ == "__main__":
     main()
-    "courseProgress",
-    "BookmarkedCourses",
-    "encryptionService",
