@@ -125,4 +125,108 @@ void main() {
 
     expect(count, equals(0));
   });
+
+  group('reconcileOrphanedDownloadFiles', () {
+    setUp(() {
+      when(() => localDataSource.getDownloadsDirectory())
+          .thenAnswer((_) async => tempDir);
+    });
+
+    test('deletes a file with no matching database row', () async {
+      final orphan = File('${tempDir.path}/orphan.enc')
+        ..writeAsBytesSync([1]);
+      when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
+          .thenAnswer((_) async => []);
+
+      final count = await recovery.reconcileOrphanedDownloadFiles();
+
+      expect(count, equals(1));
+      expect(orphan.existsSync(), isFalse);
+    });
+
+    test('preserves a file matching a row\'s encrypted_path or audio_path',
+        () async {
+      final videoPath = '${tempDir.path}/lesson.mp4.enc';
+      final audioPath = '${tempDir.path}/lesson_audio.m4a.enc';
+      File(videoPath).writeAsBytesSync([1]);
+      File(audioPath).writeAsBytesSync([1]);
+      when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
+          .thenAnswer(
+        (_) async => [
+          {
+            'id': 'dl_claimed',
+            'download_status': 'completed',
+            'encrypted_path': videoPath,
+            'audio_path': audioPath,
+          },
+        ],
+      );
+
+      final count = await recovery.reconcileOrphanedDownloadFiles();
+
+      expect(count, equals(0));
+      expect(File(videoPath).existsSync(), isTrue);
+      expect(File(audioPath).existsSync(), isTrue);
+    });
+
+    test('preserves .tmp/.idx sidecars of a row that still exists, '
+        'regardless of status', () async {
+      final basePath = '${tempDir.path}/lesson.mp4.enc';
+      File(basePath).writeAsBytesSync([1]);
+      File('$basePath.tmp').writeAsBytesSync([1]);
+      File('$basePath.idx').writeAsBytesSync([1]);
+      when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
+          .thenAnswer(
+        (_) async => [
+          {
+            'id': 'dl_paused',
+            'download_status': 'paused',
+            'encrypted_path': basePath,
+            'audio_path': null,
+          },
+        ],
+      );
+
+      final count = await recovery.reconcileOrphanedDownloadFiles();
+
+      expect(count, equals(0));
+      expect(File('$basePath.tmp').existsSync(), isTrue);
+      expect(File('$basePath.idx').existsSync(), isTrue);
+    });
+
+    test('mixed directory: deletes only the unclaimed file', () async {
+      final claimedPath = '${tempDir.path}/claimed.enc';
+      final orphanPath = '${tempDir.path}/orphan.enc';
+      File(claimedPath).writeAsBytesSync([1]);
+      File(orphanPath).writeAsBytesSync([1]);
+      when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
+          .thenAnswer(
+        (_) async => [
+          {
+            'id': 'dl_claimed',
+            'download_status': 'completed',
+            'encrypted_path': claimedPath,
+            'audio_path': null,
+          },
+        ],
+      );
+
+      final count = await recovery.reconcileOrphanedDownloadFiles();
+
+      expect(count, equals(1));
+      expect(File(claimedPath).existsSync(), isTrue);
+      expect(File(orphanPath).existsSync(), isFalse);
+    });
+
+    test('returns 0 when the downloads directory does not exist', () async {
+      final missingDir =
+          Directory('${tempDir.path}/does_not_exist_${DateTime.now().microsecondsSinceEpoch}');
+      when(() => localDataSource.getDownloadsDirectory())
+          .thenAnswer((_) async => missingDir);
+
+      final count = await recovery.reconcileOrphanedDownloadFiles();
+
+      expect(count, equals(0));
+    });
+  });
 }

@@ -223,6 +223,42 @@ class AppInitializer {
         }
       }());
 
+      // 7d. download-subsystem-production-hardening-plan.md, "Manifest +
+      // Crash Recovery" — the "DB missing + file exists" / orphan
+      // video/audio mandatory cases. See
+      // OfflineCrashRecovery.reconcileOrphanedDownloadFiles's doc comment
+      // for the concrete reachable path that produces these orphans today
+      // (DownloadRepositoryImpl._cleanupDownloadFiles can delete a row
+      // whose own file deletion silently failed). Deliberately its own
+      // pass rather than folded into 7c: 7c only ever changes a row's
+      // status/sidecar files, never lists or deletes anything based on
+      // the *absence* of a row, which is a distinct failure mode worth
+      // its own independent best-effort sweep and its own Sentry signal.
+      unawaited(() async {
+        final orphanedFilesStorageService =
+            StorageService(secureStorage: hardenedSecureStorage);
+        try {
+          return await OfflineCrashRecovery(
+            localDataSource:
+                DownloadLocalDataSource(orphanedFilesStorageService),
+          ).reconcileOrphanedDownloadFiles();
+        } catch (e, stack) {
+          debugPrint(
+            '⚠️ Orphaned download file cleanup failed: ${e.runtimeType}',
+          );
+          // A failure here means a file whose DB row is already gone (and
+          // whose encryption key is already gone) stays on disk,
+          // permanently unplayable, indefinitely — silent storage waste
+          // with nothing surfaced to diagnose why.
+          GlobalErrorHandler.logError(e, stack);
+          return 0;
+        } finally {
+          try {
+            await orphanedFilesStorageService.close();
+          } catch (_) {}
+        }
+      }());
+
     } catch (e) {
       debugPrint('CRITICAL INITIALIZATION ERROR: ${e.runtimeType}');
       // Re-throw to be caught by runZonedGuarded

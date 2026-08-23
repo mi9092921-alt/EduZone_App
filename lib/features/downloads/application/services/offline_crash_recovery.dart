@@ -146,4 +146,78 @@ class OfflineCrashRecovery {
     }
     return deleted;
   }
+
+  /// Scans the app's downloads directory for encrypted files with no
+  /// matching database row — download-subsystem-production-hardening-plan.md,
+  /// "Manifest + Crash Recovery", the "DB missing + file exists" / "orphan
+  /// audio exists" / "orphan video exists" mandatory cases.
+  ///
+  /// This is a real, reachable path in this codebase, not a hypothetical:
+  /// `DownloadRepositoryImpl._cleanupDownloadFiles` deletes a download's
+  /// on-disk file(s) inside a best-effort try/catch (a transient I/O
+  /// failure there is only `debugPrint`'d, never surfaced) and then
+  /// unconditionally deletes the DB row regardless of whether that file
+  /// deletion actually succeeded — so a file can survive its own row's
+  /// deletion. The encryption key for that file is deleted at the same
+  /// point, making the leftover file permanently unreadable/unplayable
+  /// dead weight silently consuming device storage forever, with nothing
+  /// previously scheduled to ever find and remove it.
+  ///
+  /// Only ever looks inside
+  /// [DownloadLocalDataSource.getDownloadsDirectory] — this app's own
+  /// private, app-scoped storage directory, never anywhere else on the
+  /// device — and only ever deletes a file there if it does not match the
+  /// `encrypted_path`/`audio_path` (or their `.tmp`/`.idx` sidecars) of
+  /// *any* row currently in the database, regardless of that row's
+  /// status. A row that still exists always "claims" its files here,
+  /// however stale its status, so this can never race a legitimate
+  /// in-progress or paused download into having its files deleted out
+  /// from under it.
+  ///
+  /// Best-effort and non-blocking, same reasoning as the two methods
+  /// above: a failure to delete one orphan must never stop startup or
+  /// block cleanup of the others, and whatever isn't caught this run is
+  /// simply retried on the next app start.
+  ///
+  /// Returns the number of orphaned files deleted.
+  Future<int> reconcileOrphanedDownloadFiles() async {
+    var deleted = 0;
+    try {
+      final downloadsDir = await _localDataSource.getDownloadsDirectory();
+      if (!await downloadsDir.exists()) return 0;
+
+      final rows = await _localDataSource.getDownloads(
+        scopeToCurrentUser: false,
+      );
+      final claimed = <String>{};
+      for (final row in rows) {
+        for (final basePath in [
+          row['encrypted_path'] as String?,
+          row['audio_path'] as String?,
+        ]) {
+          if (basePath == null || basePath.isEmpty) continue;
+          claimed
+            ..add(basePath)
+            ..add('$basePath.tmp')
+            ..add('$basePath.idx');
+        }
+      }
+
+      await for (final entity in downloadsDir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        if (claimed.contains(entity.path)) continue;
+        try {
+          await entity.delete();
+          deleted++;
+        } catch (_) {
+          // Non-fatal — retried on the next app start.
+        }
+      }
+    } catch (_) {
+      // Non-fatal — listing the downloads directory or reading rows
+      // failed; retried on the next app start rather than blocking
+      // startup.
+    }
+    return deleted;
+  }
 }
