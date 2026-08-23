@@ -259,7 +259,19 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
     AppLocalizations l10n,
     DesignSystemColors ds,
   ) {
-    final myCoursesAsync = ref.watch(myCoursesProvider);
+    // P8.5 fix: this footer only needs to know whether *this* course is
+    // enrolled, but previously watched the entire myCoursesProvider list
+    // (every enrollment for the user) and filtered it locally. That meant
+    // Course Details rebuilt this footer whenever *any* enrollment
+    // anywhere changed, and forced a full-list fetch as a side effect of
+    // opening a single course's page — duplicate network work per P8.16.
+    // myCourseEnrollmentProvider(courseId) is a single-row fetch and is
+    // already the exact provider _buildEnrolledFooterWithProgress uses
+    // right below; watching it here too is free (same cached instance)
+    // and the existing onRefresh handler above already invalidates it
+    // alongside myCoursesProvider, so refresh/enroll-status semantics are
+    // unchanged.
+    final enrollmentAsync = ref.watch(myCourseEnrollmentProvider(course.id));
 
     return Positioned(
       bottom: 0,
@@ -280,15 +292,11 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
         ),
         child: Builder(
           builder: (context) {
-            final enrollments = myCoursesAsync.value ?? [];
-            final enrollment = enrollments
-                .where((e) => e.courseId == course.id)
-                .firstOrNull;
-            final isEnrolled = enrollment != null;
+            final isEnrolled = enrollmentAsync.value != null;
 
             if (isEnrolled) {
               return _buildEnrolledFooterWithProgress(course, ref, l10n, ds);
-            } else if (myCoursesAsync.isLoading && enrollments.isEmpty) {
+            } else if (enrollmentAsync.isLoading) {
               return const Center(child: CircularProgressIndicator());
             } else {
               return _buildNotEnrolledFooter(course, l10n, ds);
