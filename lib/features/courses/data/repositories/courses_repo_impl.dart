@@ -159,7 +159,7 @@ class CoursesRepositoryImpl implements CoursesRepository {
       final ids = await _storageService.getBookmarkedCourseIds(userId);
       return Right(ids.toSet());
     } catch (e) {
-      return Left(CacheFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -171,7 +171,7 @@ class CoursesRepositoryImpl implements CoursesRepository {
       await _storageService.bookmarkCourse(userId, courseId);
       return const Right(null);
     } catch (e) {
-      return Left(CacheFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -183,7 +183,7 @@ class CoursesRepositoryImpl implements CoursesRepository {
       await _storageService.unbookmarkCourse(userId, courseId);
       return const Right(null);
     } catch (e) {
-      return Left(CacheFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 

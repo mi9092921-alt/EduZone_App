@@ -5,6 +5,7 @@ import 'package:app/app/main_app.dart';
 import 'package:app/app/router/app_router.dart';
 import 'package:app/app/router/main_shell.dart';
 import 'package:app/core/constants/app_constants.dart';
+import 'package:app/core/error/failures.dart';
 import 'package:app/core/l10n/arb/app_localizations_ar.dart';
 import 'package:app/core/l10n/arb/app_localizations_en.dart';
 import 'package:app/core/logging/infrastructure/event_dispatcher.dart' as logging;
@@ -35,14 +36,14 @@ import 'package:app/features/notifications/domain/repositories/notifications_rep
 import 'package:app/features/notifications/presentation/screens/notifications_screen.dart';
 import 'package:app/features/profile/application/providers/profile_provider.dart';
 import 'package:app/features/profile/domain/entities/student_profile.dart';
-import 'package:app/core/error/failures.dart';
-import 'package:fpdart/fpdart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:go_router/go_router.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 const _user = AppUser(
   id: 'integration-user',
@@ -70,7 +71,6 @@ const _course = Course(
   tenantId: 'tenant-1',
   title: 'Flutter Mastery',
   status: 'published',
-  isFree: true,
 );
 
 final _enrollment = CourseEnrollment(
@@ -527,7 +527,7 @@ void main() {
       await _pumpUntil(tester, find.byType(MainShell));
 
       final router = container.read(routerProvider);
-      router.push('${AppRoutes.home}/notifications');
+      unawaited(router.push('${AppRoutes.home}/notifications'));
       await tester.pumpAndSettle();
 
       expect(find.byType(NotificationsScreen), findsOneWidget);
