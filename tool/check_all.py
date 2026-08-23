@@ -39,6 +39,7 @@ CHECKS = [
     ("Auth Security Guard", "check_auth_security.py"),
     ("Logging Security Guard", "check_logging_security.py"),
     ("Config/Secrets Security Guard", "check_config_security.py"),
+    ("Dependency Floor Guard", "check_dependency_floor.py"),
 ]
 
 

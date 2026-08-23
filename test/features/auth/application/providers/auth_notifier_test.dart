@@ -1147,6 +1147,8 @@ class _FakeRealtimeChannel extends Fake implements RealtimeChannel {
     String? schema,
     String? table,
     PostgresChangeFilter? filter,
+    List<PostgresChangeFilter>? filters,
+    List<String>? select,
     required void Function(PostgresChangePayload payload) callback,
   }) =>
       this;
