@@ -69,6 +69,7 @@ class DownloadLinkRefresher {
     required String? sourceUrl,
     required DateTime? linkValidatedAt,
     required VideoQuality quality,
+    String? lessonId,
   }) async {
     final linkStale = linkValidatedAt == null ||
         DateTime.now().difference(linkValidatedAt) > staleAfter;
@@ -82,7 +83,13 @@ class DownloadLinkRefresher {
     }
 
     try {
-      final freshInfo = await _remoteDataSource.getVideoInfo(sourceUrl);
+      // lessonId lets video-info authorize this specific lesson instead of
+      // trusting sourceUrl alone -- see the comment on
+      // DownloadRemoteDataSource.getVideoInfo.
+      final freshInfo = await _remoteDataSource.getVideoInfo(
+        sourceUrl,
+        lessonId: lessonId,
+      );
       final freshSelected = _formatSelector.select(freshInfo, quality);
       final refreshedVideoUrl = freshSelected.videoFormat.videoUrl;
       final refreshedAudioUrl = freshSelected.audioTrack?.url;

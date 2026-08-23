@@ -97,16 +97,23 @@ Future<Task?> handleTokenRefresh(Task task) async {
 ///
 /// Returns null (never throws) if no fresher URL could be resolved, so
 /// callers can fall back to their existing URL/error handling.
+///
+/// [lessonId] lets video-info authorize this specific lesson instead of
+/// trusting [sourceUrl] alone -- see the comment on
+/// `DownloadRemoteDataSource.getVideoInfo`. It is optional: the
+/// [handleTokenRefresh] pre-attempt hook currently has no lessonId in its
+/// task metadata and continues to call this URL-only.
 @pragma('vm:entry-point')
 Future<String?> fetchFreshTrackUrl({
   required String sourceUrl,
   required String? qualityLabel,
   required String trackType,
+  String? lessonId,
 }) async {
   try {
     final client = await _supabaseClientForBackgroundCallback();
     final remoteDs = DownloadRemoteDataSource(client);
-    final freshInfo = await remoteDs.getVideoInfo(sourceUrl);
+    final freshInfo = await remoteDs.getVideoInfo(sourceUrl, lessonId: lessonId);
 
     final quality = qualityLabel != null
         ? VideoQuality.fromLabel(qualityLabel)
@@ -578,6 +585,7 @@ class DownloadManager {
     String? sourceUrl,
     String? qualityLabel,
     String trackType = 'video',
+    String? lessonId,
   }) async {
     if (!_dioParallelEligiblePlatform) return null;
     if (_activeDownloadIds.length >= _maxConcurrentDownloads) {
@@ -683,6 +691,7 @@ class DownloadManager {
           sourceUrl: sourceUrl,
           qualityLabel: qualityLabel,
           trackType: trackType,
+          lessonId: lessonId,
         ),
       );
 
@@ -747,6 +756,7 @@ class DownloadManager {
     String? sourceUrl,
     String? qualityLabel,
     String trackType = 'video',
+    String? lessonId,
   }) async {
     if (chunks.isEmpty) return;
     final rangeEnd = chunks.last.plaintextEnd;
@@ -896,6 +906,7 @@ class DownloadManager {
             sourceUrl: sourceUrl,
             qualityLabel: qualityLabel,
             trackType: trackType,
+            lessonId: lessonId,
           );
           if (fresh != null && fresh.isNotEmpty && fresh != effectiveUrl) {
             if (kDebugMode) {

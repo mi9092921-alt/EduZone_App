@@ -72,8 +72,10 @@ void main() {
         ],
       });
 
-      when(() => remoteDataSource.getVideoInfo('https://example.com/source'))
-          .thenAnswer((_) async => videoInfo);
+      when(() => remoteDataSource.getVideoInfo(
+            'https://example.com/source',
+            lessonId: any(named: 'lessonId'),
+          )).thenAnswer((_) async => videoInfo);
       when(() => localDataSource.updateDownload('download-1', any()))
           .thenAnswer((_) async {});
 
@@ -108,9 +110,10 @@ void main() {
           ],
         });
 
-        when(() =>
-                remoteDataSource.getVideoInfo('https://example.com/source'))
-            .thenAnswer((_) async => videoInfo);
+        when(() => remoteDataSource.getVideoInfo(
+              'https://example.com/source',
+              lessonId: any(named: 'lessonId'),
+            )).thenAnswer((_) async => videoInfo);
         when(() => localDataSource.updateDownload('download-1', any()))
             .thenAnswer((_) async {});
 
@@ -143,8 +146,10 @@ void main() {
 
     test('falls back to the stored URL when the refresh call throws',
         () async {
-      when(() => remoteDataSource.getVideoInfo('https://example.com/source'))
-          .thenThrow(Exception('network error'));
+      when(() => remoteDataSource.getVideoInfo(
+            'https://example.com/source',
+            lessonId: any(named: 'lessonId'),
+          )).thenThrow(Exception('network error'));
 
       final result = await refresher.refreshIfStale(
         downloadId: 'download-1',

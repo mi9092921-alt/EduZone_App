@@ -153,6 +153,7 @@ class DownloadExecutionService {
             sourceUrl: sourceUrl,
             qualityLabel: qualityLabel,
             trackType: trackType ?? 'video',
+            lessonId: lessonId,
           )
         : await _downloadManager.startEncryptedDownload(
             downloadId: downloadId,
@@ -166,6 +167,7 @@ class DownloadExecutionService {
             sourceUrl: sourceUrl,
             qualityLabel: qualityLabel,
             trackType: trackType ?? 'video',
+            lessonId: lessonId,
           );
     if (pipelinedManagerId == null) {
       throw StateError(

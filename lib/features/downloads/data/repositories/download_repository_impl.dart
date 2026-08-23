@@ -159,9 +159,12 @@ class DownloadRepositoryImpl implements DownloadRepository {
         downloadId: downloadId,
       );
 
-      // Fetch video metadata and format URLs
+      // Fetch video metadata and format URLs. lessonId is passed so the
+      // Edge Function authorizes this specific lesson rather than trusting
+      // videoUrl alone -- see the comment on getVideoInfo/video-info.
       if (kDebugMode) debugPrint('🔍 getVideoInfo → calling with url: $videoUrl');
-      final videoInfo = await _remoteDataSource.getVideoInfo(videoUrl);
+      final videoInfo =
+          await _remoteDataSource.getVideoInfo(videoUrl, lessonId: lessonId);
       if (kDebugMode) {
         debugPrint('🔍 getVideoInfo → formats count: ${videoInfo.formats.length}');
         for (final f in videoInfo.formats) {
@@ -404,6 +407,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
         sourceUrl: sourceUrl,
         linkValidatedAt: linkValidatedAt,
         quality: quality,
+        lessonId: lessonId,
       );
       final effectiveVideoUrl = refreshResult.videoUrl;
       final effectiveAudioUrl = refreshResult.audioUrl;

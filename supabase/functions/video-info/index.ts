@@ -183,13 +183,24 @@ serve(async (req) => {
     // the paid external extraction API (EXTERNAL_API_URL/EXTERNAL_API_KEY)
     // at EduZone's expense, with no rate limiting. Require a valid Supabase
     // session — same pattern as get-lesson-content/index.ts — to close the
-    // fully-anonymous abuse vector. This does not yet verify the caller is
-    // entitled to *this specific* video (the request body only carries a
-    // raw URL, not a lesson_id), so a logged-in user could still resolve a
-    // URL for a lesson they don't have access to if they already know that
-    // URL by other means; closing that fully would need an API contract
-    // change (passing lesson_id here too) on both this function and its
-    // Flutter callers.
+    // fully-anonymous abuse vector.
+    //
+    // Section 12/13 follow-up: callers that know which lesson they're
+    // acting on (the downloads subsystem: initial format lookup, resume
+    // link-refresh, and mid-download link-refresh) now pass `lesson_id`
+    // below. When present, this function re-runs the exact same
+    // authorization RPC get-lesson-content/index.ts uses
+    // (get_lesson_content, audited, enrollment/preview/teacher/admin-aware)
+    // and then discards the client-supplied `url` entirely in favor of the
+    // URL the lesson record itself points to — an authenticated user can no
+    // longer resolve formats for a lesson they don't have access to, even
+    // if they already know its YouTube URL by other means. `lesson_id` is
+    // intentionally optional, not required: Player4RemoteDataSource
+    // (streaming playback, a separate Riverpod-generated provider family)
+    // still calls this function URL-only and continues to rely on the
+    // authenticated+rate-limited gate below until it is migrated in a
+    // follow-up change; that residual gap is tracked, not silently assumed
+    // closed.
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
@@ -263,10 +274,73 @@ serve(async (req) => {
       body = await req.json();
     } else {
       const text = await req.text();
-      if (text) body.url = new URLSearchParams(text).get("url") ?? undefined;
+      if (text) {
+        const params = new URLSearchParams(text);
+        body.url = params.get("url") ?? undefined;
+        body.lesson_id = params.get("lesson_id") ?? undefined;
+      }
     }
 
-    const videoUrl: string = body?.url;
+    let videoUrl: string | undefined =
+      typeof body?.url === "string" ? body.url : undefined;
+    const lessonId: string | undefined =
+      typeof body?.lesson_id === "string" && body.lesson_id.trim().length > 0
+        ? body.lesson_id.trim()
+        : undefined;
+
+    // ── Lesson-scoped authorization ─────────────────────────────────────────
+    // When the caller identifies which lesson this request is for, verify
+    // access to *that lesson* the same way get-lesson-content/index.ts does
+    // (get_lesson_content is SECURITY DEFINER, enrollment/preview/teacher/
+    // admin-aware, and audit-logs the decision), then resolve the video URL
+    // from the lesson record itself rather than trusting the client-supplied
+    // `url` — this is what actually closes the "authenticated but not
+    // entitled to this specific lesson" gap described above. A denial here
+    // is intentionally reported the same way get-lesson-content reports it
+    // (403/404, no internal detail leaked).
+    if (lessonId) {
+      const { data: lessonContent, error: accessError } = await authClient.rpc(
+        "get_lesson_content",
+        { p_lesson_id: lessonId },
+      );
+      if (accessError || !lessonContent) {
+        const reason = accessError?.message ?? "";
+        if (reason.includes("LESSON_NOT_FOUND")) {
+          return new Response(
+            JSON.stringify({ error: "Lesson not found" }),
+            { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        // ACCESS_DENIED and any other unexpected failure are both a 403
+        // from the caller's point of view — do not leak the raw Postgres
+        // error (schema/constraint/internal detail), mirroring
+        // get-lesson-content/index.ts.
+        return new Response(
+          JSON.stringify({ error: "Access denied" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const provider: string | null = lessonContent.provider ?? null;
+      const videoPath: string | null = lessonContent.videoPath ?? null;
+      if (provider !== "youtube" || !videoPath) {
+        // video-info is a YouTube-formats extractor only; a lesson whose
+        // content isn't a YouTube reference has nothing for this function
+        // to resolve, authorized or not.
+        return new Response(
+          JSON.stringify({ error: "Access denied" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      // Server-authoritative from here on: use the lesson's own stored
+      // reference, never the client-supplied url, once lesson_id has been
+      // verified against it.
+      videoUrl = videoPath.startsWith("http")
+        ? videoPath
+        : `https://www.youtube.com/watch?v=${videoPath}`;
+    }
+
     if (!videoUrl) {
       return new Response(
         JSON.stringify({ error: "Video URL is required" }),

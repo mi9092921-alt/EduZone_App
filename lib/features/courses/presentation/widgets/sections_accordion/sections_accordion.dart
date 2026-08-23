@@ -301,7 +301,13 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
 
     final remote = ref.read(downloadRemoteDataSourceProvider);
     try {
-      final videoInfo = await remote.getVideoInfo(videoUrl);
+      // lessonId lets video-info authorize this specific lesson instead of
+      // trusting videoUrl alone -- see the comment on
+      // DownloadRemoteDataSource.getVideoInfo.
+      final videoInfo = await remote.getVideoInfo(
+        videoUrl,
+        lessonId: localLessonId,
+      );
       if (!mounted) return;
 
       final availableQualities = videoInfo.supportedQualities.isNotEmpty

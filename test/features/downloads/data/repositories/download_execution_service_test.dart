@@ -109,6 +109,7 @@ void main() {
             sourceUrl: any(named: 'sourceUrl'),
             qualityLabel: any(named: 'qualityLabel'),
             trackType: any(named: 'trackType'),
+            lessonId: any(named: 'lessonId'),
           )).thenAnswer((invocation) async {
         final savePath =
             invocation.namedArguments[#encryptedSavePath] as String;
@@ -166,6 +167,7 @@ void main() {
             sourceUrl: any(named: 'sourceUrl'),
             qualityLabel: any(named: 'qualityLabel'),
             trackType: any(named: 'trackType'),
+            lessonId: any(named: 'lessonId'),
           )).thenAnswer((_) async => null);
 
       await service.execute(
@@ -211,6 +213,7 @@ void main() {
             sourceUrl: any(named: 'sourceUrl'),
             qualityLabel: any(named: 'qualityLabel'),
             trackType: any(named: 'trackType'),
+            lessonId: any(named: 'lessonId'),
           )).thenAnswer((invocation) async {
         final savePath =
             invocation.namedArguments[#encryptedSavePath] as String;
@@ -256,6 +259,7 @@ void main() {
             sourceUrl: any(named: 'sourceUrl'),
             qualityLabel: any(named: 'qualityLabel'),
             trackType: any(named: 'trackType'),
+            lessonId: any(named: 'lessonId'),
           )).thenThrow(Exception('network down'));
       when(() => downloadManager.startDownload(
             downloadId: any(named: 'downloadId'),
@@ -296,6 +300,7 @@ void main() {
             sourceUrl: any(named: 'sourceUrl'),
             qualityLabel: any(named: 'qualityLabel'),
             trackType: any(named: 'trackType'),
+            lessonId: any(named: 'lessonId'),
           )).thenAnswer((_) async {
         // Simulate the manager cancelling mid-flight because pauseDownload()
         // was called concurrently, which surfaces as a thrown error here.
@@ -345,6 +350,7 @@ void main() {
             sourceUrl: any(named: 'sourceUrl'),
             qualityLabel: any(named: 'qualityLabel'),
             trackType: any(named: 'trackType'),
+            lessonId: any(named: 'lessonId'),
           )).thenThrow(Exception('cancelled'));
       when(() => downloadManager.startDownload(
             downloadId: any(named: 'downloadId'),

@@ -290,8 +290,10 @@ void main() {
           expiresAt: DateTime.now().add(const Duration(days: 30)),
         ),
       );
-      when(() => remoteDataSource.getVideoInfo('https://example.com/source'))
-          .thenAnswer((_) async => videoInfo);
+      when(() => remoteDataSource.getVideoInfo(
+            'https://example.com/source',
+            lessonId: any(named: 'lessonId'),
+          )).thenAnswer((_) async => videoInfo);
       when(() => localDataSource.getTotalStorageUsed())
           .thenAnswer((_) async => 0);
       when(() => localDataSource.generateDownloadId()).thenReturn('download-1');
