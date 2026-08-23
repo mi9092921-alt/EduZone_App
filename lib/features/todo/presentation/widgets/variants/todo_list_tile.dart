@@ -57,57 +57,48 @@ class TodoListTile extends StatelessWidget {
         secondaryBackground: TodoSwipeBackground.delete(
           label: l10n.deleteButton,
         ),
-        child: IntrinsicHeight(
+        child: TodoCardBase(
+          onTap: onEdit,
+          isCompleted: todo.isCompleted,
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              TodoCheckbox(
+                value: todo.isCompleted,
+                onChanged: onStatusChanged,
+                label: todo.title,
+              ),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: TodoCardBase(
-                  onTap: onEdit,
-                  isCompleted: todo.isCompleted,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TodoCheckbox(
-                        value: todo.isCompleted,
-                        onChanged: onStatusChanged,
-                        label: todo.title,
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            TodoContent(
-                              title: todo.title,
-                              isCompleted: todo.isCompleted,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TodoContent(
+                      title: todo.title,
+                      isCompleted: todo.isCompleted,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        if (todo.dueAt != null)
+                          TodoMetaInfo(
+                            dateText: TodoUiMapper.getFormattedDate(
+                              context: context,
+                              todo: todo,
                             ),
-                            const SizedBox(height: AppSpacing.xs),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                if (todo.dueAt != null)
-                                  TodoMetaInfo(
-                                    dateText: TodoUiMapper.getFormattedDate(
-                                      context: context,
-                                      todo: todo,
-                                    ),
-                                    isOverdue: isOverdue,
-                                  )
-                                else
-                                  const SizedBox.shrink(),
-                                TodoPriorityIndicator(
-                                  priority: todo.priority,
-                                  style: TodoPriorityStyle.pill,
-                                ),
-                              ],
-                            ),
-                          ],
+                            isOverdue: isOverdue,
+                          )
+                        else
+                          const SizedBox.shrink(),
+                        TodoPriorityIndicator(
+                          priority: todo.priority,
+                          style: TodoPriorityStyle.pill,
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ],
