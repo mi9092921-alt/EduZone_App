@@ -182,6 +182,47 @@ class AppInitializer {
         }
       }());
 
+      // 7c. download-subsystem-production-hardening-plan.md, "Manifest +
+      // Crash Recovery" — the "DB exists + [process gone]" mandatory case.
+      // OfflineCrashRecovery.reconcileInterruptedDownloads() reclassifies
+      // any row still stuck in `pending`/`downloading` at cold-start
+      // (impossible unless the process that was driving it died —
+      // see the method's own doc comment) to `failed`, so the Downloads
+      // screen shows an actionable "failed, tap to retry" tile instead of
+      // a permanently stuck progress bar. This method already existed,
+      // fully implemented and covered by
+      // offline_crash_recovery_test.dart, but was never actually called
+      // from anywhere in the app — 7b above only reconciles the
+      // *plaintext-playback-temp-file* half of OfflineCrashRecovery, never
+      // this one. A separate pass (not folded into 7b) for the same
+      // reason 7 and 7b are already kept separate: distinct on-disk
+      // targets and failure modes deserve independent best-effort sweeps
+      // rather than one failure hiding the other.
+      unawaited(() async {
+        final interruptedDownloadsStorageService =
+            StorageService(secureStorage: hardenedSecureStorage);
+        try {
+          return await OfflineCrashRecovery(
+            localDataSource:
+                DownloadLocalDataSource(interruptedDownloadsStorageService),
+          ).reconcileInterruptedDownloads();
+        } catch (e, stack) {
+          debugPrint(
+            '⚠️ Interrupted download reconciliation failed: '
+            '${e.runtimeType}',
+          );
+          // Same observability rationale as 7/7b: a failure here means
+          // downloads killed mid-write stay stuck showing "downloading…"
+          // forever with nothing surfaced to diagnose why.
+          GlobalErrorHandler.logError(e, stack);
+          return 0;
+        } finally {
+          try {
+            await interruptedDownloadsStorageService.close();
+          } catch (_) {}
+        }
+      }());
+
     } catch (e) {
       debugPrint('CRITICAL INITIALIZATION ERROR: ${e.runtimeType}');
       // Re-throw to be caught by runZonedGuarded
