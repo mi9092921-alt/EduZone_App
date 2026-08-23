@@ -186,7 +186,15 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
       (failure) {
         debugPrint('Failed to update progress on server: ${failure.message}');
         if (mounted) {
-          AppSnackbar.showError(context: context, message: failure.message);
+          // failure.message is an internal, English-only diagnostic (see
+          // ErrorHandler.getMessage's ServerException branch) -- it must
+          // never be shown to the user directly. Classify it the same
+          // way every other network-error display in this file (see
+          // _handleDownload below) and across the app already does.
+          AppSnackbar.showError(
+            context: context,
+            message: ErrorHandler.getMessage(context, failure),
+          );
           // Revert optimistic update on failure
           setState(() {
             if (isWatched) {

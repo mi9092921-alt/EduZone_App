@@ -22,11 +22,21 @@ import 'package:app/features/auth/presentation/screens/locked_screen.dart';
 import 'package:app/features/auth/presentation/screens/login_screen.dart';
 import 'package:app/features/auth/presentation/screens/maintenance_screen.dart';
 import 'package:app/features/auth/presentation/screens/suspended_screen.dart';
+import 'package:app/features/courses/application/providers/courses_provider.dart';
+import 'package:app/features/courses/domain/entities/course.dart';
+import 'package:app/features/courses/domain/entities/course_enrollment.dart';
+import 'package:app/features/courses/presentation/screens/course_details_screen.dart';
+import 'package:app/features/courses/presentation/screens/my_courses_screen.dart';
 import 'package:app/features/home/application/providers/home_provider.dart';
 import 'package:app/features/home/presentation/screens/home_screen.dart';
 import 'package:app/features/notifications/application/providers/notifications_provider.dart';
+import 'package:app/features/notifications/domain/entities/app_notification.dart';
+import 'package:app/features/notifications/domain/repositories/notifications_repository.dart';
+import 'package:app/features/notifications/presentation/screens/notifications_screen.dart';
 import 'package:app/features/profile/application/providers/profile_provider.dart';
 import 'package:app/features/profile/domain/entities/student_profile.dart';
+import 'package:app/core/error/failures.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,6 +64,59 @@ final _profile = StudentProfile(
   lastName: _user.lastName,
   tenantId: _user.tenantId,
 );
+
+const _course = Course(
+  id: 'course-1',
+  tenantId: 'tenant-1',
+  title: 'Flutter Mastery',
+  status: 'published',
+  isFree: true,
+);
+
+final _enrollment = CourseEnrollment(
+  id: 'enrollment-1',
+  userId: _user.id,
+  courseId: _course.id,
+  tenantId: 'tenant-1',
+  course: _course,
+);
+
+AppNotification _notification({required bool isRead}) => AppNotification(
+      id: 'notification-1',
+      userId: _user.id,
+      tenantId: 'tenant-1',
+      isRead: isRead,
+      createdAt: DateTime(2024),
+      details: const NotificationDetails(
+        title: 'New lesson available',
+        body: 'A new lesson was just published.',
+      ),
+    );
+
+/// Records calls made through [NotificationsRepository] so the "mark all
+/// read" integration test can assert the real user id flowed all the way
+/// from the authenticated [AuthState] through the tapped button to the
+/// repository, without a live Supabase client (see notifications_screen.dart
+/// — Section 6/8: no direct backend-singleton reads from widget code).
+class _RecordingNotificationsRepository implements NotificationsRepository {
+  String? lastMarkedAllAsReadUserId;
+
+  @override
+  Future<Either<Failure, List<AppNotification>>> getNotifications(
+    String userId,
+  ) async =>
+      Right([_notification(isRead: false)]);
+
+  @override
+  Future<Either<Failure, void>> markAsRead(String notificationId) async =>
+      const Right(null);
+
+  @override
+  Future<Either<Failure, void>> markAllAsRead(String userId) async {
+    lastMarkedAllAsReadUserId = userId;
+    return const Right(null);
+  }
+}
 
 class _ScenarioAuth extends Auth {
   _ScenarioAuth(this._initialState);
@@ -105,6 +168,7 @@ ProviderContainer _containerFor(
   AuthState state, {
   _ScenarioAuth? auth,
   Locale locale = const Locale('en'),
+  List<Override> extraOverrides = const [],
 }) {
   return ProviderContainer(
     overrides: [
@@ -121,6 +185,7 @@ ProviderContainer _containerFor(
       eventDispatcherProvider.overrideWithValue(
         logging.EventDispatcher(const []),
       ),
+      ...extraOverrides,
     ],
   );
 }
@@ -390,6 +455,90 @@ void main() {
       // than merely asserting that a tooltip string exists somewhere.
       await expectLater(tester, meetsGuideline(textContrastGuideline));
       await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+    });
+
+    testWidgets(
+        'authenticated user loads My Courses and opens a course into '
+        'CourseDetailsScreen', (tester) async {
+      final container = _containerFor(
+        const AuthAuthenticated(user: _user, access: _activeAccess),
+        extraOverrides: [
+          myCoursesProvider.overrideWith((ref) async => [_enrollment]),
+          courseDetailsProvider(_course.id).overrideWith(
+            (ref) async => _course,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await _pumpApp(tester, container);
+      await _pumpUntil(tester, find.byType(MainShell));
+
+      final router = container.read(routerProvider);
+      router.go(AppRoutes.courses);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MyCoursesScreen), findsOneWidget);
+      expect(find.text(_course.title), findsOneWidget);
+
+      await tester.tap(find.text(_course.title));
+      await tester.pumpAndSettle();
+
+      final routeInfo = router.routeInformationProvider;
+      expect(routeInfo.value.uri.path, '${AppRoutes.courses}/${_course.id}');
+      expect(find.byType(CourseDetailsScreen), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+        'authenticated user opens Notifications and "Mark all read" reaches '
+        "the repository with the authenticated user's id", (tester) async {
+      final repository = _RecordingNotificationsRepository();
+      // Built directly (not via `_containerFor`) so the real
+      // `notificationsProvider` override below — needed because the fixture
+      // notification list must actually render — is the *only* override
+      // for that provider, rather than layering a second override on top
+      // of `_containerFor`'s empty-list default for it.
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            () => _ScenarioAuth(
+              const AuthAuthenticated(user: _user, access: _activeAccess),
+            ),
+          ),
+          appLocaleProvider.overrideWithValue(const Locale('en')),
+          appThemeModeProvider.overrideWithValue(ThemeMode.light),
+          resumeLessonProvider.overrideWith((ref) async => null),
+          recentCoursesProvider.overrideWith((ref) async => const []),
+          recentTodosProvider.overrideWith((ref) async => const []),
+          profileProvider.overrideWith((ref) async => _profile),
+          eventDispatcherProvider.overrideWithValue(
+            logging.EventDispatcher(const []),
+          ),
+          notificationsProvider.overrideWith(
+            (ref) async => [_notification(isRead: false)],
+          ),
+          notificationsRepositoryProvider.overrideWithValue(repository),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await _pumpApp(tester, container);
+      await _pumpUntil(tester, find.byType(MainShell));
+
+      final router = container.read(routerProvider);
+      router.push('${AppRoutes.home}/notifications');
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotificationsScreen), findsOneWidget);
+      expect(find.text('New lesson available'), findsOneWidget);
+
+      final l10n = AppLocalizationsEn();
+      await tester.tap(find.text(l10n.markAllRead));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(repository.lastMarkedAllAsReadUserId, _user.id);
     });
   });
 }

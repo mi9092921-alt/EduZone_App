@@ -302,6 +302,13 @@ GRANT EXECUTE ON FUNCTION public.is_teacher_of_course(uuid, uuid) TO authenticat
 REVOKE EXECUTE ON FUNCTION public.enroll_in_course(uuid) FROM anon;
 GRANT EXECUTE ON FUNCTION public.enroll_in_course(uuid) TO authenticated, service_role;
 
+-- courses-subsystem-production-hardening-plan.md Phase 2/3: server-side
+-- lesson-progress write RPC, replacing the client-resolved-tenant direct
+-- upsert. Same authenticated-only exposure as the other user-callable
+-- course/lesson RPCs on this page.
+REVOKE EXECUTE ON FUNCTION public.update_lesson_progress(uuid, uuid, numeric, boolean, integer) FROM anon;
+GRANT EXECUTE ON FUNCTION public.update_lesson_progress(uuid, uuid, numeric, boolean, integer) TO authenticated, service_role;
+
 -- SECTION-09 FIX: get_lesson_content()/check_lesson_access() are the
 -- server-side authorization boundary for streaming lesson video (see
 -- get-lesson-content/index.ts). They were defined with SECURITY DEFINER

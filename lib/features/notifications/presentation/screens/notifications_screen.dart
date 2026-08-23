@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../core/network/supabase_client.dart';
 import '../../../../shared/utils/error_handler.dart';
+import '../../../auth/application/providers/auth_provider.dart';
+import '../../../auth/domain/entities/auth_state.dart';
 import '../../application/providers/notifications_provider.dart';
 import '../../domain/entities/app_notification.dart';
 import '../widgets/notification_tile.dart';
@@ -26,7 +27,16 @@ class NotificationsScreen extends ConsumerWidget {
       actions: [
         TextButton(
           onPressed: () {
-            final userId = SupabaseService.client.auth.currentUser?.id;
+            // Source the current user id from the app's own auth state
+            // (Section 6/8: no direct backend-singleton access from a
+            // widget's business logic) rather than reaching into
+            // `SupabaseService.client` directly — that made this action
+            // impossible to exercise from a widget/integration test
+            // without a real, initialized Supabase client.
+            final authState = ref.read(authProvider);
+            final userId = authState is AuthAuthenticated
+                ? authState.user.id
+                : null;
             if (userId != null) {
               ref.read(markAsReadProvider).call(null, userId);
             }

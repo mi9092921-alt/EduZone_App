@@ -1,22 +1,77 @@
 import 'dart:async';
 
+import 'package:app/core/error/failures.dart';
 import 'package:app/core/l10n/arb/app_localizations.dart';
+import 'package:app/features/auth/application/providers/auth_provider.dart';
+import 'package:app/features/auth/domain/entities/app_user.dart';
+import 'package:app/features/auth/domain/entities/auth_state.dart';
+import 'package:app/features/auth/domain/entities/user_access.dart';
+import 'package:app/features/auth/domain/enums/account_status.dart';
+import 'package:app/features/auth/domain/enums/user_role.dart';
 import 'package:app/features/notifications/application/providers/notifications_provider.dart';
 import 'package:app/features/notifications/domain/entities/app_notification.dart';
+import 'package:app/features/notifications/domain/repositories/notifications_repository.dart';
 import 'package:app/features/notifications/presentation/screens/notifications_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-// NOTE ON SCOPE: the "Mark all read" action reads
+// The "Mark all read" action used to read
 // `SupabaseService.client.auth.currentUser?.id` directly inside its
-// onPressed handler (not during build), which requires a real initialized
-// Supabase client. No test in this repo currently stubs that singleton for
-// widget tests, so this file — like every other screen test added in this
-// pass — does not tap that button. It's still exercised indirectly by the
-// `AuthAuthenticated` integration tests in integration_test/app_test.dart
-// once Supabase is live in that harness.
+// onPressed handler, which required a real initialized Supabase client and
+// made this action impossible to exercise from a widget test. It now reads
+// the user id from `authProvider` (the same testable source every other
+// screen in this app uses), so the tap can be verified end-to-end below —
+// see the "mark all as read" group.
+
+const _testUser = AppUser(
+  id: 'user-1',
+  email: 'user1@example.com',
+  firstName: 'Test',
+  lastName: 'User',
+  tenantId: 'tenant-1',
+);
+
+const _testAccess = UserAccess(
+  status: AccountStatus.active,
+  role: UserRole.student,
+);
+
+class _FakeAuth extends Auth {
+  @override
+  AuthState build() =>
+      const AuthAuthenticated(user: _testUser, access: _testAccess);
+}
+
+class _FakeUnauthenticatedAuth extends Auth {
+  @override
+  AuthState build() => const AuthUnauthenticated();
+}
+
+class _RecordingNotificationsRepository implements NotificationsRepository {
+  String? lastMarkedAllAsReadUserId;
+  String? lastMarkedAsReadId;
+
+  @override
+  Future<Either<Failure, List<AppNotification>>> getNotifications(
+    String userId,
+  ) async =>
+      const Right([]);
+
+  @override
+  Future<Either<Failure, void>> markAsRead(String notificationId) async {
+    lastMarkedAsReadId = notificationId;
+    return const Right(null);
+  }
+
+  @override
+  Future<Either<Failure, void>> markAllAsRead(String userId) async {
+    lastMarkedAllAsReadUserId = userId;
+    return const Right(null);
+  }
+}
 
 AppNotification _notification({
   required String id,
@@ -181,5 +236,71 @@ void main() {
     // test/shared/utils/error_handler_test.dart for dedicated coverage.
     expect(find.text(l10n.errorGeneric), findsOneWidget);
     expect(find.textContaining('rls denied'), findsNothing);
+  });
+
+  group('NotificationsScreen — mark all as read', () {
+    testWidgets(
+        'tapping "Mark all read" calls the repository with the '
+        "authenticated user's id from authProvider, not a raw Supabase "
+        'singleton lookup', (tester) async {
+      final repository = _RecordingNotificationsRepository();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authProvider.overrideWith(() => _FakeAuth()),
+            notificationsRepositoryProvider.overrideWithValue(repository),
+            notificationsProvider.overrideWith(
+              (ref) async => [_notification(id: '1', isRead: false)],
+            ),
+          ],
+          child: const MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: NotificationsScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      await tester.tap(find.text(l10n.markAllRead));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(repository.lastMarkedAllAsReadUserId, _testUser.id);
+      expect(repository.lastMarkedAsReadId, isNull);
+    });
+
+    testWidgets(
+        'tapping "Mark all read" while unauthenticated is a no-op (no '
+        'repository call, no crash)', (tester) async {
+      final repository = _RecordingNotificationsRepository();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authProvider.overrideWith(() => _FakeUnauthenticatedAuth()),
+            notificationsRepositoryProvider.overrideWithValue(repository),
+            notificationsProvider.overrideWith(
+              (ref) async => [_notification(id: '1', isRead: false)],
+            ),
+          ],
+          child: const MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: NotificationsScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      await tester.tap(find.text(l10n.markAllRead));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(repository.lastMarkedAllAsReadUserId, isNull);
+    });
   });
 }

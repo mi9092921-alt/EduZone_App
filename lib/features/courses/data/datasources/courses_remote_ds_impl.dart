@@ -194,6 +194,17 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
     });
   }
 
+  // ── update_lesson_progress RPC ────────────────────────────────────
+  /// Calls the `update_lesson_progress(p_course_id, p_lesson_id,
+  /// p_progress_pct, p_completed, p_watch_time_sec)` RPC.
+  ///
+  /// Tenant, lesson/course ownership, and enrollment/preview access are
+  /// all derived and checked server-side inside the RPC (see
+  /// `07_functions.sql`) -- this datasource no longer resolves or sends
+  /// `tenant_id` itself. That removes the extra `courses` round-trip this
+  /// method previously needed when `userMetadata['tenant_id']` was
+  /// absent/stale, and folds the (previously separate, best-effort)
+  /// activity-log call into the same RPC transaction.
   @override
   Future<void> updateLessonProgress({
     required String courseId,
@@ -209,54 +220,16 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
           throw const ServerException('User not authenticated'); // check-ignore
         }
 
-        // Get tenant_id from user metadata OR fetch from course
-        String? tenantId = SupabaseService
-            .client.auth.currentUser?.userMetadata?['tenant_id'];
-
-        if (tenantId == null) {
-          final courseData = await SupabaseService.client
-              .from('courses')
-              .select('tenant_id')
-              .eq('id', courseId)
-              .single();
-          tenantId = courseData['tenant_id'] as String?;
-        }
-
-        if (tenantId == null) {
-          throw const ServerException(
-              'Could not determine tenant_id for progress update'); // check-ignore
-        }
-
-        await SupabaseService.client.from('user_progress').upsert({
-          'user_id': userId,
-          'course_id': courseId,
-          'lesson_id': lessonId,
-          'tenant_id': tenantId,
-          'completed': completed,
-          'progress_pct': progressPct,
-          if (completed) 'completed_at': DateTime.timestamp().toIso8601String(),
-          'watch_time_sec': ?watchTimeSec,
-          'last_watched': DateTime.timestamp().toIso8601String(),
-        }, onConflict: 'user_id,course_id,lesson_id');
-
-        // Log activity (best-effort; failures here must never fail the
-        // progress write itself).
-        try {
-          await SupabaseService.client.rpc(
-            'log_activity_async',
-            params: {
-              'p_user_id': userId,
-              'p_type': completed ? 'lesson_completed' : 'lesson_progress',
-              'p_details': {
-                'course_id': courseId,
-                'lesson_id': lessonId,
-                'progress_pct': progressPct,
-              },
-            },
-          );
-        } catch (_) {
-          // Best-effort — telemetry only, never propagate.
-        }
+        await SupabaseService.client.rpc(
+          'update_lesson_progress',
+          params: {
+            'p_course_id': courseId,
+            'p_lesson_id': lessonId,
+            'p_progress_pct': progressPct,
+            'p_completed': completed,
+            'p_watch_time_sec': watchTimeSec,
+          },
+        );
       } on PostgrestException catch (e) {
         throw ServerException(e.message, e.code); // check-ignore
       } catch (e) {

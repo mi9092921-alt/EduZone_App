@@ -1330,6 +1330,140 @@ BEGIN
 END;
 $$;
 
+-- courses-subsystem-production-hardening-plan.md, Phase 2/3: the previous
+-- write path had the Flutter client resolve `tenant_id` itself (from
+-- user_metadata, falling back to a second round-trip query against
+-- `courses`) and send it as part of a direct `user_progress` upsert.
+-- `user_progress_update_merged`/`user_progress_insert_merged`'s
+-- `tenant_id = public.assert_tenant()` WITH CHECK already made a
+-- mismatched client-supplied value fail closed rather than write
+-- cross-tenant data, so this was never an exploitable authorization
+-- bypass -- but it meant a legitimate user's save could fail on an
+-- opaque RLS rejection whenever their client-side resolution was stale,
+-- and it cost up to three network round-trips (tenant lookup, upsert,
+-- separate best-effort activity-log RPC) for what is conceptually one
+-- write. This RPC derives tenant/access entirely server-side and
+-- performs the write + activity log atomically in one call.
+CREATE OR REPLACE FUNCTION public.update_lesson_progress(
+  p_course_id uuid,
+  p_lesson_id uuid,
+  p_progress_pct numeric,
+  p_completed boolean,
+  p_watch_time_sec integer DEFAULT NULL
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_uid     uuid := auth.uid();
+  v_tenant  uuid;
+  v_row     record;
+  v_allowed boolean;
+  v_id      uuid;
+BEGIN
+  IF current_setting('role', true) != 'service_role' AND v_uid IS NULL THEN
+    RAISE EXCEPTION 'AUTH_REQUIRED';
+  END IF;
+
+  -- Never trust a client-supplied tenant. assert_tenant() derives it from
+  -- public.users (and raises TENANT_CONTEXT_REQUIRED / CROSS_TENANT_
+  -- ACCESS_DENIED for an inactive/mismatched account), exactly like
+  -- enroll_in_course above.
+  v_tenant := public.assert_tenant();
+
+  SELECT l.id AS lesson_id, l.course_id, l.is_preview
+    INTO v_row
+    FROM public.lessons l
+    JOIN public.courses c ON c.id = l.course_id
+   WHERE l.id = p_lesson_id
+     AND l.course_id = p_course_id
+     AND l.deleted_at IS NULL
+     AND c.deleted_at IS NULL
+     AND c.tenant_id = v_tenant;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'LESSON_NOT_FOUND';
+  END IF;
+
+  v_allowed :=
+    v_row.is_preview
+    OR public.has_course_access(v_uid, p_course_id)
+    OR public.is_teacher_of_course(v_uid, p_course_id)
+    OR public.is_admin_with_session_validation();
+
+  IF NOT v_allowed THEN
+    RAISE EXCEPTION 'ACCESS_DENIED';
+  END IF;
+
+  -- Defense in depth on top of user_progress's own CHECK constraints
+  -- (chk_progress_completion_consistency etc.): raising a clear code here
+  -- means a bad value never reaches a raw constraint-violation error that
+  -- would otherwise propagate to the client as unclassified Postgres text.
+  IF p_progress_pct IS NULL OR p_progress_pct < 0 OR p_progress_pct > 100 THEN
+    RAISE EXCEPTION 'INVALID_PROGRESS';
+  END IF;
+
+  IF p_watch_time_sec IS NOT NULL AND p_watch_time_sec < 0 THEN
+    RAISE EXCEPTION 'INVALID_WATCH_TIME';
+  END IF;
+
+  IF NOT p_completed AND p_progress_pct >= 100 THEN
+    RAISE EXCEPTION 'INVALID_PROGRESS_STATE';
+  END IF;
+
+  INSERT INTO public.user_progress (
+    user_id, course_id, lesson_id, tenant_id,
+    completed, progress_pct, watch_time_sec, completed_at, last_watched
+  ) VALUES (
+    v_uid, p_course_id, p_lesson_id, v_tenant,
+    p_completed, p_progress_pct, COALESCE(p_watch_time_sec, 0),
+    CASE WHEN p_completed THEN pg_catalog.now() ELSE NULL END,
+    pg_catalog.now()
+  )
+  ON CONFLICT (user_id, course_id, lesson_id) DO UPDATE SET
+    completed      = p_completed,
+    progress_pct   = p_progress_pct,
+    watch_time_sec = COALESCE(p_watch_time_sec, public.user_progress.watch_time_sec),
+    -- Preserve the original completion timestamp across repeat
+    -- completed=true writes for an already-finished lesson instead of
+    -- bumping it to now() on every replay.
+    completed_at   = CASE
+                        WHEN p_completed THEN COALESCE(public.user_progress.completed_at, pg_catalog.now())
+                        ELSE public.user_progress.completed_at
+                      END,
+    last_watched   = pg_catalog.now(),
+    updated_at     = pg_catalog.now()
+  WHERE public.user_progress.deleted_at IS NULL
+  RETURNING id INTO v_id;
+
+  -- Best-effort activity logging in the same transaction as the write it
+  -- describes. A logging failure must never roll back a legitimate
+  -- progress write -- matching the "best-effort; failures here must
+  -- never fail the progress write itself" contract the client-side call
+  -- previously implemented with its own separate try/catch.
+  BEGIN
+    PERFORM internal.log_activity_internal(
+      v_uid,
+      CASE WHEN p_completed THEN 'lesson_completed' ELSE 'lesson_progress' END,
+      jsonb_build_object(
+        'course_id', p_course_id,
+        'lesson_id', p_lesson_id,
+        'progress_pct', p_progress_pct
+      ),
+      NULL,
+      NULL,
+      'low',
+      v_tenant
+    );
+  EXCEPTION WHEN OTHERS THEN
+    NULL;
+  END;
+
+  RETURN v_id;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.get_lesson_content(
   p_lesson_id uuid,
   p_ip inet DEFAULT NULL,
