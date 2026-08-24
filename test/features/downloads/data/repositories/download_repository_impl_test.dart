@@ -228,6 +228,7 @@ void main() {
             sourceUrl: any(named: 'sourceUrl'),
             qualityLabel: any(named: 'qualityLabel'),
             trackType: any(named: 'trackType'),
+            lessonId: any(named: 'lessonId'),
           )).thenAnswer((invocation) async {
         final savePath = invocation.namedArguments[#encryptedSavePath] as String;
         await File(savePath).writeAsBytes([1, 2, 3]);
@@ -251,6 +252,7 @@ void main() {
             sourceUrl: any(named: 'sourceUrl'),
             qualityLabel: any(named: 'qualityLabel'),
             trackType: any(named: 'trackType'),
+            lessonId: any(named: 'lessonId'),
           )).called(1);
     });
 
@@ -578,6 +580,7 @@ void main() {
               sourceUrl: any(named: 'sourceUrl'),
               qualityLabel: any(named: 'qualityLabel'),
               trackType: any(named: 'trackType'),
+              lessonId: any(named: 'lessonId'),
             ));
         verifyNever(
           () => localDataSource.updateDownloadStatus('download-1', 'downloading'),
@@ -795,6 +798,7 @@ void main() {
             sourceUrl: any(named: 'sourceUrl'),
             qualityLabel: any(named: 'qualityLabel'),
             trackType: any(named: 'trackType'),
+            lessonId: any(named: 'lessonId'),
           )).thenAnswer((invocation) async {
         final savePath = invocation.namedArguments[#encryptedSavePath] as String;
         await File(savePath).writeAsBytes([1, 2, 3]);
@@ -835,6 +839,7 @@ void main() {
             sourceUrl: any(named: 'sourceUrl'),
             qualityLabel: any(named: 'qualityLabel'),
             trackType: any(named: 'trackType'),
+            lessonId: any(named: 'lessonId'),
           )).called(1);
     });
 

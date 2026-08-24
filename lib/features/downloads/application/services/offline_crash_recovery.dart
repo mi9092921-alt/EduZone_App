@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import '../../data/datasources/download_local_ds.dart';
 
 /// Startup crash-recovery reconciliation for the offline downloads
@@ -196,16 +198,17 @@ class OfflineCrashRecovery {
           row['audio_path'] as String?,
         ]) {
           if (basePath == null || basePath.isEmpty) continue;
+          final normalizedBase = p.normalize(basePath);
           claimed
-            ..add(basePath)
-            ..add('$basePath.tmp')
-            ..add('$basePath.idx');
+            ..add(normalizedBase)
+            ..add(p.normalize('$basePath.tmp'))
+            ..add(p.normalize('$basePath.idx'));
         }
       }
 
       await for (final entity in downloadsDir.list(followLinks: false)) {
         if (entity is! File) continue;
-        if (claimed.contains(entity.path)) continue;
+        if (claimed.contains(p.normalize(entity.path))) continue;
         try {
           await entity.delete();
           deleted++;
