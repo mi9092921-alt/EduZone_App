@@ -9,6 +9,7 @@ import 'package:app/features/downloads/data/datasources/download_remote_ds.dart'
 import 'package:app/features/downloads/data/models/video_info.dart';
 import 'package:app/features/downloads/data/repositories/download_repository_impl.dart';
 import 'package:app/features/downloads/data/services/download_manager.dart';
+import 'package:app/features/downloads/data/services/download_manifest_service.dart';
 import 'package:app/features/downloads/domain/entities/download_enums.dart';
 import 'package:app/features/downloads/domain/entities/downloaded_lesson.dart';
 import 'package:dio/dio.dart';
@@ -24,6 +25,9 @@ class MockDownloadLocalDataSource extends Mock
 class MockDownloadManager extends Mock implements DownloadManager {}
 
 class MockEncryptionService extends Mock implements EncryptionService {}
+
+class MockDownloadManifestService extends Mock
+    implements DownloadManifestService {}
 
 void main() {
   setUpAll(() {
@@ -203,6 +207,17 @@ void main() {
           });
       when(() => encryptionService.calculateChecksum(any()))
           .thenAnswer((_) async => 'checksum');
+      // Key-loss cleanup (see the dedicated regression tests below for why
+      // this must happen): resumeDownload routes it through the same
+      // _cleanupDownloadFiles helper cancel/delete use, which calls
+      // deleteEncryptedFile for the base path plus its `.tmp`/`.idx`
+      // sidecars.
+      when(() => localDataSource.deleteEncryptedFile(encryptedPath))
+          .thenAnswer((_) async {});
+      when(() => localDataSource.deleteEncryptedFile('$encryptedPath.tmp'))
+          .thenAnswer((_) async {});
+      when(() => localDataSource.deleteEncryptedFile('$encryptedPath.idx'))
+          .thenAnswer((_) async {});
       when(() => downloadManager.startEncryptedDownload(
             url: any(named: 'url'),
             encryptedSavePath: any(named: 'encryptedSavePath'),
@@ -238,6 +253,282 @@ void main() {
             trackType: any(named: 'trackType'),
           )).called(1);
     });
+
+    test(
+      'resumeDownload discards stale on-disk bytes and manifest chunk '
+      'state when the encryption key was lost, instead of resuming under '
+      'a new key on top of chunks the manifest still marks verified from '
+      'the old, now-unrecoverable key',
+      () async {
+        final tempDir =
+            await Directory.systemTemp.createTemp('download_repo_keyloss_test');
+        addTearDown(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+
+        final encryptedPath = '${tempDir.path}/lesson-1.enc';
+        final audioPath = '${tempDir.path}/lesson-1_audio.enc';
+        // A final (not `.tmp`) file already exists on disk, as it would
+        // for the pipelined chunked path (DownloadManager
+        // .startEncryptedDownload writes chunks directly into the final
+        // path, never a `.tmp` file) after a partial run under a key that
+        // has since been lost.
+        await File(encryptedPath).writeAsBytes([9, 9, 9]);
+
+        final manifestService = MockDownloadManifestService();
+        final repositoryWithManifest = DownloadRepositoryImpl(
+          remoteDataSource: remoteDataSource,
+          localDataSource: localDataSource,
+          downloadManager: downloadManager,
+          encryptionService: encryptionService,
+          manifestService: manifestService,
+        );
+
+        final existingDownload = {
+          'id': 'download-1',
+          'lesson_id': 'lesson-1',
+          'course_id': 'course-1',
+          'title': 'Test lesson',
+          'local_path': encryptedPath,
+          'encrypted_path': encryptedPath,
+          'audio_path': audioPath,
+          'video_url': 'https://example.com/video.mp4',
+          'audio_url': 'https://example.com/audio.m4a',
+          'quality': VideoQuality.p720.label,
+          'file_size': 0,
+          'download_status': DownloadStatus.paused.name,
+          'progress': 40.0,
+          'downloaded_at': DateTime.now().millisecondsSinceEpoch,
+          'expires_at':
+              DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch,
+          'checksum': null,
+          'last_accessed_at': null,
+          'entitlement_id': 'ent-1',
+          'server_status': 'ACTIVE',
+          'server_expires_at':
+              DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch,
+        };
+
+        when(() => localDataSource.getDownloadById('download-1'))
+            .thenAnswer((_) async => existingDownload);
+        when(() => remoteDataSource.revalidateOfflineEntitlement(
+              entitlementId: any(named: 'entitlementId'),
+            )).thenAnswer(
+          (_) async => {
+            'status': 'ACTIVE',
+            'expires_at':
+                DateTime.now().add(const Duration(days: 30)).toIso8601String(),
+          },
+        );
+        when(() => localDataSource.updateDownloadStatus('download-1', 'downloading'))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.updateDownloadStatus('download-1', 'failed'))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.updateProgress('download-1', any()))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.updateDownload('download-1', any()))
+            .thenAnswer((_) async {});
+        // The encryption key is gone -- this is the exact condition the
+        // fix must react to.
+        when(() => encryptionService.retrieveKey('download-1'))
+            .thenAnswer((_) async => null);
+        when(() => encryptionService.generateEncryptionKey())
+            .thenReturn('fresh-key');
+        when(() => encryptionService.storeKey('download-1', 'fresh-key'))
+            .thenAnswer((_) async {});
+        when(() => encryptionService.calculateChecksum(any()))
+            .thenAnswer((_) async => 'checksum');
+        when(() => localDataSource.deleteEncryptedFile(encryptedPath))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.deleteEncryptedFile('$encryptedPath.tmp'))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.deleteEncryptedFile('$encryptedPath.idx'))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.deleteEncryptedFile(audioPath))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.deleteEncryptedFile('$audioPath.tmp'))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.deleteEncryptedFile('$audioPath.idx'))
+            .thenAnswer((_) async {});
+        when(() => manifestService.deleteForDownload('download-1'))
+            .thenAnswer((_) async {});
+        when(() => manifestService.markRunning('download-1'))
+            .thenAnswer((_) async {});
+        when(() => manifestService.markCompleted('download-1'))
+            .thenAnswer((_) async {});
+        when(() => downloadManager.startEncryptedDownload(
+              url: any(named: 'url'),
+              encryptedSavePath: any(named: 'encryptedSavePath'),
+              encryptionKeyBase64: any(named: 'encryptionKeyBase64'),
+              onProgress: any(named: 'onProgress'),
+              downloadId: any(named: 'downloadId'),
+              headers: any(named: 'headers'),
+              sourceUrl: any(named: 'sourceUrl'),
+              qualityLabel: any(named: 'qualityLabel'),
+              trackType: any(named: 'trackType'),
+              onPlanCreated: any(named: 'onPlanCreated'),
+              onChunkCommitted: any(named: 'onChunkCommitted'),
+              completedChunkIndexes: any(named: 'completedChunkIndexes'),
+              lessonId: any(named: 'lessonId'),
+            )).thenAnswer((invocation) async {
+          final savePath =
+              invocation.namedArguments[#encryptedSavePath] as String;
+          await File(savePath).writeAsBytes([1, 2, 3]);
+          final onProgress =
+              invocation.namedArguments[#onProgress] as ProgressCallback;
+          onProgress(3, 3);
+          return invocation.namedArguments[#downloadId] as String? ??
+              'download-1';
+        });
+        // getVerifiedChunkIndexes is consulted for both the video and
+        // audio track ids by DownloadRepositoryImpl's manifest-aware
+        // path; stub it directly rather than via the local data source,
+        // since it's exercised through the mocked DownloadManifestService.
+        when(() => manifestService.getVerifiedChunkIndexes(any()))
+            .thenAnswer((_) async => <int>{});
+
+        final result = await repositoryWithManifest.resumeDownload('download-1');
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+
+        expect(result.isRight(), isTrue);
+        // The stale final file (and its sidecars, for both tracks) must be
+        // discarded -- never reused under the freshly generated key.
+        verify(() => localDataSource.deleteEncryptedFile(encryptedPath))
+            .called(1);
+        verify(() => localDataSource.deleteEncryptedFile('$encryptedPath.tmp'))
+            .called(1);
+        verify(() => localDataSource.deleteEncryptedFile('$encryptedPath.idx'))
+            .called(1);
+        verify(() => localDataSource.deleteEncryptedFile(audioPath)).called(1);
+        verify(() => localDataSource.deleteEncryptedFile('$audioPath.tmp'))
+            .called(1);
+        verify(() => localDataSource.deleteEncryptedFile('$audioPath.idx'))
+            .called(1);
+        // The manifest's chunk/session rows for this downloadId must be
+        // wiped so a fresh plan starts with zero "verified" chunks under
+        // the new key -- this is the actual bug fix: without it, chunks
+        // verified under the old key would otherwise be treated as done
+        // and never re-fetched under the new one.
+        verify(() => manifestService.deleteForDownload('download-1')).called(1);
+      },
+    );
+
+    test(
+      'resumeDownload does NOT wipe manifest state when the encryption '
+      'key is still available (the ordinary, correct resume path)',
+      () async {
+        final tempDir = await Directory.systemTemp
+            .createTemp('download_repo_keypresent_test');
+        addTearDown(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+        final encryptedPath = '${tempDir.path}/lesson-1.enc';
+
+        final manifestService = MockDownloadManifestService();
+        final repositoryWithManifest = DownloadRepositoryImpl(
+          remoteDataSource: remoteDataSource,
+          localDataSource: localDataSource,
+          downloadManager: downloadManager,
+          encryptionService: encryptionService,
+          manifestService: manifestService,
+        );
+
+        final existingDownload = {
+          'id': 'download-1',
+          'lesson_id': 'lesson-1',
+          'course_id': 'course-1',
+          'title': 'Test lesson',
+          'local_path': encryptedPath,
+          'encrypted_path': encryptedPath,
+          'video_url': 'https://example.com/video.mp4',
+          'quality': VideoQuality.p720.label,
+          'file_size': 0,
+          'download_status': DownloadStatus.paused.name,
+          'progress': 40.0,
+          'downloaded_at': DateTime.now().millisecondsSinceEpoch,
+          'expires_at':
+              DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch,
+          'checksum': null,
+          'last_accessed_at': null,
+          'entitlement_id': 'ent-1',
+          'server_status': 'ACTIVE',
+          'server_expires_at':
+              DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch,
+        };
+
+        when(() => localDataSource.getDownloadById('download-1'))
+            .thenAnswer((_) async => existingDownload);
+        when(() => remoteDataSource.revalidateOfflineEntitlement(
+              entitlementId: any(named: 'entitlementId'),
+            )).thenAnswer(
+          (_) async => {
+            'status': 'ACTIVE',
+            'expires_at':
+                DateTime.now().add(const Duration(days: 30)).toIso8601String(),
+          },
+        );
+        when(() => localDataSource.updateDownloadStatus('download-1', 'downloading'))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.updateProgress('download-1', any()))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.updateDownload('download-1', any()))
+            .thenAnswer((_) async {});
+        when(() => encryptionService.retrieveKey('download-1'))
+            .thenAnswer((_) async => 'existing-key');
+        when(() => encryptionService.storeKey('download-1', 'existing-key'))
+            .thenAnswer((_) async {});
+        when(() => encryptionService.calculateChecksum(any()))
+            .thenAnswer((_) async => 'checksum');
+        when(() => manifestService.markRunning('download-1'))
+            .thenAnswer((_) async {});
+        when(() => manifestService.markCompleted('download-1'))
+            .thenAnswer((_) async {});
+        when(() => manifestService.getVerifiedChunkIndexes(any()))
+            .thenAnswer((_) async => <int>{});
+        when(() => downloadManager.startEncryptedDownload(
+              url: any(named: 'url'),
+              encryptedSavePath: any(named: 'encryptedSavePath'),
+              encryptionKeyBase64: any(named: 'encryptionKeyBase64'),
+              onProgress: any(named: 'onProgress'),
+              downloadId: any(named: 'downloadId'),
+              headers: any(named: 'headers'),
+              sourceUrl: any(named: 'sourceUrl'),
+              qualityLabel: any(named: 'qualityLabel'),
+              trackType: any(named: 'trackType'),
+              onPlanCreated: any(named: 'onPlanCreated'),
+              onChunkCommitted: any(named: 'onChunkCommitted'),
+              completedChunkIndexes: any(named: 'completedChunkIndexes'),
+              lessonId: any(named: 'lessonId'),
+            )).thenAnswer((invocation) async {
+          final savePath =
+              invocation.namedArguments[#encryptedSavePath] as String?;
+          if (savePath != null) {
+            await File(savePath).writeAsBytes([1, 2, 3]);
+          }
+          final onProgress =
+              invocation.namedArguments[#onProgress] as ProgressCallback;
+          onProgress(3, 3);
+          return invocation.namedArguments[#downloadId] as String? ??
+              'download-1';
+        });
+
+        final result = await repositoryWithManifest.resumeDownload('download-1');
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+
+        expect(result.isRight(), isTrue);
+        verify(() => encryptionService.storeKey('download-1', 'existing-key'))
+            .called(1);
+        verifyNever(() => encryptionService.generateEncryptionKey());
+        verifyNever(() => manifestService.deleteForDownload(any()));
+        verifyNever(() => localDataSource.deleteEncryptedFile(any()));
+      },
+    );
 
     test(
       'resumeDownload rejects a download that is already completed '

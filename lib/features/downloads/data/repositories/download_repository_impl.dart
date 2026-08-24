@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fpdart/fpdart.dart';
@@ -339,8 +338,17 @@ class DownloadRepositoryImpl implements DownloadRepository {
         return const Right(null);
       }
       if (currentStatus != 'downloading') {
-        return Left(InvalidDownloadStateFailure( // check-ignore
-          'Cannot pause a download in status "$currentStatus"',
+        // Internal diagnostic string, not user-facing copy: every non-
+        // network Failure (this one included) is normalized by
+        // FailureToAppException.toAppException() into a plain
+        // ServerException(message), and ErrorHandler.getMessage() maps
+        // every ServerException to the localized l10n.errorGeneric string
+        // rather than ever displaying its raw .message -- see that
+        // method's own comment for why (it was a prior real bug this
+        // codebase already fixed once). This message only ever reaches
+        // logs/tests, never a screen.
+        return Left(InvalidDownloadStateFailure(
+          'Cannot pause a download in status "$currentStatus"', // check-ignore
         ));
       }
 
@@ -380,8 +388,10 @@ class DownloadRepositoryImpl implements DownloadRepository {
       // `failed -> downloading` (retry) are legal entries into resume.
       final currentStatus = downloadData['download_status'] as String?;
       if (currentStatus != 'paused' && currentStatus != 'failed') {
-        return Left(InvalidDownloadStateFailure( // check-ignore
-          'Cannot resume a download in status "$currentStatus"',
+        // See the matching comment in pauseDownload above: this string is
+        // never shown to the user either, for the same reason.
+        return Left(InvalidDownloadStateFailure(
+          'Cannot resume a download in status "$currentStatus"', // check-ignore
         ));
       }
 
@@ -468,13 +478,31 @@ class DownloadRepositoryImpl implements DownloadRepository {
 
       final existingKey = await _encryptionService.retrieveKey(downloadId);
       if (existingKey == null) {
-        for (final path in [
-          '$encryptedPath.tmp',
-          if (audioPath != null) '$audioPath.tmp',
-        ]) {
-          final tmpFile = File(path);
-          if (await tmpFile.exists()) await tmpFile.delete();
-        }
+        // The encryption key that produced whatever bytes already sit at
+        // encryptedPath/audioPath is gone -- generating a *new* key below
+        // and resuming as if this were an ordinary interrupted download
+        // would silently corrupt the file rather than just waste work.
+        // The chunked pipeline (DownloadManager.startEncryptedDownload,
+        // driven by _manifestService.getVerifiedChunkIndexes inside
+        // _downloadTrackEncrypted below) treats every chunk index the
+        // manifest already marked 'verified' as done and reuses whatever
+        // ciphertext already occupies that byte range in the final file
+        // instead of re-fetching it. Those bytes were encrypted under the
+        // OLD (now-unrecoverable) key; every chunk fetched from this point
+        // on would be encrypted under the NEW key -- producing a single
+        // file whose byte ranges are encrypted under two different keys.
+        // Nothing at download-completion time would catch this: the
+        // checksum DownloadExecutionService computes afterward is a hash
+        // of whatever bytes exist on disk, not a decryptability check --
+        // so this would only surface as a GCM authentication failure deep
+        // into offline playback, long after the download reported itself
+        // "completed". Deleting every on-disk artifact (final file, `.tmp`,
+        // `.idx` -- via the same _cleanupDownloadFiles helper cancel/delete
+        // already use) and the manifest's chunk/session rows for this
+        // downloadId forces an honest full re-download under the one new
+        // key instead of a silently corrupted hybrid file.
+        await _cleanupDownloadFiles(encryptedPath, audioPath);
+        await _manifestService?.deleteForDownload(downloadId);
       }
       final encryptionKey =
           existingKey ?? _encryptionService.generateEncryptionKey();

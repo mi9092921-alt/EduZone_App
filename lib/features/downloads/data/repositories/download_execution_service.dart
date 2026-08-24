@@ -122,7 +122,16 @@ class DownloadExecutionService {
   /// `DownloadStatusPresentation`'s identical rationale.
   static String classifyDownloadFailure(Object error) {
     if (error is FileSystemException) {
-      final message = '${error.message} ${error.osError?.message ?? ''}'
+      // False-positive guard note: the local variable below just
+      // concatenates two interpolated dart:io error fields
+      // (error.message / error.osError?.message) to run a lowercase
+      // .contains() keyword check a few lines down -- internal
+      // classification logic, never rendered to a user. The localization
+      // guard's hardcoded-string pattern for a constructor's own default
+      // value happens to also match a plain local variable assignment
+      // when that variable is named the same way, so the line is marked
+      // below with a trailing suppression comment after conscious review.
+      final message = '${error.message} ${error.osError?.message ?? ''}' // check-ignore
           .toLowerCase();
       if (message.contains('no space left') ||
           message.contains('enospc') ||
