@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../data/datasources/player4_remote_ds.dart';
@@ -10,6 +11,20 @@ part 'player4_provider.g.dart';
 Player4RemoteDataSource player4RemoteDataSource(Ref ref) {
   return Player4RemoteDataSource();
 }
+
+class Player4PendingLessonIdNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void setLessonId(String? id) {
+    state = id;
+  }
+}
+
+final player4PendingLessonIdProvider =
+    NotifierProvider.autoDispose<Player4PendingLessonIdNotifier, String?>(
+  Player4PendingLessonIdNotifier.new,
+);
 
 @riverpod
 class Player4VideoInfo extends _$Player4VideoInfo {
@@ -30,7 +45,11 @@ class Player4VideoInfo extends _$Player4VideoInfo {
     final link = ref
         .keepAlive(); // check-ignore: content-keyed and self-expiring; not user-scoped
 
-    final info = await remoteDataSource.getVideoInfo(videoId);
+    final lessonId = ref.read(player4PendingLessonIdProvider);
+    final info = await remoteDataSource.getVideoInfo(
+      videoId,
+      lessonId: lessonId,
+    );
 
     // Auto-invalidate when the cached streaming URLs expire.
     if (info.cacheExpiresAt != null) {

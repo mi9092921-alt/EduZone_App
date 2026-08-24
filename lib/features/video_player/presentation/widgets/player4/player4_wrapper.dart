@@ -177,6 +177,15 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
       _hasError = false;
     });
 
+    // Must be set before invalidate/read below: Player4VideoInfo.build
+    // reads this synchronously on entry to forward lesson-scoped
+    // authorization to the video-info Edge Function. See
+    // player4PendingLessonIdProvider for why this is a side-channel
+    // provider rather than a second family parameter.
+    ref
+        .read(player4PendingLessonIdProvider.notifier)
+        .setLessonId(widget.lessonId);
+
     try {
       if (forceRefresh) {
         ref.invalidate(player4VideoInfoProvider(videoId));

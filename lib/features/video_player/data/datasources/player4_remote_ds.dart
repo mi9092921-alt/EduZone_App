@@ -29,7 +29,20 @@ class Player4RemoteDataSource {
   /// connectivity/timeout failures -- not for a real `FunctionException`
   /// (a definite 4xx/5xx from the function itself, which retrying
   /// blindly would not fix).
-  Future<StreamingVideoInfo> getVideoInfo(String videoId) async {
+  ///
+  /// [lessonId], when supplied, is forwarded as `lesson_id` so the
+  /// `video-info` Edge Function re-runs its own `get_lesson_content`
+  /// authorization check and resolves the URL from the lesson record
+  /// itself rather than trusting the client-supplied `url` -- closing the
+  /// "authenticated but not entitled to this specific lesson" gap for the
+  /// streaming player (see supabase/functions/video-info/index.ts). It
+  /// stays optional because some callers may not yet have a lesson context;
+  /// when omitted, the function falls back to its authenticated+rate-limited
+  /// (but not lesson-scoped) gate, same as before this change.
+  Future<StreamingVideoInfo> getVideoInfo(
+    String videoId, {
+    String? lessonId,
+  }) async {
     final videoUrl = 'https://www.youtube.com/watch?v=$videoId';
     return NetworkGuard.read(
       () async {
@@ -38,7 +51,11 @@ class Player4RemoteDataSource {
 
           final response = await _client.functions.invoke(
             'video-info',
-            body: {'url': videoUrl},
+            body: {
+              'url': videoUrl,
+              if (lessonId != null && lessonId.trim().isNotEmpty)
+                'lesson_id': lessonId,
+            },
           );
 
           // If we reach here, status is guaranteed 200-299.
