@@ -634,8 +634,44 @@ class StorageService {
   }
 
   /// Updates the download status.
+  ///
+  /// Guards against illegal status regressions once a download has reached
+  /// `'completed'` (download state machine — see
+  /// download-subsystem-production-hardening-plan.md Phase 3: `completed ->
+  /// paused` and `completed -> downloading` are explicitly disallowed
+  /// transitions). This closes a real race, not just a theoretical one:
+  /// `DownloadRepositoryImpl.pauseDownload`/`resumeDownload`/`cancelDownload`
+  /// call this method without first checking the row's current status, so a
+  /// pause/cancel/resume call that races with `DownloadExecutionService.
+  /// execute()` finishing (which writes `'completed'` through
+  /// [updateDownload], not through this method) could otherwise silently
+  /// downgrade a fully-downloaded, checksummed, encrypted file's status back
+  /// to `'paused'`/`'failed'`/`'downloading'` in SQLite -- making
+  /// `OfflinePolicyEngine` deny playback of content that is actually present
+  /// and valid on disk, or making `resumeDownload` re-run the download
+  /// pipeline over a file that was already complete. `'completed'` has no
+  /// legitimate exit through this single-field method; the only sanctioned
+  /// way out of it is deletion ([deleteDownload]).
   Future<void> updateDownloadStatus(String id, String status) async {
     final db = await database;
+
+    if (status != 'completed') {
+      final current = await db.query(
+        _tableDownloadedLessons,
+        columns: ['download_status'],
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      if (current.isNotEmpty && current.first['download_status'] == 'completed') {
+        debugPrint(
+          '[StorageService] Ignored illegal status transition '
+          'completed -> $status for download $id',
+        );
+        return;
+      }
+    }
+
     final changes = {'download_status': status};
     final signature = await _signAfterMerge(db, id, changes);
     await db.update(

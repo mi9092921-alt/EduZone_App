@@ -284,9 +284,20 @@ void main() {
 
     test('updateDownloadStatus re-signs so verification still passes',
         () async {
-      await insertRow(service);
+      // 'downloading' (not the default 'completed'): this exercises a
+      // legal transition. The illegal-transition guard added below has
+      // its own dedicated group and must not change what this test
+      // verifies.
+      await insertRow(service, status: 'downloading');
       await service.updateDownloadStatus('dl_signed', 'failed');
 
+      final db = await service.database;
+      final rows = await db.query(
+        'downloaded_lessons',
+        where: 'id = ?',
+        whereArgs: ['dl_signed'],
+      );
+      expect(rows.first['download_status'], equals('failed'));
       expect(await service.verifyDownloadSignature('dl_signed'), isTrue);
     });
 
@@ -295,6 +306,54 @@ void main() {
       await service.updateDownload('dl_signed', {'user_id': 'user_b'});
 
       expect(await service.verifyDownloadSignature('dl_signed'), isTrue);
+    });
+
+    group('updateDownloadStatus illegal-transition guard (download state '
+        'machine, hardening plan Phase 3)', () {
+      // Regression coverage for DownloadRepositoryImpl.pauseDownload /
+      // resumeDownload / cancelDownload racing DownloadExecutionService.
+      // execute() finishing: none of those call sites check the row's
+      // current status before writing, so without this guard a pause tap
+      // that lands just after a download actually completes would
+      // silently downgrade a valid, fully-downloaded row back to
+      // 'paused'/'failed'/'downloading'.
+      for (final illegalTarget in ['paused', 'failed', 'downloading']) {
+        test(
+          'completed -> $illegalTarget is ignored, row stays completed',
+          () async {
+            await insertRow(service);
+
+            await service.updateDownloadStatus('dl_signed', illegalTarget);
+
+            final db = await service.database;
+            final rows = await db.query(
+              'downloaded_lessons',
+              where: 'id = ?',
+              whereArgs: ['dl_signed'],
+            );
+            expect(rows.first['download_status'], equals('completed'));
+            // The row was left untouched, so its original signature (from
+            // insertDownload) must still verify.
+            expect(await service.verifyDownloadSignature('dl_signed'), isTrue);
+          },
+        );
+      }
+
+      test('downloading -> paused is a legal transition and still applies',
+          () async {
+        await insertRow(service, status: 'downloading');
+
+        await service.updateDownloadStatus('dl_signed', 'paused');
+
+        final db = await service.database;
+        final rows = await db.query(
+          'downloaded_lessons',
+          where: 'id = ?',
+          whereArgs: ['dl_signed'],
+        );
+        expect(rows.first['download_status'], equals('paused'));
+        expect(await service.verifyDownloadSignature('dl_signed'), isTrue);
+      });
     });
 
     test(
