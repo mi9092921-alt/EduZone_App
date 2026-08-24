@@ -294,12 +294,19 @@ class DownloadRepositoryImpl implements DownloadRepository {
       // NoInternetException/RequestTimeoutException directly (see
       // download_remote_ds.dart's NetworkExceptionMapper wiring), not
       // only ServerException. The previous `on ServerException catch`
-      // special-case meant those fell through to the generic
-      // `UnknownFailure(e.toString())` branch below, losing the
-      // connectivity classification one layer above where it was just
-      // established -- the same class of gap fixed for
+      // special-case meant those fell through to a generic
+      // `UnknownFailure(e.toString())` branch, losing the connectivity
+      // classification one layer above where it was just established --
+      // the same class of gap fixed for
       // courses/home/notifications/todo/video_player. `failureFromError`
-      // preserves it consistently with those.
+      // preserves it consistently with those. Every other catch-all in
+      // this file (and in download_query_service.dart) now goes through
+      // the same classifier for the same reason -- see
+      // download-subsystem-production-hardening-plan.md Phase 14 (Error
+      // Taxonomy): a caught SocketException/TimeoutException/etc. must
+      // reach the provider/UI layer as NetworkFailure/RequestTimeoutFailure,
+      // not collapse into an indistinguishable UnknownFailure the moment
+      // it crosses this boundary.
       return Left(failureFromError(e));
     } finally {
       // Release as soon as the synchronous "claim this lessonId" purpose
@@ -361,7 +368,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       await DownloadNotificationHelper.cancel(downloadId: downloadId);
       return const Right(null);
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -540,7 +547,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
 
       return const Right(null);
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -594,7 +601,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
 
       return const Right(null);
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -684,7 +691,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
 
       return const Right(null);
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -742,7 +749,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
         },
       );
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 

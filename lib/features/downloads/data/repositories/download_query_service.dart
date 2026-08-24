@@ -56,7 +56,7 @@ class DownloadQueryService {
       }
       return Right(downloads);
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -70,7 +70,7 @@ class DownloadQueryService {
       }
       return Right(_mapToEntity(data));
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -84,7 +84,7 @@ class DownloadQueryService {
       }
       return Right(_mapToEntity(data));
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -96,7 +96,7 @@ class DownloadQueryService {
       final downloads = downloadsData.map((data) => _mapToEntity(data)).toList();
       return Right(downloads);
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -108,7 +108,7 @@ class DownloadQueryService {
       final downloads = downloadsData.map((data) => _mapToEntity(data)).toList();
       return Right(downloads);
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -132,7 +132,7 @@ class DownloadQueryService {
       }
       return Right(expired);
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -141,7 +141,7 @@ class DownloadQueryService {
       final totalBytes = await _localDataSource.getTotalStorageUsed();
       return Right(totalBytes);
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
@@ -150,7 +150,7 @@ class DownloadQueryService {
       await _localDataSource.updateLastAccessed(downloadId);
       return const Right(null);
     } catch (e) {
-      return Left(UnknownFailure(e.toString()));
+      return Left(failureFromError(e));
     }
   }
 
