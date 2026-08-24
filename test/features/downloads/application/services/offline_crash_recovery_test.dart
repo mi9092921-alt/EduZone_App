@@ -229,4 +229,138 @@ void main() {
       expect(count, equals(0));
     });
   });
+
+  group('reconcileMissingCompletedFiles', () {
+    test('leaves a completed row alone when its file still exists',
+        () async {
+      final videoPath = '${tempDir.path}/present.mp4.enc';
+      File(videoPath).writeAsBytesSync([1]);
+      when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
+          .thenAnswer(
+        (_) async => [
+          {
+            'id': 'dl_present',
+            'download_status': 'completed',
+            'encrypted_path': videoPath,
+            'audio_path': null,
+          },
+        ],
+      );
+
+      final count = await recovery.reconcileMissingCompletedFiles();
+
+      expect(count, equals(0));
+      verifyNever(() => localDataSource.updateDownloadStatus(any(), any()));
+    });
+
+    test('reclassifies a completed row to failed when its file is gone',
+        () async {
+      final videoPath = '${tempDir.path}/gone.mp4.enc';
+      // Deliberately never created — simulates external deletion of a
+      // file whose row was never told about it.
+      when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
+          .thenAnswer(
+        (_) async => [
+          {
+            'id': 'dl_gone',
+            'download_status': 'completed',
+            'encrypted_path': videoPath,
+            'audio_path': null,
+          },
+        ],
+      );
+
+      final count = await recovery.reconcileMissingCompletedFiles();
+
+      expect(count, equals(1));
+      verify(() => localDataSource.updateDownloadStatus('dl_gone', 'failed'))
+          .called(1);
+    });
+
+    test('reclassifies a dual-track completed row when only the audio '
+        'file is missing', () async {
+      final videoPath = '${tempDir.path}/dual_video.mp4.enc';
+      final audioPath = '${tempDir.path}/dual_audio.m4a.enc';
+      File(videoPath).writeAsBytesSync([1]);
+      // audioPath deliberately never created.
+      when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
+          .thenAnswer(
+        (_) async => [
+          {
+            'id': 'dl_dual',
+            'download_status': 'completed',
+            'encrypted_path': videoPath,
+            'audio_path': audioPath,
+          },
+        ],
+      );
+
+      final count = await recovery.reconcileMissingCompletedFiles();
+
+      expect(count, equals(1));
+      verify(() => localDataSource.updateDownloadStatus('dl_dual', 'failed'))
+          .called(1);
+    });
+
+    test('never touches pending, downloading, paused, or already-failed '
+        'rows regardless of whether their file exists', () async {
+      when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
+          .thenAnswer(
+        (_) async => [
+          {
+            'id': 'dl_pending',
+            'download_status': 'pending',
+            'encrypted_path': '${tempDir.path}/does_not_exist_pending.enc',
+            'audio_path': null,
+          },
+          {
+            'id': 'dl_downloading',
+            'download_status': 'downloading',
+            'encrypted_path':
+                '${tempDir.path}/does_not_exist_downloading.enc',
+            'audio_path': null,
+          },
+          {
+            'id': 'dl_paused',
+            'download_status': 'paused',
+            'encrypted_path': '${tempDir.path}/does_not_exist_paused.enc',
+            'audio_path': null,
+          },
+          {
+            'id': 'dl_failed',
+            'download_status': 'failed',
+            'encrypted_path': '${tempDir.path}/does_not_exist_failed.enc',
+            'audio_path': null,
+          },
+        ],
+      );
+
+      final count = await recovery.reconcileMissingCompletedFiles();
+
+      expect(count, equals(0));
+      verifyNever(() => localDataSource.updateDownloadStatus(any(), any()));
+    });
+
+    test('treats a null/empty encrypted_path on a completed row as missing',
+        () async {
+      when(() => localDataSource.getDownloads(scopeToCurrentUser: false))
+          .thenAnswer(
+        (_) async => [
+          {
+            'id': 'dl_null_path',
+            'download_status': 'completed',
+            'encrypted_path': null,
+            'audio_path': null,
+          },
+        ],
+      );
+
+      final count = await recovery.reconcileMissingCompletedFiles();
+
+      expect(count, equals(1));
+      verify(() =>
+              localDataSource.updateDownloadStatus('dl_null_path', 'failed'))
+          .called(1);
+    });
+  });
 }

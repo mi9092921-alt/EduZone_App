@@ -223,4 +223,75 @@ class OfflineCrashRecovery {
     }
     return deleted;
   }
+
+  /// Scans every `completed` download row and reclassifies it to `failed`
+  /// if its own encrypted file (or, for a dual-track download, its audio
+  /// file) is no longer present on disk — download-subsystem-production-
+  /// hardening-plan.md, "Manifest + Crash Recovery", the "DB exists + file
+  /// missing" mandatory case. This is the one case in that list the other
+  /// three [OfflineCrashRecovery] methods don't already cover: 7c only
+  /// reclassifies rows still stuck in `pending`/`downloading`, and 7d only
+  /// ever deletes a file that *no* row claims — neither one notices a
+  /// `completed` row whose file has actually disappeared out from under
+  /// it (OS-level storage cleanup, manual filesystem tampering, an
+  /// external app-data wipe of just this directory, or any I/O fault that
+  /// removed the file without also updating the row).
+  ///
+  /// Without this pass such a row sits in the Downloads list forever
+  /// showing "Completed" — the normal, playable state — right up until
+  /// the user actually taps play and [OfflinePolicyEngine] denies it with
+  /// [OfflinePlaybackDenialReason.missingFile]. That denial is still the
+  /// correct, fail-safe outcome (the policy engine is the single
+  /// authorization/integrity gate, not this class — see Phase 8 of the
+  /// hardening plan), but the tile itself is misleading in the meantime
+  /// and gives the user no "tap to retry" affordance the way a `failed`
+  /// download does. This pass only ever corrects that displayed status;
+  /// it never deletes anything and never touches the encryption key —
+  /// the normal delete/retry flow already owns that cleanup once the user
+  /// acts on the corrected `failed` tile.
+  ///
+  /// Best-effort and non-blocking, same reasoning as the three methods
+  /// above: a failure to check or update one row must never stop startup
+  /// or block reconciliation of the others, and whatever isn't caught
+  /// this run is simply retried on the next app start.
+  ///
+  /// Returns the number of rows reconciled.
+  Future<int> reconcileMissingCompletedFiles() async {
+    var reconciled = 0;
+    try {
+      final rows = await _localDataSource.getDownloads(
+        scopeToCurrentUser: false,
+      );
+
+      for (final row in rows) {
+        final status = row['download_status'] as String?;
+        if (status != 'completed') continue;
+
+        final id = row['id'] as String?;
+        if (id == null || id.isEmpty) continue;
+
+        final encryptedPath = row['encrypted_path'] as String?;
+        final audioPath = row['audio_path'] as String?;
+
+        try {
+          final encryptedMissing = encryptedPath == null ||
+              encryptedPath.isEmpty ||
+              !await File(encryptedPath).exists();
+          final audioMissing = audioPath != null &&
+              audioPath.isNotEmpty &&
+              !await File(audioPath).exists();
+          if (!encryptedMissing && !audioMissing) continue;
+
+          await _localDataSource.updateDownloadStatus(id, 'failed');
+          reconciled++;
+        } catch (_) {
+          // Leave the row as-is for the next app start to retry.
+        }
+      }
+    } catch (_) {
+      // Non-fatal — reading rows failed; retried on the next app start
+      // rather than blocking startup.
+    }
+    return reconciled;
+  }
 }

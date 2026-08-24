@@ -259,6 +259,42 @@ class AppInitializer {
         }
       }());
 
+      // 7e. download-subsystem-production-hardening-plan.md, "Manifest +
+      // Crash Recovery" — the "DB exists + file missing" mandatory case,
+      // the one entry in that list 7c/7d don't already cover between them
+      // (7c only reclassifies pending/downloading rows; 7d only deletes
+      // files no row claims). A `completed` row whose file has actually
+      // disappeared (external storage cleanup, manual tampering, an
+      // I/O fault) would otherwise sit in the Downloads list looking
+      // fully playable until the user taps it and OfflinePolicyEngine
+      // denies it at playback time — the correct fail-safe outcome, but
+      // with no "tap to retry" affordance in the meantime. See
+      // OfflineCrashRecovery.reconcileMissingCompletedFiles's doc comment.
+      unawaited(() async {
+        final missingFilesStorageService =
+            StorageService(secureStorage: hardenedSecureStorage);
+        try {
+          return await OfflineCrashRecovery(
+            localDataSource:
+                DownloadLocalDataSource(missingFilesStorageService),
+          ).reconcileMissingCompletedFiles();
+        } catch (e, stack) {
+          debugPrint(
+            '⚠️ Missing completed-download file reconciliation failed: '
+            '${e.runtimeType}',
+          );
+          // A failure here means a "completed" tile can keep silently
+          // pointing at a file that no longer exists, with nothing
+          // surfaced to diagnose why the next playback attempt fails.
+          GlobalErrorHandler.logError(e, stack);
+          return 0;
+        } finally {
+          try {
+            await missingFilesStorageService.close();
+          } catch (_) {}
+        }
+      }());
+
     } catch (e) {
       debugPrint('CRITICAL INITIALIZATION ERROR: ${e.runtimeType}');
       // Re-throw to be caught by runZonedGuarded
