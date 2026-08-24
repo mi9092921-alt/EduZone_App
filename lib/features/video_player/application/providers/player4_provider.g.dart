@@ -98,7 +98,7 @@ final class Player4VideoInfoProvider
   }
 }
 
-String _$player4VideoInfoHash() => r'b02e9fa3911bffa90b1b9a306e823b14e62ea1d8';
+String _$player4VideoInfoHash() => r'ecbd71928ad0ae6c953fabef6f47f2c5541b7007';
 
 final class Player4VideoInfoFamily extends $Family
     with

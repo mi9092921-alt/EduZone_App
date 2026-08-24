@@ -335,7 +335,7 @@ final class TodoNotifierProvider
   }
 }
 
-String _$todoNotifierHash() => r'63531d3ebedf3262c35df3989d6b2eb7cc1db098';
+String _$todoNotifierHash() => r'b8c7cd02e2d44d1426a98ccf95426e442c378190';
 
 abstract class _$TodoNotifier extends $Notifier<TodoState> {
   TodoState build();

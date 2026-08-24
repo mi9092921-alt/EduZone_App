@@ -249,7 +249,7 @@ final class VideoProgressProvider
   }
 }
 
-String _$videoProgressHash() => r'7b1835ad7d79011397354494277bba9787c611b0';
+String _$videoProgressHash() => r'4e3f262ddab7c756a15031abf96875dbb9fd18f8';
 
 /// Manages video playback progress state and debounced DB sync.
 ///

@@ -28,11 +28,9 @@ class SavedCoursesScreen extends ConsumerWidget {
       // explicitly to guarantee it appears regardless of the entry point.
       leading: BackButton(onPressed: () => context.pop()),
       onRefresh: () async {
-        ref.invalidate(savedCoursesProvider);
         ref.invalidate(bookmarkedCoursesProvider);
       },
       onRetry: () {
-        ref.invalidate(savedCoursesProvider);
         ref.invalidate(bookmarkedCoursesProvider);
       },
       error: savedCoursesAsync.hasError ? l10n.failedToLoadCourses : null,

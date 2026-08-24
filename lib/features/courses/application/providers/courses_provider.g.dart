@@ -694,7 +694,7 @@ final class MyCoursesProvider
   }
 }
 
-String _$myCoursesHash() => r'bc4006f677447f7bcc86bb45d93c30ab1e2a27b7';
+String _$myCoursesHash() => r'7d7ac92ebffcf2e268e6ff537264c5d970dd8cc4';
 
 /// Returns whether the current user is enrolled in the given [courseId].
 ///
@@ -851,7 +851,7 @@ final class CourseDetailsProvider
   }
 }
 
-String _$courseDetailsHash() => r'3c608810662ef36eddbbf3bbde00e8ba2565347a';
+String _$courseDetailsHash() => r'527147dd72136189a50894ddd87bc9763854bd5e';
 
 final class CourseDetailsFamily extends $Family
     with $FunctionalFamilyOverride<FutureOr<Course>, String> {
@@ -926,7 +926,7 @@ final class LessonContentProvider
   }
 }
 
-String _$lessonContentHash() => r'9937487552d600c03f9e08c9f26c5d05d8272561';
+String _$lessonContentHash() => r'c1b716c4df623a0f4831db90f1ac4a168f38e62b';
 
 final class LessonContentFamily extends $Family
     with $FunctionalFamilyOverride<FutureOr<LessonContent>, String> {
@@ -1018,7 +1018,7 @@ final class UserSubscriptionsProvider
   UserSubscriptions create() => UserSubscriptions();
 }
 
-String _$userSubscriptionsHash() => r'ff8f6323fad76b01a6afd261ab789964b26c93dc';
+String _$userSubscriptionsHash() => r'82d750aac65f369298c7d5572641e5b043ac0451';
 
 abstract class _$UserSubscriptions extends $AsyncNotifier<Set<String>> {
   FutureOr<Set<String>> build();
@@ -1062,7 +1062,7 @@ final class PublicCoursesProvider
   PublicCourses create() => PublicCourses();
 }
 
-String _$publicCoursesHash() => r'0c79946a48ba4d7d8b026cd1c7d250f7a87a7540';
+String _$publicCoursesHash() => r'2165ec1d1389f43e93f0a973090ed699cf634ecd';
 
 abstract class _$PublicCourses extends $AsyncNotifier<PaginatedCoursesState> {
   FutureOr<PaginatedCoursesState> build();
@@ -1145,7 +1145,7 @@ final class MyCourseEnrollmentProvider
 }
 
 String _$myCourseEnrollmentHash() =>
-    r'1bda80c644b7e4bdd6c3bd903854920768e5a327';
+    r'1ec6bfa7fa194223b8f50fe966cded42544c00fe';
 
 final class MyCourseEnrollmentFamily extends $Family
     with $FunctionalFamilyOverride<FutureOr<CourseEnrollment?>, String> {
@@ -1239,7 +1239,7 @@ final class CourseProgressProvider
   }
 }
 
-String _$courseProgressHash() => r'4e537c3aca9c9ae09d5a2096ad60b3307df717f5';
+String _$courseProgressHash() => r'8fc34a4d57a9c834831659418a942acea72edf21';
 
 /// Aggregated progress for a single course (Global stats).
 ///
@@ -1308,7 +1308,7 @@ final class BookmarkedCoursesProvider
   BookmarkedCourses create() => BookmarkedCourses();
 }
 
-String _$bookmarkedCoursesHash() => r'6771ea70c10aa1df4da553c4ac55f3633f13c1a9';
+String _$bookmarkedCoursesHash() => r'c1babdac38417471335f7e063bca2456b55b70a3';
 
 /// Device-local bookmarked course IDs for the current user.
 ///
@@ -1378,4 +1378,4 @@ final class SavedCoursesProvider
   }
 }
 
-String _$savedCoursesHash() => r'30ef411bde45096012939dff4d269a6bb97fb279';
+String _$savedCoursesHash() => r'cefabc186d9495bd51ee124f2a293b7ed7fdde42';

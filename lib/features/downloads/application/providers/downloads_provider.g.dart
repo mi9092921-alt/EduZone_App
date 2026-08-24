@@ -58,7 +58,7 @@ final class EncryptionServiceProvider
   }
 }
 
-String _$encryptionServiceHash() => r'f808f8ea2933177ce53275ce0640bb46caebbb59';
+String _$encryptionServiceHash() => r'2e93d5ce620ffa6ae3fef32442767b8f16e3deda';
 
 /// Provides the DownloadManager instance.
 
@@ -273,7 +273,7 @@ final class DownloadRepositoryProvider
 }
 
 String _$downloadRepositoryHash() =>
-    r'92439a3ca641b0beb1247c167ffb9a1d6cfd5595';
+    r'317dc777fd67b03eb58a237214c22ef947389baa';
 
 /// Provides the StartDownloadUseCase instance.
 
@@ -624,7 +624,7 @@ final class DownloadsNotifierProvider
   DownloadsNotifier create() => DownloadsNotifier();
 }
 
-String _$downloadsNotifierHash() => r'b1b1e1e7c205990b9953be05309f120a77c73230';
+String _$downloadsNotifierHash() => r'26cae9f6a396b01534e496e0752b838947e22c06';
 
 /// Notifier for managing the list of downloaded lessons.
 

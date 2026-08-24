@@ -10,24 +10,27 @@ part of 'app_state_provider.dart';
 // ignore_for_file: type=lint, type=warning
 /// Derives [AppAuthState] from the sealed [AuthState] hierarchy.
 ///
-/// This is the ONLY provider the router watches. All 7 AppAuthState
-/// values are now reachable — fixing the dead-branch router bug.
+/// This is the ONLY provider the router watches. Every [AppAuthState]
+/// value is reachable from some [AuthState] branch below — fixing the
+/// dead-branch router bug.
 
 @ProviderFor(appState)
 final appStateProvider = AppStateProvider._();
 
 /// Derives [AppAuthState] from the sealed [AuthState] hierarchy.
 ///
-/// This is the ONLY provider the router watches. All 7 AppAuthState
-/// values are now reachable — fixing the dead-branch router bug.
+/// This is the ONLY provider the router watches. Every [AppAuthState]
+/// value is reachable from some [AuthState] branch below — fixing the
+/// dead-branch router bug.
 
 final class AppStateProvider
     extends $FunctionalProvider<AppAuthState, AppAuthState, AppAuthState>
     with $Provider<AppAuthState> {
   /// Derives [AppAuthState] from the sealed [AuthState] hierarchy.
   ///
-  /// This is the ONLY provider the router watches. All 7 AppAuthState
-  /// values are now reachable — fixing the dead-branch router bug.
+  /// This is the ONLY provider the router watches. Every [AppAuthState]
+  /// value is reachable from some [AuthState] branch below — fixing the
+  /// dead-branch router bug.
   AppStateProvider._()
     : super(
         from: null,
@@ -61,4 +64,4 @@ final class AppStateProvider
   }
 }
 
-String _$appStateHash() => r'81893b42ac6c0ba198c81269768f3b90a573e82f';
+String _$appStateHash() => r'146a08ab4132571b0c899e1fb8762c0d02e8fede';

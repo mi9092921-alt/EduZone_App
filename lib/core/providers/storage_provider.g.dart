@@ -14,6 +14,14 @@ part of 'storage_provider.dart';
 /// Previously defined inside the downloads feature; moved here so that
 /// multiple features (downloads, bookmarks) can depend on it without
 /// cross-feature imports.
+///
+/// Passes real secure storage explicitly (rather than relying on a
+/// default inside `StorageService`) so the security-critical download
+/// metadata this service writes (`security_signature`, P6.22/P6.23) is
+/// actually signed in production — `StorageService`'s own constructor
+/// deliberately treats a missing secure storage as "skip signing" rather
+/// than throwing, exactly so tests and other lightweight instances keep
+/// working without a platform channel.
 
 @ProviderFor(storageService)
 final storageServiceProvider = StorageServiceProvider._();
@@ -24,6 +32,14 @@ final storageServiceProvider = StorageServiceProvider._();
 /// Previously defined inside the downloads feature; moved here so that
 /// multiple features (downloads, bookmarks) can depend on it without
 /// cross-feature imports.
+///
+/// Passes real secure storage explicitly (rather than relying on a
+/// default inside `StorageService`) so the security-critical download
+/// metadata this service writes (`security_signature`, P6.22/P6.23) is
+/// actually signed in production — `StorageService`'s own constructor
+/// deliberately treats a missing secure storage as "skip signing" rather
+/// than throwing, exactly so tests and other lightweight instances keep
+/// working without a platform channel.
 
 final class StorageServiceProvider
     extends $FunctionalProvider<StorageService, StorageService, StorageService>
@@ -34,6 +50,14 @@ final class StorageServiceProvider
   /// Previously defined inside the downloads feature; moved here so that
   /// multiple features (downloads, bookmarks) can depend on it without
   /// cross-feature imports.
+  ///
+  /// Passes real secure storage explicitly (rather than relying on a
+  /// default inside `StorageService`) so the security-critical download
+  /// metadata this service writes (`security_signature`, P6.22/P6.23) is
+  /// actually signed in production — `StorageService`'s own constructor
+  /// deliberately treats a missing secure storage as "skip signing" rather
+  /// than throwing, exactly so tests and other lightweight instances keep
+  /// working without a platform channel.
   StorageServiceProvider._()
     : super(
         from: null,
@@ -67,4 +91,4 @@ final class StorageServiceProvider
   }
 }
 
-String _$storageServiceHash() => r'62cbe9319bc400f2f78b16bce45d667585b592a2';
+String _$storageServiceHash() => r'38dd7a117b60a9e81c502d0b845483e3945f8d58';

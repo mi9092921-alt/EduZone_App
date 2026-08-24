@@ -306,7 +306,10 @@ class BookmarkedCourses extends _$BookmarkedCourses {
     ++_buildGeneration;
     final getBookmarkedCourseIds = ref.watch(getBookmarkedCourseIdsProvider);
     final result = await getBookmarkedCourseIds();
-    return result.fold((_) => <String>{}, (ids) => ids);
+    return result.fold(
+      (failure) => throw failure.toAppException(),
+      (ids) => ids,
+    );
   }
 
   /// Toggles the bookmark state for [courseId].
@@ -352,9 +355,7 @@ class BookmarkedCourses extends _$BookmarkedCourses {
 /// Re-evaluates automatically whenever the user adds or removes a bookmark.
 @riverpod
 Future<List<Course>> savedCourses(Ref ref) async {
-  final bookmarksAsync = ref.watch(bookmarkedCoursesProvider);
-  final bookmarkIds = bookmarksAsync.asData?.value ?? <String>{};
-
+  final bookmarkIds = await ref.watch(bookmarkedCoursesProvider.future);
   if (bookmarkIds.isEmpty) return const [];
 
   final getCoursesByIds = ref.watch(getCoursesByIdsProvider);

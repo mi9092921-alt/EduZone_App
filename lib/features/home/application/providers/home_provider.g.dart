@@ -135,7 +135,7 @@ final class ResumeLessonProvider
   }
 }
 
-String _$resumeLessonHash() => r'bfe3e83f29a02d96b3a773d89375b93351b358f6';
+String _$resumeLessonHash() => r'67718fb574c0b1f727040ef5bebbde34b3efcd9b';
 
 @ProviderFor(recentCourses)
 final recentCoursesProvider = RecentCoursesProvider._();
@@ -176,7 +176,7 @@ final class RecentCoursesProvider
   }
 }
 
-String _$recentCoursesHash() => r'4edd3a101e3e63fcf8c149653ba0fdd3ace7f0e0';
+String _$recentCoursesHash() => r'69ffe7ffa3a1547d9b351cfc7b0a8437eade85d3';
 
 @ProviderFor(recentTodos)
 final recentTodosProvider = RecentTodosProvider._();
@@ -217,4 +217,4 @@ final class RecentTodosProvider
   }
 }
 
-String _$recentTodosHash() => r'2d885e8fc1461b12f712d270806800463b0bb094';
+String _$recentTodosHash() => r'093d27d3b2d87f147f379115c5b788656566dffa';

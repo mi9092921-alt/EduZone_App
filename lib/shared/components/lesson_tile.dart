@@ -71,13 +71,9 @@ class LessonTile extends StatelessWidget {
   }
 
   Widget _buildLeading(DesignSystemColors ds) {
-    if (isLocked) {
-      return Icon(Icons.lock_outline_rounded, color: ds.textMuted, size: 22);
-    }
-
     return Icon(
       Icons.play_circle_outline_rounded,
-      color: ds.primary.withValues(alpha: 0.6),
+      color: isLocked ? ds.textMuted : ds.primary.withValues(alpha: 0.6),
       size: 22,
     );
   }
