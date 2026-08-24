@@ -193,6 +193,40 @@ would require swapping Supabase's HTTP transport for a cancellable one,
 which is out of scope for a networking-timeout hardening pass and has
 not been attempted here.
 
+## Streaming playback authorization (`video-info`)
+
+`video-info` (Edge Function) resolves a YouTube URL/lesson to a set of
+downloadable stream formats and is shared by two callers: the downloads
+subsystem (`DownloadRemoteDataSource`) and streaming playback
+(`Player4RemoteDataSource`, `Player4Wrapper`). Both now forward
+`lesson_id`, which makes the function re-run `get_lesson_content`'s own
+authorization (enrollment/preview/teacher/admin-aware) and resolve the
+playable URL from the lesson record itself — the client-supplied `url`
+is discarded once `lesson_id` is present and valid. Before this, an
+authenticated-but-unauthorized user who obtained another lesson's
+YouTube URL by any other means (e.g. a shared link, prior network
+inspection) could still get that lesson's stream formats from
+`Player4RemoteDataSource`, because that call site sent `url` only. It now
+sets `player4PendingLessonIdProvider` (a side-channel Riverpod provider,
+not a second family parameter — chosen specifically to avoid hand-editing
+the generated `Player4VideoInfoProvider` family scaffolding in this
+sandbox, where no Flutter toolchain is available to run `build_runner`)
+from `Player4Wrapper.lessonId`, a required, non-nullable constructor
+field, before every read/invalidate of `player4VideoInfoProvider`.
+
+`lesson_id` is deliberately kept optional at the Edge Function's API
+level rather than hard-required (a missing/invalid `lesson_id` still
+falls back to the authenticated + `check_rate_limit`-bounded gate, not a
+`400`), because one real call path still cannot supply it:
+`handleTokenRefresh` (`lib/features/downloads/data/services/download_manager.dart`),
+background_downloader's own pre-attempt hook, runs from a background
+isolate against `Task.metaData` that does not currently carry
+`lesson_id`. That remaining gap is real and open — not silently assumed
+closed — and closing it requires threading `lesson_id` through
+`background_downloader`'s task metadata, a separate follow-up not made
+in this pass. Every other known caller in this app (both download-side
+call sites and the streaming path) now always sends it.
+
 ## Device integrity (freeRASP)
 
 Configured in `lib/core/security/freerasp_config.dart`. Detects
@@ -414,6 +448,41 @@ the same way `getDownloadedLessons` already was, so a leftover row from a
 previous account on a shared device (if `OfflineAccountGuard`'s
 best-effort purge hasn't run yet) can't block a different, legitimately
 entitled account from starting its own download.
+
+### Storage handling — no device-free-space check (Plan Phase 10)
+
+`startDownload` (`DownloadRepositoryImpl`) rejects a new download only
+against a hardcoded 2 GB **app-level quota**
+(`totalStorageUsed + estimatedTotal > maxStorageBytes`) — there is no
+check anywhere in this codebase against the **device's actual free
+disk space**. Verified by exhaustive search: no disk-space plugin is a
+pubspec dependency, and no platform-channel code queries free space.
+A user with less than 2 GB truly free (a near-full device, or an
+`appQuota` set below what's actually available/needed) can still start
+a download that runs out of real disk space mid-write. This is a real,
+open gap, not silently assumed closed — it was not fixed in this pass
+because closing it properly requires either a new plugin dependency or
+hand-written native (Kotlin/Swift) platform-channel code, and this
+sandbox has neither Flutter-toolchain access to verify a plugin resolves
+and compiles, nor a way to build/run native code to verify it behaves
+correctly — the same reasoning this document already applies to leaving
+the Sentry `beforeSend` callback signature unverified above. What *was*
+made fail-safe instead, reactively rather than proactively: when a
+write genuinely does hit `ENOSPC`/"no space left on device", it's now
+classified as `'storage_full'` (`DownloadExecutionService
+.classifyDownloadFailure`, distinguished from `'network'`/`'filesystem'`/
+`'unknown'`) and reported as a `DownloadFailedEvent` through the same
+`EventBus` → `AuditHandler` pipeline every other download-security event
+in this section already uses — previously a download failure of any
+kind (network, disk-full, corrupt chunk) was reported nowhere but a
+`kDebugMode`-only `debugPrint`. This makes disk-full failures visible in
+production telemetry; it does not prevent them from happening. The exact
+remediation for a future session with a real Flutter/pub.dev/native
+build environment: add a free-disk-space query (either a maintained
+plugin, verified to resolve and build first, or a small native platform
+channel) and gate `startDownload` on
+`min(deviceFree - safetyMargin, appQuota - currentUsage)` per the
+hardening plan's Phase 10.
 
 ## Logging and observability (Section 15)
 

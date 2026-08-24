@@ -165,10 +165,20 @@ This session completed the full integration of the downloads feature into the Ed
 - downloads, downloadLesson, selectQuality
 - downloading, paused, completed, failed
 - pauseDownload, resumeDownload, cancelDownload, deleteDownload
-- downloadExpired, subscriptionExpired, insufficientStorage
-- wifiOnlyDownload, offlineAccessDenied
+- downloadExpired, wifiOnlyDownload, offlineAccessDenied
 - storageUsed, autoDeleteAfter30Days
 - downloadProgress, estimatedSize
+
+> **Correction (production audit, see `CHANGELOG.md`/`SECURITY.md`):**
+> `subscriptionExpired` and `insufficientStorage` were listed here as
+> "Added" but were never actually implemented — no such ARB key exists in
+> `lib/core/l10n/arb/app_en.arb`/`app_ar.arb`, and no widget references
+> them. This was a documentation/implementation mismatch (Section 37),
+> not a since-removed feature. Storage-quota rejection currently surfaces
+> only as a generic `StorageFailure` (see below) with no dedicated
+> localized message or UI affordance; see `SECURITY.md`, "Storage
+> handling — no device-free-space check", for the honestly-tracked gap
+> this points to.
 
 ### 7. Error Handling ✅
 

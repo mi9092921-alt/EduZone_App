@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
+import '../../../../core/logging/infrastructure/event_bus.dart';
 import '../../../../core/services/encryption_service.dart';
 import '../../domain/entities/download_enums.dart';
 import '../../domain/entities/download_progress.dart';
@@ -82,6 +83,11 @@ class DownloadRepositoryImpl implements DownloadRepository {
     required DownloadManager downloadManager,
     required EncryptionService encryptionService,
     DownloadManifestService? manifestService,
+    // P8.13/Section 15 telemetry: optional and defaults to null (no
+    // events emitted) so every existing construction site, including
+    // every existing test, keeps working unchanged. See
+    // DownloadExecutionService's constructor doc comment.
+    EventBus? eventBus,
     Uuid? uuid,
   })  : _remoteDataSource = remoteDataSource,
         _localDataSource = localDataSource,
@@ -102,6 +108,7 @@ class DownloadRepositoryImpl implements DownloadRepository {
       downloadManager: downloadManager,
       encryptionService: encryptionService,
       manifestService: _manifestService,
+      eventBus: eventBus,
       // Shared by reference with this repository's own session-state
       // fields — see the field-level doc comment above.
       progressControllers: _progressControllers,

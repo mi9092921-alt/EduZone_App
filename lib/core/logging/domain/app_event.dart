@@ -347,6 +347,47 @@ class OfflinePlaybackAuthorizedEvent extends AppEvent {
   String get entityId => downloadId;
 }
 
+/// Emitted when [DownloadExecutionService.execute] terminates in the
+/// `catch` branch — i.e. a download actually failed, as opposed to being
+/// paused or cancelled (both handled separately and never reach here).
+///
+/// Previously this class of failure (network error, disk-full, corrupt
+/// chunk, storage-quota rejection, or anything else `execute()`'s
+/// try/catch could see) was reported nowhere but a `kDebugMode`-only
+/// `debugPrint` — no Sentry, no audit trail, no way to see download
+/// failure rates in production at all. [reason] is a coarse,
+/// machine-readable classification (`'storage_full'`, `'network'`,
+/// `'unknown'` — see `_classifyDownloadFailure` in
+/// `download_execution_service.dart`), deliberately not the raw
+/// exception text, to keep this event's `details` free of paths/URLs by
+/// construction rather than by remembering to scrub them at each call
+/// site — the same discipline `OfflinePlaybackDeniedEvent.reason` above
+/// already follows.
+class DownloadFailedEvent extends AppEvent {
+  final String downloadId;
+  final String reason;
+
+  const DownloadFailedEvent({
+    required super.timestamp,
+    super.userId,
+    super.tenantId,
+    super.deviceId,
+    required this.downloadId,
+    required this.reason,
+  });
+
+  @override
+  String get activityType => 'offline_download.download_failed';
+  @override
+  EventCategory get category => EventCategory.download;
+  @override
+  EventRiskLevel get riskLevel => EventRiskLevel.medium;
+  @override
+  String get entityId => downloadId;
+  @override
+  Map<String, dynamic> get details => {'reason': reason};
+}
+
 // ─── Todo Events ────────────────────────────────────────────────────────────
 
 class TodoCreatedEvent extends AppEvent {

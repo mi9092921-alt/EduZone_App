@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../../../core/logging/logging_providers.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/providers/storage_provider.dart';
 import '../../../../core/security/secure_storage_config.dart';
@@ -63,6 +64,10 @@ DownloadRepository downloadRepository(Ref ref) {
     manifestService: DownloadManifestService(
       localDataSource: ref.watch(downloadLocalDataSourceProvider),
     ),
+    // P8.13/Section 15 telemetry — wires download failure outcomes into
+    // the same EventBus → AuditHandler pipeline already used by
+    // auth/courses/todo/offline-playback (see DownloadFailedEvent).
+    eventBus: ref.watch(eventBusProvider),
   );
 }
 

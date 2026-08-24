@@ -3,7 +3,11 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../../core/logging/domain/app_event.dart';
+import '../../../../core/logging/infrastructure/event_bus.dart';
+import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/encryption_service.dart';
+import '../../../../core/utils/device_info_helper.dart';
 import '../../domain/entities/download_enums.dart';
 import '../../domain/entities/download_progress.dart';
 import '../../domain/entities/download_session.dart';
@@ -39,6 +43,9 @@ class DownloadExecutionService {
   final DownloadManager _downloadManager;
   final EncryptionService _encryptionService;
   final DownloadManifestService? _manifestService;
+  final EventBus? _eventBus;
+  final String? Function() _currentUserId;
+  final String? Function() _deviceFingerprint;
 
   // Shared session state, owned by DownloadRepositoryImpl and passed by
   // reference so this service and the repository observe the same state.
@@ -54,6 +61,14 @@ class DownloadExecutionService {
     required DownloadManager downloadManager,
     required EncryptionService encryptionService,
     DownloadManifestService? manifestService,
+    // P8.13/Section 15 telemetry: optional and defaults to null (no-op on
+    // emit, matching OfflinePolicyEngine's identical convention below) so
+    // every existing construction site, including every existing test,
+    // keeps working unchanged. Production wiring passes
+    // `ref.watch(eventBusProvider)` — see `downloads_provider.dart`.
+    EventBus? eventBus,
+    String? Function()? currentUserId,
+    String? Function()? deviceFingerprint,
     required Map<String, StreamController<DownloadProgress>>
         progressControllers,
     required Map<String, String> downloadManagerIds,
@@ -65,11 +80,62 @@ class DownloadExecutionService {
         _downloadManager = downloadManager,
         _encryptionService = encryptionService,
         _manifestService = manifestService,
+        _eventBus = eventBus,
+        _currentUserId = currentUserId ?? _defaultCurrentUserId,
+        _deviceFingerprint = deviceFingerprint ?? _defaultDeviceFingerprint,
         _progressControllers = progressControllers,
         _downloadManagerIds = downloadManagerIds,
         _pausedDownloads = pausedDownloads,
         _cancelledDownloads = cancelledDownloads,
         _changeController = changeController;
+
+  static String? _defaultCurrentUserId() {
+    try {
+      return SupabaseService.client.auth.currentUser?.id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String? _defaultDeviceFingerprint() {
+    try {
+      return DeviceInfoHelper.fingerprint;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Coarse, machine-readable classification of a download failure for
+  /// [DownloadFailedEvent.reason] — deliberately not the raw exception
+  /// text (see that class's doc comment for why). Covers the one
+  /// filesystem condition this app can distinguish without a native
+  /// free-disk-space plugin (none is present in this codebase — see
+  /// `SECURITY.md`/`CHANGELOG.md`, "Storage Management" follow-up): the
+  /// underlying write actually hit ENOSPC/"no space left on device",
+  /// surfaced by `dart:io` as a [FileSystemException] whose message
+  /// mentions it (Linux/Android errno 28, and the equivalent macOS/iOS
+  /// message text). This is reactive (after the write already failed),
+  /// not the proactive free-space *check* Phase 10 of the download
+  /// hardening plan calls for — that remains open, tracked below. Public
+  /// (not `_`-prefixed) specifically so it's independently unit-testable
+  /// without needing a full `execute()` run, mirroring
+  /// `DownloadStatusPresentation`'s identical rationale.
+  static String classifyDownloadFailure(Object error) {
+    if (error is FileSystemException) {
+      final message = '${error.message} ${error.osError?.message ?? ''}'
+          .toLowerCase();
+      if (message.contains('no space left') ||
+          message.contains('enospc') ||
+          error.osError?.errorCode == 28) {
+        return 'storage_full';
+      }
+      return 'filesystem';
+    }
+    if (error is SocketException || error is TimeoutException) {
+      return 'network';
+    }
+    return 'unknown';
+  }
 
   /// Downloads [url] into [encryptedSavePath] through the pipelined
   /// download-and-encrypt-in-one-pass path.
@@ -410,6 +476,18 @@ class DownloadExecutionService {
       if (kDebugMode) debugPrint('❌ BACKGROUND DOWNLOAD ERROR: $e\n$stack');
       await _localDataSource.updateDownloadStatus(downloadId, 'failed');
       _changeController.add(null);
+      final failureReason = classifyDownloadFailure(e);
+      // P8.13/Section 15 telemetry: previously this class of failure was
+      // reported nowhere but the debugPrint above (dev-only). See
+      // DownloadFailedEvent's doc comment for why `reason` is a coarse
+      // classification, not `e.toString()`.
+      _eventBus?.emit(DownloadFailedEvent(
+        timestamp: DateTime.now(),
+        userId: _currentUserId(),
+        deviceId: _deviceFingerprint(),
+        downloadId: downloadId,
+        reason: failureReason,
+      ));
       controller.add(DownloadProgress(
         downloadId: downloadId,
         lessonId: lessonId,

@@ -8,6 +8,70 @@
 ## [Unreleased]
 
 ### Added / Fixed
+- **Observability (Section 15 / P8.13 — Download failure telemetry)**:
+  `DownloadExecutionService.execute`'s failure path (network error,
+  disk-full, corrupt chunk, or anything else its `catch` block could see)
+  was previously reported nowhere but a `kDebugMode`-only `debugPrint` —
+  no Sentry, no audit trail, no way to see download failure rates or
+  causes in production at all, despite the downloads subsystem already
+  having full `EventBus`/`AuditHandler` wiring for playback
+  authorization (`OfflinePlaybackDeniedEvent`/`OfflinePlaybackAuthorizedEvent`).
+  Added `DownloadFailedEvent` (`lib/core/logging/domain/app_event.dart`)
+  and a new public, independently unit-tested
+  `DownloadExecutionService.classifyDownloadFailure` helper that
+  distinguishes `'storage_full'` (real `ENOSPC`/"no space left on
+  device", detected via `FileSystemException`/`OSError.errorCode == 28`
+  or message text — this is reactive, not the proactive device-free-space
+  *check* Plan Phase 10 calls for, which remains a separate, honestly
+  documented open gap; see `SECURITY.md`), `'network'`, `'filesystem'`,
+  and `'unknown'`. `EventBus` is threaded as a new optional constructor
+  parameter through `DownloadExecutionService` → `DownloadRepositoryImpl`
+  → `downloads_provider.dart` (`ref.watch(eventBusProvider)`), following
+  the exact optional/backward-compatible convention
+  `OfflinePolicyEngine` already established — every existing construction
+  site, including every existing test, keeps working unchanged. New
+  regression test:
+  `test/features/downloads/data/repositories/download_failure_classification_test.dart`.
+  Not independently re-verified with `flutter analyze`/`flutter test` in
+  this session (no Flutter/Dart toolchain available in this environment)
+  — statically inspected only.
+- **Docs (Section 37 — Documentation integrity)**:
+  `lib/features/downloads/IMPLEMENTATION_SUMMARY.md` claimed
+  `subscriptionExpired`/`insufficientStorage` as "Added" localized
+  strings; neither exists anywhere in `app_en.arb`/`app_ar.arb` or any
+  widget. Corrected in place rather than silently deleted, per Section
+  37 — documentation must reflect actual implementation, and a stale
+  "done" claim is exactly the kind of gap this audit process exists to
+  catch.
+
+- **Security (Downloads/Streaming — `video-info` lesson authorization,
+  P6 Wave A / Section 8 downstream)**: `Player4RemoteDataSource.getVideoInfo`
+  (streaming playback) was the last caller of the `video-info` Edge
+  Function still sending only the raw YouTube `url`, meaning an
+  authenticated user who obtained another lesson's video URL by any
+  other means could still get its stream formats without being
+  entitled to that lesson — every other caller (the downloads
+  subsystem's initial format lookup, resume link-refresh, mid-download
+  link-refresh, and the quality-selector preflight in
+  `sections_accordion.dart`) already sent `lesson_id`. `Player4Wrapper`
+  now sets a new side-channel provider, `player4PendingLessonIdProvider`
+  (`lib/features/video_player/application/providers/player4_provider.dart`),
+  from its required `lessonId` field before every read/invalidate of
+  `player4VideoInfoProvider`, and `Player4VideoInfo.build` forwards it to
+  `getVideoInfo`. A side-channel provider was used instead of adding a
+  second family parameter specifically to avoid hand-editing the
+  Riverpod-generated `Player4VideoInfoProvider` family scaffolding
+  outside of `build_runner` (no Flutter toolchain available in this
+  audit environment). `video-info` (`supabase/functions/video-info/index.ts`)
+  already re-runs `get_lesson_content`'s authorization and resolves the
+  URL from the lesson record itself when `lesson_id` is present,
+  discarding the client-supplied `url`. See `SECURITY.md`, "Streaming
+  playback authorization (`video-info`)", for the full boundary,
+  including the one remaining honestly-documented gap
+  (`handleTokenRefresh`'s background_downloader pre-attempt hook still
+  cannot supply `lesson_id`). Not independently re-verified with
+  `flutter analyze`/`flutter test` in this session (no Flutter/Dart
+  toolchain available in this environment) — statically inspected only.
 - **Reliability (Section 13 — Networking Reliability)**: audited every
   Supabase Postgrest/RPC/Auth/Edge-Function call site against the
   established `NetworkConfig`/`NetworkGuard`/`NetworkExceptionMapper`
@@ -281,9 +345,10 @@
 - **`video-info` (Edge Function)**: كانت الدالة بلا أي مصادقة إطلاقًا (CORS
   مفتوح للجميع)، فيستطيع أي مستخدم غير مسجّل على الإنترنت استدعاءها بأي رابط
   يوتيوب واستهلاك الـ Replit API الخارجي المدفوع بلا حدود. أُضيفت بوابة
-  مصادقة (`auth.getUser()`) بنفس نمط `get-lesson-content`. **لم تُغلق بعد**:
-  التحقق من كون المستخدم المسجّل يملك حق فعلي على الفيديو المحدد تحديدًا
-  (الدالة لا تستقبل `lesson_id`) — يحتاج تغيير API contract مستقبلًا. منشور: v20.
+  مصادقة (`auth.getUser()`) بنفس نمط `get-lesson-content`. منشور: v20.
+  **تحديث لاحق:** تم إغلاق فجوة التحقق من ملكية الفيديو المحدد أيضًا — راجع
+  قسم "Streaming playback authorization" في `SECURITY.md` والإدخال ضمن
+  `[Unreleased]` أعلاه.
 
 ### Automation
 - **Chore**: إضافة سير عمل GitHub Actions جديد `update-goldens.yml` لتسهيل تحديث الـ Goldens.
