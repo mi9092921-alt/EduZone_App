@@ -35,10 +35,17 @@ class Player4RemoteDataSource {
   /// authorization check and resolves the URL from the lesson record
   /// itself rather than trusting the client-supplied `url` -- closing the
   /// "authenticated but not entitled to this specific lesson" gap for the
-  /// streaming player (see supabase/functions/video-info/index.ts). It
-  /// stays optional because some callers may not yet have a lesson context;
-  /// when omitted, the function falls back to its authenticated+rate-limited
-  /// (but not lesson-scoped) gate, same as before this change.
+  /// streaming player (see supabase/functions/video-info/index.ts).
+  ///
+  /// Verified 2026-08-24: this parameter is optional at the API level only
+  /// as a defensive contract. The sole current caller, `Player4Wrapper`,
+  /// declares `lessonId` as a required (non-nullable) field and always
+  /// sets `player4PendingLessonIdProvider` from it before this method runs
+  /// -- so in the current codebase every call is already lesson-scoped.
+  /// If a future caller is added without a lesson context, it will silently
+  /// fall back to the authenticated+rate-limited (not lesson-scoped) gate;
+  /// treat any new caller that omits [lessonId] as a finding to review, not
+  /// as expected behavior.
   Future<StreamingVideoInfo> getVideoInfo(
     String videoId, {
     String? lessonId,

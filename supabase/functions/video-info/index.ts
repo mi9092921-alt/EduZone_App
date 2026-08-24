@@ -194,13 +194,20 @@ serve(async (req) => {
     // and then discards the client-supplied `url` entirely in favor of the
     // URL the lesson record itself points to — an authenticated user can no
     // longer resolve formats for a lesson they don't have access to, even
-    // if they already know its YouTube URL by other means. `lesson_id` is
-    // intentionally optional, not required: Player4RemoteDataSource
-    // (streaming playback, a separate Riverpod-generated provider family)
-    // still calls this function URL-only and continues to rely on the
-    // authenticated+rate-limited gate below until it is migrated in a
-    // follow-up change; that residual gap is tracked, not silently assumed
-    // closed.
+    // if they already know its YouTube URL by other means.
+    //
+    // Verified 2026-08-24: Player4RemoteDataSource (streaming playback)
+    // also forwards `lesson_id` now — its sole caller, Player4Wrapper, holds
+    // `lessonId` as a required (non-nullable) constructor field and sets
+    // player4PendingLessonIdProvider from it before every
+    // player4VideoInfoProvider read, so every production code path already
+    // reaches this branch lesson-scoped. `lesson_id` stays an optional
+    // parameter at the API/DTO level (defensive contract, not a live gap):
+    // it lets this function keep serving a request safely with the
+    // authenticated+rate-limited-only gate below if some future caller
+    // genuinely has no lesson context yet, without a hard failure. Do not
+    // reinterpret "optional field" as "unauthorized path in current use" —
+    // re-check both call sites above before loosening this comment further.
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
