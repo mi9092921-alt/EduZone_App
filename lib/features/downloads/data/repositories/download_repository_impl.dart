@@ -310,6 +310,33 @@ class DownloadRepositoryImpl implements DownloadRepository {
   @override
   Future<Either<Failure, void>> pauseDownload(String downloadId) async {
     try {
+      // Source-of-truth guard: `StorageService.updateDownloadStatus` already
+      // refuses to write a status regression once a row is `'completed'`,
+      // but it does so silently (fire-and-forget from here) -- this method
+      // would still return `Right(null)` to the caller even though nothing
+      // changed, and it would still tear down the manager task / cancel the
+      // notification / emit a change event for a download that is actually
+      // fine. Checking the persisted status first, before touching anything
+      // else, means a stale UI event (button built against a status that
+      // flipped to `completed` a moment later) surfaces as an explicit
+      // [InvalidDownloadStateFailure] instead of a false-success no-op. Only
+      // `downloading -> paused` is a legal transition here; `paused ->
+      // paused` is treated as an idempotent success rather than an error,
+      // since a duplicate tap on an already-paused row is not a bug.
+      final downloadData = await _localDataSource.getDownloadById(downloadId);
+      if (downloadData == null) {
+        return const Left(NotFoundFailure('Download not found')); // check-ignore
+      }
+      final currentStatus = downloadData['download_status'] as String?;
+      if (currentStatus == 'paused') {
+        return const Right(null);
+      }
+      if (currentStatus != 'downloading') {
+        return Left(InvalidDownloadStateFailure( // check-ignore
+          'Cannot pause a download in status "$currentStatus"',
+        ));
+      }
+
       final managerDownloadId = _downloadManagerIds[downloadId] ?? downloadId;
       _pausedDownloads.add(downloadId);
       await _downloadManager.pauseDownload(managerDownloadId);
@@ -330,6 +357,25 @@ class DownloadRepositoryImpl implements DownloadRepository {
 
       if (downloadData == null) {
         return const Left(NotFoundFailure('Download not found')); // check-ignore
+      }
+
+      // Source-of-truth guard: without this, a call racing with
+      // `DownloadExecutionService.execute()` finishing (or a duplicated
+      // resume tap on a `downloading`/`completed` row) fell through to the
+      // link-refresh + `_executionService.execute(...)` call below
+      // unconditionally -- re-running the download pipeline over a file
+      // that was already complete, or starting a second concurrent
+      // execution for a download that is already running. The SQLite-level
+      // guard in `StorageService.updateDownloadStatus` stops the *status
+      // column* from regressing off `'completed'`, but does not stop this
+      // method from still kicking off a real download run against that
+      // same `encryptedPath`/`audioPath`. Only `paused -> downloading` and
+      // `failed -> downloading` (retry) are legal entries into resume.
+      final currentStatus = downloadData['download_status'] as String?;
+      if (currentStatus != 'paused' && currentStatus != 'failed') {
+        return Left(InvalidDownloadStateFailure( // check-ignore
+          'Cannot resume a download in status "$currentStatus"',
+        ));
       }
 
       final title = downloadData['title'] as String? ?? 'Lesson';

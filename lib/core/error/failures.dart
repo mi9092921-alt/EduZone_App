@@ -56,6 +56,19 @@ class UnknownFailure extends Failure {
   const UnknownFailure(super.message);
 }
 
+/// A lifecycle action (pause/resume/cancel/...) was requested against a
+/// resource that is not currently in a state the action is legal for --
+/// e.g. resuming a download that is already `completed`, or pausing one
+/// that already `failed`. Kept distinct from [UnknownFailure] so callers
+/// (providers/UI) can tell "your request was well-formed but doesn't apply
+/// right now" apart from "something actually went wrong", and so a denial
+/// here is never silently swallowed into a reported success. See
+/// download-subsystem-production-hardening-plan.md Phase 3 (illegal
+/// download-status transitions) for the motivating case.
+class InvalidDownloadStateFailure extends Failure {
+  const InvalidDownloadStateFailure(super.message);
+}
+
 /// Reconstructs the typed [AppException] a [Failure] was derived from, so
 /// call sites that must re-throw across an `Either<Failure, T>` boundary
 /// (Riverpod providers built on top of a repository) don't have to fall

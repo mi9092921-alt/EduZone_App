@@ -2,6 +2,7 @@
 
 import 'dart:io';
 
+import 'package:app/core/error/failures.dart';
 import 'package:app/core/services/encryption_service.dart';
 import 'package:app/features/downloads/data/datasources/download_local_ds.dart';
 import 'package:app/features/downloads/data/datasources/download_remote_ds.dart';
@@ -237,6 +238,170 @@ void main() {
             trackType: any(named: 'trackType'),
           )).called(1);
     });
+
+    test(
+      'resumeDownload rejects a download that is already completed '
+      '(illegal completed -> downloading transition)',
+      () async {
+        final existingDownload = {
+          'id': 'download-1',
+          'lesson_id': 'lesson-1',
+          'course_id': 'course-1',
+          'title': 'Test lesson',
+          'local_path': '/tmp/encrypted-path',
+          'encrypted_path': '/tmp/encrypted-path',
+          'video_url': 'https://example.com/video.mp4',
+          'quality': VideoQuality.p720.label,
+          'file_size': 12345,
+          'download_status': DownloadStatus.completed.name,
+          'progress': 100.0,
+          'downloaded_at': DateTime.now().millisecondsSinceEpoch,
+          'expires_at':
+              DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch,
+          'checksum': 'checksum',
+          'last_accessed_at': null,
+          'entitlement_id': 'ent-1',
+          'server_status': 'ACTIVE',
+        };
+
+        when(() => localDataSource.getDownloadById('download-1'))
+            .thenAnswer((_) async => existingDownload);
+
+        final result = await repository.resumeDownload('download-1');
+
+        expect(result.isLeft(), isTrue);
+        expect(
+          result.getLeft().toNullable(),
+          isA<InvalidDownloadStateFailure>(),
+        );
+        verifyNever(() => remoteDataSource.revalidateOfflineEntitlement(
+              entitlementId: any(named: 'entitlementId'),
+            ));
+        verifyNever(() => downloadManager.startEncryptedDownload(
+              url: any(named: 'url'),
+              encryptedSavePath: any(named: 'encryptedSavePath'),
+              encryptionKeyBase64: any(named: 'encryptionKeyBase64'),
+              onProgress: any(named: 'onProgress'),
+              downloadId: any(named: 'downloadId'),
+              headers: any(named: 'headers'),
+              sourceUrl: any(named: 'sourceUrl'),
+              qualityLabel: any(named: 'qualityLabel'),
+              trackType: any(named: 'trackType'),
+            ));
+        verifyNever(
+          () => localDataSource.updateDownloadStatus('download-1', 'downloading'),
+        );
+      },
+    );
+
+    test(
+      'resumeDownload rejects a download that is already downloading '
+      '(prevents a concurrent second execution)',
+      () async {
+        final existingDownload = {
+          'id': 'download-1',
+          'lesson_id': 'lesson-1',
+          'course_id': 'course-1',
+          'title': 'Test lesson',
+          'local_path': '/tmp/encrypted-path',
+          'encrypted_path': '/tmp/encrypted-path',
+          'video_url': 'https://example.com/video.mp4',
+          'quality': VideoQuality.p720.label,
+          'file_size': 0,
+          'download_status': DownloadStatus.downloading.name,
+          'progress': 40.0,
+          'downloaded_at': DateTime.now().millisecondsSinceEpoch,
+          'expires_at':
+              DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch,
+          'checksum': null,
+          'last_accessed_at': null,
+          'entitlement_id': 'ent-1',
+          'server_status': 'ACTIVE',
+        };
+
+        when(() => localDataSource.getDownloadById('download-1'))
+            .thenAnswer((_) async => existingDownload);
+
+        final result = await repository.resumeDownload('download-1');
+
+        expect(result.isLeft(), isTrue);
+        expect(
+          result.getLeft().toNullable(),
+          isA<InvalidDownloadStateFailure>(),
+        );
+        verifyNever(() => remoteDataSource.revalidateOfflineEntitlement(
+              entitlementId: any(named: 'entitlementId'),
+            ));
+      },
+    );
+
+    test(
+      'pauseDownload rejects a download that is already completed',
+      () async {
+        final existingDownload = {
+          'id': 'download-1',
+          'download_status': DownloadStatus.completed.name,
+        };
+
+        when(() => localDataSource.getDownloadById('download-1'))
+            .thenAnswer((_) async => existingDownload);
+
+        final result = await repository.pauseDownload('download-1');
+
+        expect(result.isLeft(), isTrue);
+        expect(
+          result.getLeft().toNullable(),
+          isA<InvalidDownloadStateFailure>(),
+        );
+        verifyNever(() => downloadManager.pauseDownload(any()));
+        verifyNever(
+          () => localDataSource.updateDownloadStatus('download-1', 'paused'),
+        );
+      },
+    );
+
+    test(
+      'pauseDownload succeeds for a download that is actively downloading',
+      () async {
+        final existingDownload = {
+          'id': 'download-1',
+          'download_status': DownloadStatus.downloading.name,
+        };
+
+        when(() => localDataSource.getDownloadById('download-1'))
+            .thenAnswer((_) async => existingDownload);
+        when(() => downloadManager.pauseDownload('download-1'))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.updateDownloadStatus('download-1', 'paused'))
+            .thenAnswer((_) async {});
+
+        final result = await repository.pauseDownload('download-1');
+
+        expect(result.isRight(), isTrue);
+        verify(() => downloadManager.pauseDownload('download-1')).called(1);
+        verify(
+          () => localDataSource.updateDownloadStatus('download-1', 'paused'),
+        ).called(1);
+      },
+    );
+
+    test(
+      'pauseDownload is idempotent when the download is already paused',
+      () async {
+        final existingDownload = {
+          'id': 'download-1',
+          'download_status': DownloadStatus.paused.name,
+        };
+
+        when(() => localDataSource.getDownloadById('download-1'))
+            .thenAnswer((_) async => existingDownload);
+
+        final result = await repository.pauseDownload('download-1');
+
+        expect(result.isRight(), isTrue);
+        verifyNever(() => downloadManager.pauseDownload(any()));
+      },
+    );
 
     test('startDownload uses per-format audio_url for dual-track downloads', () async {
       final tempDir = await Directory.systemTemp.createTemp(
