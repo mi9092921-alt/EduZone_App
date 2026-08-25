@@ -110,7 +110,8 @@ class LessonTile extends StatelessWidget {
             shape: const RoundedRectangleBorder(
               borderRadius: AppRadius.xxsBorder,
             ),
-            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: const VisualDensity(horizontal: -3, vertical: -3),
           ),
         ],
 

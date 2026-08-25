@@ -3,54 +3,62 @@ import 'package:app/features/todo/domain/entities/todo_item.dart';
 import 'package:app/features/todo/presentation/extensions/todo_ui_extension.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+TodoItem _todo({
+  DateTime? dueAt,
+  bool isCompleted = false,
+  int priority = 0,
+}) {
+  return TodoItem(
+    id: 'todo-1',
+    userId: 'user-1',
+    tenantId: 'tenant-1',
+    title: 'Test task',
+    dueAt: dueAt,
+    isCompleted: isCompleted,
+    priority: priority,
+  );
+}
+
 void main() {
-  group('TodoUIX Extension Tests', () {
-    final baseTodo = TodoItem(
-      id: '1',
-      userId: 'user_1',
-      tenantId: 'tenant_1',
-      title: 'Test Task',
-      priority: 1,
-      createdAt: DateTime.now(),
-    );
+  group('TodoUIX.isOverdue', () {
+    final now = DateTime(2026, 8, 25, 20);
 
-    test(
-      'isOverdue should return true if dueAt is before now and not completed',
-      () {
-        final now = DateTime(2026, 4, 14, 12);
-        final todo = baseTodo.copyWith(dueAt: DateTime(2026, 4, 14, 11));
-        expect(todo.isOverdue(now), isTrue);
-      },
-    );
+    test('a due date later today is not overdue', () {
+      final todo = _todo(dueAt: DateTime(2026, 8, 25, 0, 1));
 
-    test('isOverdue should return false if dueAt is after now', () {
-      final now = DateTime(2026, 4, 14, 12);
-      final todo = baseTodo.copyWith(dueAt: DateTime(2026, 4, 14, 13));
       expect(todo.isOverdue(now), isFalse);
     });
 
-    test('isOverdue should return false if completed regardless of date', () {
-      final now = DateTime(2026, 4, 14, 12);
-      final todo = baseTodo.copyWith(
-        dueAt: DateTime(2026, 4, 14, 11),
+    test('a due date on the previous calendar day is overdue', () {
+      final todo = _todo(dueAt: DateTime(2026, 8, 24, 23, 59));
+
+      expect(todo.isOverdue(now), isTrue);
+    });
+
+    test('a completed todo is never overdue', () {
+      final todo = _todo(
+        dueAt: DateTime(2026, 8, 24),
         isCompleted: true,
       );
+
       expect(todo.isOverdue(now), isFalse);
     });
+  });
 
-    test('priorityColor should return correct semantic colors', () {
+  group('TodoUIX.priorityColor', () {
+    test('returns correct semantic colors based on priority', () {
       final colors = DesignSystemColors.light();
 
       expect(
-        baseTodo.copyWith(priority: 2).priorityColor(colors),
+        _todo(priority: 2).priorityColor(colors),
         AppColors.error,
       );
       expect(
-        baseTodo.copyWith(priority: 1).priorityColor(colors),
+        _todo(priority: 1).priorityColor(colors),
         AppColors.warning,
       );
       expect(
-        baseTodo.copyWith(priority: 0).priorityColor(colors),
+        _todo().priorityColor(colors),
         AppColors.success,
       );
     });

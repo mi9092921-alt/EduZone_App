@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/components/lesson_tile.dart';
+import '../../../../shared/cross_feature/courses_shared.dart';
 import '../../../courses/domain/entities/course.dart';
-import '../../../courses/domain/entities/lesson.dart';
 
 class LessonsSidebar extends ConsumerWidget {
   final Course course;
@@ -43,9 +43,18 @@ class LessonsSidebar extends ConsumerWidget {
       );
     }
 
-    final isEnrolled = allSections
-        .expand<Lesson>((s) => s.lessons ?? const <Lesson>[])
-        .any((l) => l.hasAccess && !l.isPreview);
+    // NOTE: Do NOT derive enrollment from `Lesson.hasAccess` here — that field
+    // is only ever populated by the `get_course_lessons_with_access` RPC,
+    // which nothing in this app currently calls. `getCourseOutline()` (the
+    // query that actually feeds this screen's `course`) never returns
+    // `has_access`, so `Lesson.hasAccess` silently defaults to `false` for
+    // every lesson, which made every non-preview lesson show as locked
+    // regardless of real enrollment. Use the same backend-verified
+    // `isEnrolledProvider` that `SectionsAccordion`/`course_details_screen`
+    // already rely on instead.
+    final isEnrolled = ref
+        .watch(isEnrolledProvider(course.id))
+        .when(data: (v) => v, loading: () => false, error: (_, _) => false);
 
     return ListView.builder(
       key: const PageStorageKey('lessons_sidebar_list'),
@@ -83,7 +92,7 @@ class LessonsSidebar extends ConsumerWidget {
                   ? lesson.userProgress!.first
                   : null;
               final isCompleted = userProgress?.completed ?? false;
-              final isLocked = !lesson.hasAccess && !lesson.isPreview;
+              final isLocked = !isEnrolled && !lesson.isPreview;
 
               return Material(
                 color: isCurrent ? ds.primarySoft : Colors.transparent,

@@ -6,7 +6,9 @@ import '../../domain/entities/todo_item.dart';
 extension TodoUIX on TodoItem {
   bool isOverdue(DateTime now) {
     if (isCompleted || dueAt == null) return false;
-    return dueAt!.isBefore(now);
+    final dueDate = DateUtils.dateOnly(dueAt!.toLocal());
+    final today = DateUtils.dateOnly(now.toLocal());
+    return dueDate.isBefore(today);
   }
 
   /// Returns the corresponding [Color] based on the task priority.
