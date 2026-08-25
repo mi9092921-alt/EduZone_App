@@ -57,24 +57,10 @@ void main() {
 
   group('SavedCoursesScreen', () {
     testWidgets(
-        'shows shimmer placeholders while getCoursesByIds is still '
-        'resolving for a non-empty bookmark set', (tester) async {
-      // NOTE: `savedCoursesProvider` only stays in its own `AsyncLoading`
-      // state while it is actually awaiting `getCoursesByIds` (i.e. once
-      // there's at least one bookmarked id). If `getBookmarkedCourseIds`
-      // itself is still loading, `savedCoursesProvider` resolves
-      // immediately to `AsyncData([])` instead (see the `bookmarkIds.isEmpty
-      // -> return const []` early-return in courses_provider.dart, which
-      // fires even when the empty set is a stand-in for "not loaded yet",
-      // not a real empty bookmark list) — so an empty-bookmarks-still-
-      // loading setup would flash the *empty state*, not shimmer. That's a
-      // real (separate, pre-existing) provider-layer quirk worth flagging,
-      // not something this test suite should paper over by asserting a
-      // behavior the code doesn't actually have.
+        'shows shimmer placeholders while bookmarks/course data are still '
+        'resolving', (tester) async {
       when(() => repository.getBookmarkedCourseIds())
-          .thenAnswer((_) async => const Right({'course-1'}));
-      when(() => repository.getCoursesByIds(['course-1']))
-          .thenAnswer((_) => Completer<Either<Failure, List<Course>>>().future);
+          .thenAnswer((_) => Completer<Either<Failure, Set<String>>>().future);
 
       await tester.pumpWidget(_wrap(repository));
       await tester.pump();

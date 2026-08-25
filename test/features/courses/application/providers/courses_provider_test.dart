@@ -155,6 +155,23 @@ void main() {
     });
   });
 
+  group('BookmarkedCourses.build()', () {
+    test(
+        'throws a typed AppException (not a silently-empty set) when '
+        'getBookmarkedCourseIds fails — a failed initial fetch must not '
+        'look identical to "genuinely has no bookmarks"', () async {
+      when(() => repository.getBookmarkedCourseIds())
+          .thenAnswer((_) async => const Left(ServerFailure('boom')));
+      final sub = container.listen(bookmarkedCoursesProvider, (_, _) {});
+      addTearDown(sub.close);
+      await _settle();
+
+      final state = container.read(bookmarkedCoursesProvider);
+      expect(state.hasError, isTrue);
+      expect(state.error, isA<ServerException>());
+    });
+  });
+
   group('savedCoursesProvider', () {
     test(
         'does not call getCoursesByIds when there are no bookmarks '
@@ -179,6 +196,32 @@ void main() {
       final result = await container.read(savedCoursesProvider.future);
 
       expect(result.single.id, 'c1');
+    });
+
+    test(
+        'stays in AsyncLoading (never flashes an empty list) while '
+        'bookmarkedCoursesProvider itself is still resolving — regression '
+        'test for the earlier `bookmarksAsync.asData?.value ?? {}` bug, '
+        'where a still-loading bookmark fetch was indistinguishable from '
+        'a genuinely-empty one and made this provider resolve to `[]` '
+        'before the real bookmark ids were known', () async {
+      final completer = Completer<Either<Failure, Set<String>>>();
+      when(() => repository.getBookmarkedCourseIds())
+          .thenAnswer((_) => completer.future);
+
+      final sub = container.listen(savedCoursesProvider, (_, _) {});
+      addTearDown(sub.close);
+      await _settle();
+
+      expect(
+        container.read(savedCoursesProvider).isLoading,
+        isTrue,
+        reason: 'must not have resolved to AsyncData([]) yet',
+      );
+
+      completer.complete(const Right(<String>{}));
+      final result = await container.read(savedCoursesProvider.future);
+      expect(result, isEmpty); // now genuinely empty, and correctly so
     });
   });
 
