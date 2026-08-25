@@ -8,6 +8,31 @@
 ## [Unreleased]
 
 ### Added / Fixed
+- **Security/Resource-safety (Section 20, P6 — Orphaned encryption key on
+  cancel/delete)**: both `DownloadRepositoryImpl.deleteDownload` (the
+  explicit "delete this download" action) and `.cancelDownload` (the
+  explicit "cancel this in-progress download" action) — together the two
+  most frequently exercised delete paths in this subsystem — always
+  deleted the DB row even when `EncryptionService.deleteKey` failed,
+  unlike `CleanupScheduler.runCleanup` and
+  `OfflineAccountGuard.purgeDownloadsForOtherAccounts`, which both already
+  guard against exactly this failure mode: a record-less AES key
+  permanently orphaned in secure storage with nothing left anywhere to
+  find and remove it later (there is no key-enumeration/reconciliation
+  pass anywhere in this codebase — verified by search). Brought both
+  paths in line with the other two: if key deletion fails, the row is
+  left in place (for `cancelDownload`, still correctly flipped to
+  `'failed'` first via its own separate, unaffected try/catch, so it
+  never gets stuck showing "downloading") and a `Left(StorageFailure(...))`
+  is returned instead, which `downloads_provider.dart` already surfaces
+  as a real, retryable error (not a silent no-op) via its existing
+  `AsyncError`/rethrow handling. New regression tests in
+  `test/features/downloads/data/repositories/download_repository_impl_test.dart`
+  — `deleteDownload` previously had no direct test coverage at all, and
+  `cancelDownload`'s existing tests only covered the success path. Not
+  independently re-verified with `flutter analyze`/`flutter test` in this
+  session (no Flutter/Dart toolchain available in this environment) —
+  statically inspected only.
 - **Observability (Section 15 / P8.13 — Download failure telemetry)**:
   `DownloadExecutionService.execute`'s failure path (network error,
   disk-full, corrupt chunk, or anything else its `catch` block could see)

@@ -143,6 +143,131 @@ void main() {
       verify(() => localDataSource.deleteEncryptedFile('/tmp/audio-path.enc.tmp')).called(1);
     });
 
+    // Regression test for cancelDownload's key-deletion-failure guard,
+    // the same fix as deleteDownload's identically-shaped one above (see
+    // CHANGELOG.md "[Unreleased]") applied to this, the fourth and last
+    // remaining place in this codebase that deleted a download's DB row
+    // regardless of whether its AES key deletion actually succeeded.
+    test(
+        'cancelDownload does NOT delete the DB row and returns a Failure '
+        'when key deletion fails, instead of orphaning the key', () async {
+      final existingDownload = {
+        'id': 'download-cancel-key-fail',
+        'lesson_id': 'lesson-1',
+        'course_id': 'course-1',
+        'title': 'Test lesson',
+        'local_path': '/tmp/local-path',
+        'encrypted_path': '/tmp/encrypted-path',
+        'video_url': 'https://example.com/video.mp4',
+        'quality': VideoQuality.p720.label,
+        'file_size': 0,
+        'download_status': DownloadStatus.downloading.name,
+        'progress': 0.4,
+        'downloaded_at': DateTime.now().millisecondsSinceEpoch,
+        'expires_at': DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch,
+        'checksum': null,
+        'last_accessed_at': null,
+      };
+
+      when(() => localDataSource.getDownloadById('download-cancel-key-fail'))
+          .thenAnswer((_) async => existingDownload);
+      when(() => localDataSource.updateDownloadStatus(
+            'download-cancel-key-fail',
+            'failed',
+          )).thenAnswer((_) async {});
+      when(() => localDataSource.deleteEncryptedFile('/tmp/encrypted-path'))
+          .thenAnswer((_) async {});
+      when(() => localDataSource.deleteEncryptedFile('/tmp/encrypted-path.tmp'))
+          .thenAnswer((_) async {});
+      when(() => downloadManager.cancelDownload('download-cancel-key-fail'))
+          .thenAnswer((_) async {});
+      when(() => encryptionService.deleteKey('download-cancel-key-fail'))
+          .thenThrow(Exception('secure storage unavailable')); // check-ignore
+
+      final result = await repository.cancelDownload('download-cancel-key-fail');
+
+      expect(result.isLeft(), isTrue);
+      result.fold(
+        (failure) => expect(failure, isA<StorageFailure>()),
+        (_) => fail('expected a Left(StorageFailure)'),
+      );
+      verifyNever(() => localDataSource.deleteDownload(any()));
+      // The status-flip to 'failed' still happens -- it's a separate,
+      // unrelated try/catch -- so the row is never left stuck showing
+      // "downloading" even though the row itself wasn't removed.
+      verify(() => localDataSource.updateDownloadStatus(
+            'download-cancel-key-fail',
+            'failed',
+          )).called(1);
+    });
+
+    // Regression tests for deleteDownload's key-deletion-failure guard,
+    // added alongside the fix (see CHANGELOG.md "[Unreleased]") that
+    // brought this explicit, user-initiated delete path in line with the
+    // same safety net CleanupScheduler.runCleanup and
+    // OfflineAccountGuard.purgeDownloadsForOtherAccounts already applied:
+    // never delete the DB row if key deletion failed, so the AES key
+    // can't become permanently orphaned in secure storage.
+    group('deleteDownload', () {
+      final existingDownload = {
+        'id': 'download-1',
+        'lesson_id': 'lesson-1',
+        'course_id': 'course-1',
+        'title': 'Test lesson',
+        'local_path': '/tmp/local-path',
+        'encrypted_path': '/tmp/encrypted-path',
+        'video_url': 'https://example.com/video.mp4',
+        'quality': VideoQuality.p720.label,
+        'file_size': 0,
+        'download_status': DownloadStatus.completed.name,
+        'progress': 1.0,
+        'downloaded_at': DateTime.now().millisecondsSinceEpoch,
+        'expires_at': DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch,
+        'checksum': null,
+        'last_accessed_at': null,
+      };
+
+      setUp(() {
+        when(() => localDataSource.getDownloadById('download-1'))
+            .thenAnswer((_) async => existingDownload);
+        when(() => localDataSource.deleteEncryptedFile('/tmp/encrypted-path'))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.deleteEncryptedFile('/tmp/encrypted-path.tmp'))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.deleteEncryptedFile('/tmp/encrypted-path.idx'))
+            .thenAnswer((_) async {});
+      });
+
+      test('deletes files, key, and DB row when key deletion succeeds', () async {
+        when(() => encryptionService.deleteKey('download-1'))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.deleteDownload('download-1'))
+            .thenAnswer((_) async {});
+
+        final result = await repository.deleteDownload('download-1');
+
+        expect(result.isRight(), isTrue);
+        verify(() => encryptionService.deleteKey('download-1')).called(1);
+        verify(() => localDataSource.deleteDownload('download-1')).called(1);
+      });
+
+      test(
+          'does NOT delete the DB row and returns a Failure when key '
+          'deletion fails, instead of orphaning the key', () async {
+        when(() => encryptionService.deleteKey('download-1'))
+            .thenThrow(Exception('secure storage unavailable')); // check-ignore
+
+        final result = await repository.deleteDownload('download-1');
+
+        expect(result.isLeft(), isTrue);
+        result.fold(
+          (failure) => expect(failure, isA<StorageFailure>()),
+          (_) => fail('expected a Left(StorageFailure)'),
+        );
+        verifyNever(() => localDataSource.deleteDownload(any()));
+      });
+    });
+
     test('resumeDownload restarts a stored download from its saved URL', () async {
       final tempDir = await Directory.systemTemp.createTemp('download_repo_test');
       addTearDown(() async {

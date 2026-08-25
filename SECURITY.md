@@ -449,6 +449,20 @@ previous account on a shared device (if `OfflineAccountGuard`'s
 best-effort purge hasn't run yet) can't block a different, legitimately
 entitled account from starting its own download.
 
+`DownloadRepositoryImpl.deleteDownload` and `.cancelDownload` now both
+refuse to delete a download's DB row if deleting its AES key from secure
+storage failed, returning a retryable `StorageFailure` instead —
+matching the guard `CleanupScheduler.runCleanup` and
+`OfflineAccountGuard.purgeDownloadsForOtherAccounts` already apply for
+identically-shaped deletes. Without this, these two paths (the most
+common of the four in this subsystem, since they're the explicit user
+"cancel"/"delete" actions, not a background sweep) could leave an AES key
+permanently orphaned in secure storage with no DB row left anywhere to
+find and remove it — not exploitable on its own (there's no plaintext
+file left for it to decrypt once file deletion has run), but a
+resource-safety gap this codebase otherwise takes seriously enough to
+have already fixed twice before this pass closed the remaining two.
+
 ### Storage handling — no device-free-space check (Plan Phase 10)
 
 `startDownload` (`DownloadRepositoryImpl`) rejects a new download only

@@ -581,6 +581,17 @@ class DownloadRepositoryImpl implements DownloadRepository {
         await _encryptionService.deleteKey(downloadId);
       } catch (e) {
         debugPrint('⚠️ Error deleting key: ${e.runtimeType}');
+        // Same guard as deleteDownload's identical fix (see CHANGELOG.md
+        // "[Unreleased]"): do not delete the DB row if key deletion
+        // failed, or the key becomes permanently orphaned in secure
+        // storage with nothing left to find and remove it later. The
+        // row was already marked 'failed' above regardless (separate
+        // try/catch, unaffected by this one), so it doesn't get stuck
+        // showing "downloading" -- the user can retry cancel/delete on
+        // it once secure storage is available again.
+        return const Left(
+          StorageFailure('Could not cancel download. Please try again.'), // check-ignore
+        );
       }
 
       await _localDataSource.deleteDownload(downloadId);
@@ -667,10 +678,25 @@ class DownloadRepositoryImpl implements DownloadRepository {
       final audioPath = downloadData['audio_path'] as String?;
       await _cleanupDownloadFiles(encryptedPath, audioPath);
 
+      // Do NOT delete the DB row below if key deletion fails -- leave the
+      // record in place so the user (via the resulting Failure surfaced
+      // to `downloads_provider.dart`/the delete button's error handling)
+      // can retry instead of the AES key silently becoming orphaned: a
+      // record-less key in secure storage with nothing left anywhere to
+      // find and remove it later. This mirrors the exact same safety net
+      // `CleanupScheduler.runCleanup` and
+      // `OfflineAccountGuard.purgeDownloadsForOtherAccounts` already
+      // apply for the identical failure mode -- this explicit,
+      // user-initiated delete path (the most frequently exercised of the
+      // three) was the one place in this codebase that still always
+      // deleted the row regardless.
       try {
         await _encryptionService.deleteKey(downloadId);
       } catch (e) {
         debugPrint('⚠️ Error deleting encryption key: ${e.runtimeType}');
+        return const Left(
+          StorageFailure('Could not delete download. Please try again.'), // check-ignore
+        );
       }
 
       await _localDataSource.deleteDownload(downloadId);
