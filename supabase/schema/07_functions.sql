@@ -1723,6 +1723,23 @@ BEGIN
       AND u.tenant_id = v_tenant_id
       AND u.deleted_at IS NULL
     ON CONFLICT DO NOTHING;
+
+    -- Explicitly-targeted notifications must also land in user_notifications:
+    -- that table (not notification_targets) is the sole source the client reads
+    -- from to discover a user's inbox (see notifications_remote_ds.dart step 1).
+    -- Without this insert, individually-targeted notifications were created and
+    -- recorded in notification_targets but never actually delivered to the
+    -- target user's notification list. The category-audience fanout worker
+    -- (internal.process_notification_fanout_jobs) only handles 'all'/'students'/
+    -- 'teachers'/'admins' and never processes notification_targets rows, so this
+    -- path must populate user_notifications itself.
+    INSERT INTO public.user_notifications (user_id, notification_id, tenant_id, is_read)
+    SELECT u.id, v_id, v_tenant_id, false
+    FROM public.users u
+    WHERE u.id = ANY(v_final_user_ids)
+      AND u.tenant_id = v_tenant_id
+      AND u.deleted_at IS NULL
+    ON CONFLICT (user_id, notification_id) DO NOTHING;
   END IF;
 
   RETURN v_id;

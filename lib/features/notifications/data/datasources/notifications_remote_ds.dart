@@ -36,11 +36,12 @@ class NotificationsRemoteDataSourceImpl
         if (userNotifications.isEmpty) return [];
 
         // Step 2: fetch the notification details (title, body) separately.
-        // A direct embedded join triggers the notifications_select RLS policy which
-        // requires target_audience = 'all' or explicit notification_targets membership —
-        // causing a PostgREST error for students. Fetching by ID list bypasses this
-        // because the notifications table RLS is applied per-row and non-visible rows
-        // are simply omitted (no error), giving us a safe subset.
+        // notifications_select RLS (supabase/schema/09_rls.sql) allows a row when
+        // target_audience = 'all', the caller is admin, OR the caller is a target
+        // via notification_targets OR user_notifications (own delivered row).
+        // Fetching by ID list keeps this resilient: the notifications table RLS is
+        // applied per-row and any non-visible row is simply omitted (no error),
+        // giving us a safe subset instead of a hard failure on partial access.
         final notificationIds = userNotifications
             .map((un) => un['notification_id'] as String?)
             .whereType<String>()

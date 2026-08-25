@@ -742,6 +742,20 @@ CREATE POLICY notifications_select ON public.notifications
         WHERE nt.notification_id = notifications.id
           AND nt.user_id = (select auth.uid())
       )
+      -- Root-cause fix: category-audience notifications ('students'/'teachers'/
+      -- 'admins') are fanned out by internal.process_notification_fanout_jobs()
+      -- directly into user_notifications, NOT notification_targets. Without this
+      -- branch, a recipient's own delivered notification row is invisible to the
+      -- notifications SELECT policy, so the client's per-ID detail lookup
+      -- (see notifications_remote_ds.dart) silently returns zero rows for it and
+      -- the notification renders as "No Title / No Content" even though it was
+      -- correctly delivered to the user.
+      OR EXISTS (
+        SELECT 1 FROM public.user_notifications un
+        WHERE un.notification_id = notifications.id
+          AND un.user_id = (select auth.uid())
+          AND un.deleted_at IS NULL
+      )
     )
   );
 
