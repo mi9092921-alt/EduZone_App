@@ -59,6 +59,18 @@ abstract class Course with _$Course {
 }
 
 extension CoursePresentation on Course {
+  bool get isGeneralCategory {
+    final cat = category;
+    return cat == null || cat.trim().isEmpty || cat.trim().toLowerCase() == 'general';
+  }
+
+  String categoryLabel(AppLocalizations l10n) {
+    if (isGeneralCategory) {
+      return l10n.generalCategory;
+    }
+    return category!.trim();
+  }
+
   String get ratingLabel =>
       rating != null ? rating!.toStringAsFixed(1) : '—';
 

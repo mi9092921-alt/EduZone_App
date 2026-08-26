@@ -70,7 +70,13 @@ class CourseCardVM {
   bool get showInstructor => model.instructorName.isNotEmpty;
 
   /// Localized category label.
-  String get categoryLabel => model.category ?? l10n.generalCategory;
+  String get categoryLabel {
+    final cat = model.category;
+    if (cat == null || cat.trim().isEmpty || cat.trim().toLowerCase() == 'general') {
+      return l10n.generalCategory;
+    }
+    return cat.trim();
+  }
 
   /// Localized level label.
   String get levelLabel {

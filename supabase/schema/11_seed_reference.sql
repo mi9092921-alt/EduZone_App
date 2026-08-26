@@ -407,36 +407,85 @@ VALUES
   ('cccccccc-0000-0000-0000-000000000001',
    '11111111-0000-0000-0000-000000000001',
    'Introduction to React', 'intro-react',
-   'Learn React basics and hooks.',
+   'Learn React basics, hooks, state management, and modern frontend development.',
    'published', 'beginner', 0,
    'aaaaaaaa-0000-0000-0000-000000000003', 'me-south-1'),
 
   ('cccccccc-0000-0000-0000-000000000002',
    '11111111-0000-0000-0000-000000000001',
    'Advanced TypeScript', 'adv-typescript',
-   'Deep dive into TypeScript generics.',
+   'Deep dive into TypeScript generics, utility types, and type-safe architectures.',
    'published', 'advanced', 99.99,
    'aaaaaaaa-0000-0000-0000-000000000003', 'me-south-1'),
 
   ('cccccccc-0000-0000-0000-000000000003',
    '11111111-0000-0000-0000-000000000001',
    'Database Design Principles', 'db-design',
-   'SQL and NoSQL design patterns.',
-   'draft', 'intermediate', 79.99,
+   'Relational and NoSQL database modeling, normalization, indexing, and performance tuning.',
+   'published', 'intermediate', 79.99,
    'aaaaaaaa-0000-0000-0000-000000000003', 'me-south-1'),
 
   ('cccccccc-0000-0000-0000-000000000004',
    '11111111-0000-0000-0000-000000000001',
    'UI/UX Fundamentals', 'uiux-fundamentals',
-   'Design thinking and Figma basics.',
-   'archived', 'beginner', 0,
+   'Design thinking, wireframing, color psychology, and Figma prototyping.',
+   'published', 'beginner', 0,
    'aaaaaaaa-0000-0000-0000-000000000003', 'me-south-1'),
 
   ('cccccccc-0000-0000-0000-000000000005',
    '11111111-0000-0000-0000-000000000001',
    'Cloud Architecture with AWS', 'aws-cloud',
-   'AWS services for production systems.',
+   'AWS services for production systems, serverless, VPC, and auto-scaling.',
    'published', 'advanced', 149.99,
+   'aaaaaaaa-0000-0000-0000-000000000003', 'me-south-1'),
+
+  ('cccccccc-0000-0000-0000-000000000006',
+   '11111111-0000-0000-0000-000000000001',
+   'Flutter & Dart Mobile App Mastery', 'flutter-mobile-mastery',
+   'Build high-performance cross-platform iOS and Android apps with Flutter 3 and Riverpod.',
+   'published', 'intermediate', 49.99,
+   'aaaaaaaa-0000-0000-0000-000000000003', 'me-south-1'),
+
+  ('cccccccc-0000-0000-0000-000000000007',
+   '11111111-0000-0000-0000-000000000001',
+   'Python for Data Science & AI', 'python-data-science-ai',
+   'Python programming, NumPy, Pandas, data visualization, and foundational Machine Learning models.',
+   'published', 'beginner', 0,
+   'aaaaaaaa-0000-0000-0000-000000000003', 'me-south-1'),
+
+  ('cccccccc-0000-0000-0000-000000000008',
+   '11111111-0000-0000-0000-000000000001',
+   'Full-Stack Web Development with Next.js', 'nextjs-fullstack-dev',
+   'Master modern web development with Next.js App Router, Server Actions, Tailwind CSS, and PostgreSQL.',
+   'published', 'intermediate', 89.99,
+   'aaaaaaaa-0000-0000-0000-000000000003', 'me-south-1'),
+
+  ('cccccccc-0000-0000-0000-000000000009',
+   '11111111-0000-0000-0000-000000000001',
+   'Cybersecurity & Network Defense', 'cybersecurity-defense',
+   'Network security, threat modeling, ethical hacking fundamentals, and vulnerability remediation.',
+   'published', 'intermediate', 119.99,
+   'aaaaaaaa-0000-0000-0000-000000000003', 'me-south-1'),
+
+  ('cccccccc-0000-0000-0000-000000000010',
+   '11111111-0000-0000-0000-000000000001',
+   'Data Structures & Algorithms in Practice', 'dsa-algorithms',
+   'Master Big-O analysis, trees, dynamic programming, and algorithm problem solving.',
+   'published', 'advanced', 69.99,
+   'aaaaaaaa-0000-0000-0000-000000000003', 'me-south-1'),
+
+  ('cccccccc-0000-0000-0000-000000000011',
+   '11111111-0000-0000-0000-000000000001',
+   'DevOps, Docker & Kubernetes Bootcamp', 'devops-docker-kubernetes',
+   'Containerization with Docker, Kubernetes cluster orchestration, and CI/CD pipelines.',
+   'published', 'advanced', 129.99,
+   'aaaaaaaa-0000-0000-0000-000000000003', 'me-south-1'),
+
+  ('cccccccc-0000-0000-0000-000000000012',
+   '11111111-0000-0000-0000-000000000001',
+   'Modern Figma & Product Design', 'modern-figma-design',
+   'Figma design systems, auto-layout, interactive prototypes, and UX usability testing.',
+   'published', 'beginner', 39.99,
    'aaaaaaaa-0000-0000-0000-000000000003', 'me-south-1'),
 
   -- Test Tenant course (integration testing)
@@ -458,6 +507,26 @@ VALUES
   -- AWS course requires TypeScript
   ('cccccccc-0000-0000-0000-000000000005',
    'cccccccc-0000-0000-0000-000000000002',
+   '11111111-0000-0000-0000-000000000001'),
+
+  -- Flutter course requires TypeScript
+  ('cccccccc-0000-0000-0000-000000000006',
+   'cccccccc-0000-0000-0000-000000000002',
+   '11111111-0000-0000-0000-000000000001'),
+
+  -- Next.js course requires React
+  ('cccccccc-0000-0000-0000-000000000008',
+   'cccccccc-0000-0000-0000-000000000001',
+   '11111111-0000-0000-0000-000000000001'),
+
+  -- DSA course requires TypeScript
+  ('cccccccc-0000-0000-0000-000000000010',
+   'cccccccc-0000-0000-0000-000000000002',
+   '11111111-0000-0000-0000-000000000001'),
+
+  -- DevOps course requires AWS
+  ('cccccccc-0000-0000-0000-000000000011',
+   'cccccccc-0000-0000-0000-000000000005',
    '11111111-0000-0000-0000-000000000001')
 
 ON CONFLICT (course_id, prerequisite_course_id) DO NOTHING;
@@ -468,13 +537,55 @@ ON CONFLICT (course_id, prerequisite_course_id) DO NOTHING;
 
 INSERT INTO public.course_learning_objectives (id, course_id, objective, order_index)
 VALUES
+  -- React (Existing IDs 1, 2)
   ('e0e0e0e0-0000-0000-0000-000000000001', 'cccccccc-0000-0000-0000-000000000001', 'Understand React components and hooks', 0),
   ('e0e0e0e0-0000-0000-0000-000000000002', 'cccccccc-0000-0000-0000-000000000001', 'Build interactive React applications', 1),
-  ('e0e0e0e0-0000-0000-0000-000000000003', 'cccccccc-0000-0000-0000-000000000002', 'Master TypeScript generics and advanced types', 0),
-  ('e0e0e0e0-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000005', 'Design scalable cloud architectures', 0),
-  ('e0e0e0e0-0000-0000-0000-000000000005', 'cccccccc-0000-0000-0000-000000000005', 'Implement AWS best practices', 1)
 
-ON CONFLICT (course_id, objective) DO NOTHING;
+  -- TypeScript (Existing ID 3 + New ID 6)
+  ('e0e0e0e0-0000-0000-0000-000000000003', 'cccccccc-0000-0000-0000-000000000002', 'Master TypeScript generics and advanced types', 0),
+  ('e0e0e0e0-0000-0000-0000-000000000006', 'cccccccc-0000-0000-0000-000000000002', 'Implement type-safe architectures and utility types', 1),
+
+  -- AWS Cloud (Existing IDs 4, 5)
+  ('e0e0e0e0-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000005', 'Design scalable cloud architectures', 0),
+  ('e0e0e0e0-0000-0000-0000-000000000005', 'cccccccc-0000-0000-0000-000000000005', 'Implement AWS best practices', 1),
+
+  -- Database Design
+  ('e0e0e0e0-0000-0000-0000-000000000007', 'cccccccc-0000-0000-0000-000000000003', 'Design normalized relational schemas (3NF/BCNF)', 0),
+  ('e0e0e0e0-0000-0000-0000-000000000008', 'cccccccc-0000-0000-0000-000000000003', 'Optimize query plans and indexing strategies', 1),
+
+  -- UI/UX Fundamentals
+  ('e0e0e0e0-0000-0000-0000-000000000009', 'cccccccc-0000-0000-0000-000000000004', 'Apply user-centered design methodologies and heuristics', 0),
+  ('e0e0e0e0-0000-0000-0000-000000000010', 'cccccccc-0000-0000-0000-000000000004', 'Create wireframes and user journey maps', 1),
+
+  -- Flutter
+  ('e0e0e0e0-0000-0000-0000-000000000011', 'cccccccc-0000-0000-0000-000000000006', 'Master Flutter widget hierarchy and reactive layouts', 0),
+  ('e0e0e0e0-0000-0000-0000-000000000012', 'cccccccc-0000-0000-0000-000000000006', 'Implement state management using Riverpod 2.x and clean architecture', 1),
+
+  -- Python Data Science
+  ('e0e0e0e0-0000-0000-0000-000000000013', 'cccccccc-0000-0000-0000-000000000007', 'Manipulate and analyze complex tabular datasets with Pandas', 0),
+  ('e0e0e0e0-0000-0000-0000-000000000014', 'cccccccc-0000-0000-0000-000000000007', 'Build exploratory data visualizations with Matplotlib and Seaborn', 1),
+
+  -- Next.js
+  ('e0e0e0e0-0000-0000-0000-000000000015', 'cccccccc-0000-0000-0000-000000000008', 'Build production apps using Next.js App Router and Server Components', 0),
+  ('e0e0e0e0-0000-0000-0000-000000000016', 'cccccccc-0000-0000-0000-000000000008', 'Handle full-stack mutations with Server Actions and PostgreSQL', 1),
+
+  -- Cybersecurity
+  ('e0e0e0e0-0000-0000-0000-000000000017', 'cccccccc-0000-0000-0000-000000000009', 'Identify and remediate OWASP Top 10 web vulnerabilities', 0),
+  ('e0e0e0e0-0000-0000-0000-000000000018', 'cccccccc-0000-0000-0000-000000000009', 'Implement defensive networking, encryption, and system hardening', 1),
+
+  -- DSA
+  ('e0e0e0e0-0000-0000-0000-000000000019', 'cccccccc-0000-0000-0000-000000000010', 'Analyze asymptotic time and space complexity with Big-O notation', 0),
+  ('e0e0e0e0-0000-0000-0000-000000000020', 'cccccccc-0000-0000-0000-000000000010', 'Solve dynamic programming and graph traversal problems with confidence', 1),
+
+  -- DevOps
+  ('e0e0e0e0-0000-0000-0000-000000000021', 'cccccccc-0000-0000-0000-000000000011', 'Containerize microservices using production-grade Dockerfiles', 0),
+  ('e0e0e0e0-0000-0000-0000-000000000022', 'cccccccc-0000-0000-0000-000000000011', 'Orchestrate deployments, services, and ingress with Kubernetes', 1),
+
+  -- Modern Figma
+  ('e0e0e0e0-0000-0000-0000-000000000023', 'cccccccc-0000-0000-0000-000000000012', 'Design scalable UI components with Auto-Layout and design tokens', 0),
+  ('e0e0e0e0-0000-0000-0000-000000000024', 'cccccccc-0000-0000-0000-000000000012', 'Build interactive prototypes with fluid animations and transitions', 1)
+
+ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
 -- PHASE 9: Sections
@@ -482,19 +593,113 @@ ON CONFLICT (course_id, objective) DO NOTHING;
 
 INSERT INTO public.sections (id, course_id, tenant_id, title, order_index, is_published)
 VALUES
-  -- React course sections
+  -- React course sections (Course 1)
   ('55555555-0000-0000-0000-000000000001',
    'cccccccc-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001',
-   'Getting Started', 0, true),
+   'Getting Started with React', 0, true),
 
   ('55555555-0000-0000-0000-000000000002',
    'cccccccc-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001',
-   'Core Concepts', 1, true),
+   'Core Concepts & Hooks', 1, true),
 
-  -- TypeScript course section
+  -- TypeScript course sections (Course 2)
   ('55555555-0000-0000-0000-000000000003',
    'cccccccc-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001',
    'TypeScript Fundamentals', 0, true),
+
+  ('55555555-0000-0000-0000-000000000004',
+   'cccccccc-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001',
+   'Advanced Types & Generics', 1, true),
+
+  -- Database Design course sections (Course 3)
+  ('55555555-0000-0000-0000-000000000005',
+   'cccccccc-0000-0000-0000-000000000003', '11111111-0000-0000-0000-000000000001',
+   'Relational Database Modeling', 0, true),
+
+  ('55555555-0000-0000-0000-000000000006',
+   'cccccccc-0000-0000-0000-000000000003', '11111111-0000-0000-0000-000000000001',
+   'Indexing & Query Optimization', 1, true),
+
+  -- UI/UX Fundamentals course sections (Course 4)
+  ('55555555-0000-0000-0000-000000000007',
+   'cccccccc-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001',
+   'Design Thinking & UX Foundations', 0, true),
+
+  ('55555555-0000-0000-0000-000000000008',
+   'cccccccc-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001',
+   'Wireframing & Visual Design', 1, true),
+
+  -- AWS Cloud course sections (Course 5)
+  ('55555555-0000-0000-0000-000000000009',
+   'cccccccc-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001',
+   'AWS Core Infrastructure & Compute', 0, true),
+
+  ('55555555-0000-0000-0000-000000000010',
+   'cccccccc-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001',
+   'Serverless, VPC & Scalability', 1, true),
+
+  -- Flutter course sections (Course 6)
+  ('55555555-0000-0000-0000-000000000011',
+   'cccccccc-0000-0000-0000-000000000006', '11111111-0000-0000-0000-000000000001',
+   'Flutter Widgets & UI Layouts', 0, true),
+
+  ('55555555-0000-0000-0000-000000000012',
+   'cccccccc-0000-0000-0000-000000000006', '11111111-0000-0000-0000-000000000001',
+   'Riverpod State Management & Architecture', 1, true),
+
+  -- Python Data Science course sections (Course 7)
+  ('55555555-0000-0000-0000-000000000013',
+   'cccccccc-0000-0000-0000-000000000007', '11111111-0000-0000-0000-000000000001',
+   'Python & NumPy Fundamentals', 0, true),
+
+  ('55555555-0000-0000-0000-000000000014',
+   'cccccccc-0000-0000-0000-000000000007', '11111111-0000-0000-0000-000000000001',
+   'Data Wrangling with Pandas & Visualizations', 1, true),
+
+  -- Next.js course sections (Course 8)
+  ('55555555-0000-0000-0000-000000000015',
+   'cccccccc-0000-0000-0000-000000000008', '11111111-0000-0000-0000-000000000001',
+   'Next.js App Router & Server Components', 0, true),
+
+  ('55555555-0000-0000-0000-000000000016',
+   'cccccccc-0000-0000-0000-000000000008', '11111111-0000-0000-0000-000000000001',
+   'Server Actions & Database Integrations', 1, true),
+
+  -- Cybersecurity course sections (Course 9)
+  ('55555555-0000-0000-0000-000000000017',
+   'cccccccc-0000-0000-0000-000000000009', '11111111-0000-0000-0000-000000000001',
+   'Network Security & Cryptography', 0, true),
+
+  ('55555555-0000-0000-0000-000000000018',
+   'cccccccc-0000-0000-0000-000000000009', '11111111-0000-0000-0000-000000000001',
+   'Vulnerability Defense & Hardening', 1, true),
+
+  -- DSA course sections (Course 10)
+  ('55555555-0000-0000-0000-000000000019',
+   'cccccccc-0000-0000-0000-000000000010', '11111111-0000-0000-0000-000000000001',
+   'Linear & Tree Data Structures', 0, true),
+
+  ('55555555-0000-0000-0000-000000000020',
+   'cccccccc-0000-0000-0000-000000000010', '11111111-0000-0000-0000-000000000001',
+   'Graph Algorithms & Dynamic Programming', 1, true),
+
+  -- DevOps course sections (Course 11)
+  ('55555555-0000-0000-0000-000000000021',
+   'cccccccc-0000-0000-0000-000000000011', '11111111-0000-0000-0000-000000000001',
+   'Docker Containerization Fundamentals', 0, true),
+
+  ('55555555-0000-0000-0000-000000000022',
+   'cccccccc-0000-0000-0000-000000000011', '11111111-0000-0000-0000-000000000001',
+   'Kubernetes Orchestration & CI/CD Pipelines', 1, true),
+
+  -- Modern Figma course sections (Course 12)
+  ('55555555-0000-0000-0000-000000000023',
+   'cccccccc-0000-0000-0000-000000000012', '11111111-0000-0000-0000-000000000001',
+   'Figma UI Design & Auto-Layout', 0, true),
+
+  ('55555555-0000-0000-0000-000000000024',
+   'cccccccc-0000-0000-0000-000000000012', '11111111-0000-0000-0000-000000000001',
+   'Design Systems & Interactive Prototypes', 1, true),
 
   -- Test tenant section
   ('55555555-1111-1111-1111-111111111111',
@@ -509,7 +714,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.lessons (id, section_id, course_id, tenant_id, title, order_index, is_published, is_preview, duration_sec)
 VALUES
-  -- React course — Getting Started section
+  -- Course 1: React — Section 1
   ('bbbbbbbb-0000-0000-0000-000000000001',
    '55555555-0000-0000-0000-000000000001', 'cccccccc-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001',
    'What is React?', 0, true, true, 300),
@@ -518,40 +723,233 @@ VALUES
    '55555555-0000-0000-0000-000000000001', 'cccccccc-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001',
    'Setting Up Your Environment', 1, true, false, 480),
 
-  -- React course — Core Concepts section
+  -- Course 1: React — Section 2
   ('bbbbbbbb-0000-0000-0000-000000000003',
    '55555555-0000-0000-0000-000000000002', 'cccccccc-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001',
-   'Components and Props', 0, true, false, 620),
+   'Components, Props & State', 0, true, false, 620),
 
-  -- TypeScript course — Fundamentals section
+  ('bbbbbbbb-0000-0000-0000-000000000006',
+   '55555555-0000-0000-0000-000000000002', 'cccccccc-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001',
+   'Mastering useEffect & Custom Hooks', 1, true, false, 750),
+
+  -- Course 2: TypeScript — Section 1
   ('bbbbbbbb-0000-0000-0000-000000000004',
    '55555555-0000-0000-0000-000000000003', 'cccccccc-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001',
-   'TypeScript Basics', 0, true, true, 540),
+   'TypeScript Basics & Type Annotations', 0, true, true, 540),
 
   ('bbbbbbbb-0000-0000-0000-000000000005',
    '55555555-0000-0000-0000-000000000003', 'cccccccc-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001',
    'Generics Deep Dive', 1, true, false, 900),
 
+  -- Course 2: TypeScript — Section 2
+  ('bbbbbbbb-0000-0000-0000-000000000007',
+   '55555555-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001',
+   'Interfaces, Type Aliases & Unions', 0, true, false, 660),
+
+  ('bbbbbbbb-0000-0000-0000-000000000008',
+   '55555555-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001',
+   'Conditional Types & Utility Types', 1, true, false, 820),
+
+  -- Course 3: Database Design — Section 1
+  ('bbbbbbbb-0000-0000-0000-000000000009',
+   '55555555-0000-0000-0000-000000000005', 'cccccccc-0000-0000-0000-000000000003', '11111111-0000-0000-0000-000000000001',
+   'Relational Modeling & Normalization', 0, true, true, 580),
+
+  ('bbbbbbbb-0000-0000-0000-000000000010',
+   '55555555-0000-0000-0000-000000000005', 'cccccccc-0000-0000-0000-000000000003', '11111111-0000-0000-0000-000000000001',
+   'Foreign Keys, Cascades & Integrity', 1, true, false, 640),
+
+  -- Course 3: Database Design — Section 2
+  ('bbbbbbbb-0000-0000-0000-000000000011',
+   '55555555-0000-0000-0000-000000000006', 'cccccccc-0000-0000-0000-000000000003', '11111111-0000-0000-0000-000000000001',
+   'B-Tree, Hash, and GIN Indexing Strategies', 0, true, false, 840),
+
+  ('bbbbbbbb-0000-0000-0000-000000000012',
+   '55555555-0000-0000-0000-000000000006', 'cccccccc-0000-0000-0000-000000000003', '11111111-0000-0000-0000-000000000001',
+   'Query Optimization & Execution Plans', 1, true, false, 790),
+
+  -- Course 4: UI/UX Fundamentals — Section 1
+  ('bbbbbbbb-0000-0000-0000-000000000013',
+   '55555555-0000-0000-0000-000000000007', 'cccccccc-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001',
+   'Introduction to User Experience (UX)', 0, true, true, 420),
+
+  ('bbbbbbbb-0000-0000-0000-000000000014',
+   '55555555-0000-0000-0000-000000000007', 'cccccccc-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001',
+   'User Research & Personas', 1, true, false, 510),
+
+  -- Course 4: UI/UX Fundamentals — Section 2
+  ('bbbbbbbb-0000-0000-0000-000000000015',
+   '55555555-0000-0000-0000-000000000008', 'cccccccc-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001',
+   'Low-Fidelity Wireframes in Figma', 0, true, false, 680),
+
+  ('bbbbbbbb-0000-0000-0000-000000000016',
+   '55555555-0000-0000-0000-000000000008', 'cccccccc-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001',
+   'Visual Hierarchy & Typography', 1, true, false, 600),
+
+  -- Course 5: Cloud Architecture AWS — Section 1
+  ('bbbbbbbb-0000-0000-0000-000000000017',
+   '55555555-0000-0000-0000-000000000009', 'cccccccc-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001',
+   'EC2, S3 & Cloud Storage Essentials', 0, true, true, 550),
+
+  ('bbbbbbbb-0000-0000-0000-000000000018',
+   '55555555-0000-0000-0000-000000000009', 'cccccccc-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001',
+   'Virtual Private Cloud (VPC) & Subnets', 1, true, false, 720),
+
+  -- Course 5: Cloud Architecture AWS — Section 2
+  ('bbbbbbbb-0000-0000-0000-000000000019',
+   '55555555-0000-0000-0000-000000000010', 'cccccccc-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001',
+   'AWS Lambda & Serverless Microservices', 0, true, false, 810),
+
+  ('bbbbbbbb-0000-0000-0000-000000000020',
+   '55555555-0000-0000-0000-000000000010', 'cccccccc-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001',
+   'Auto-Scaling & Load Balancing', 1, true, false, 870),
+
+  -- Course 6: Flutter & Dart — Section 1
+  ('bbbbbbbb-0000-0000-0000-000000000021',
+   '55555555-0000-0000-0000-000000000011', 'cccccccc-0000-0000-0000-000000000006', '11111111-0000-0000-0000-000000000001',
+   'Flutter 3 Architecture & Widget Tree', 0, true, true, 480),
+
+  ('bbbbbbbb-0000-0000-0000-000000000022',
+   '55555555-0000-0000-0000-000000000011', 'cccccccc-0000-0000-0000-000000000006', '11111111-0000-0000-0000-000000000001',
+   'Responsive & Adaptive Layouts', 1, true, false, 690),
+
+  -- Course 6: Flutter & Dart — Section 2
+  ('bbbbbbbb-0000-0000-0000-000000000023',
+   '55555555-0000-0000-0000-000000000012', 'cccccccc-0000-0000-0000-000000000006', '11111111-0000-0000-0000-000000000001',
+   'State Management with Riverpod 2.x', 0, true, false, 960),
+
+  ('bbbbbbbb-0000-0000-0000-000000000024',
+   '55555555-0000-0000-0000-000000000012', 'cccccccc-0000-0000-0000-000000000006', '11111111-0000-0000-0000-000000000001',
+   'Clean Architecture & Supabase Integration', 1, true, false, 1100),
+
+  -- Course 7: Python Data Science — Section 1
+  ('bbbbbbbb-0000-0000-0000-000000000025',
+   '55555555-0000-0000-0000-000000000013', 'cccccccc-0000-0000-0000-000000000007', '11111111-0000-0000-0000-000000000001',
+   'Python for Data Science Crash Course', 0, true, true, 520),
+
+  ('bbbbbbbb-0000-0000-0000-000000000026',
+   '55555555-0000-0000-0000-000000000013', 'cccccccc-0000-0000-0000-000000000007', '11111111-0000-0000-0000-000000000001',
+   'NumPy Arrays & Mathematical Operations', 1, true, false, 640),
+
+  -- Course 7: Python Data Science — Section 2
+  ('bbbbbbbb-0000-0000-0000-000000000027',
+   '55555555-0000-0000-0000-000000000014', 'cccccccc-0000-0000-0000-000000000007', '11111111-0000-0000-0000-000000000001',
+   'Data Cleaning with Pandas DataFrames', 0, true, false, 830),
+
+  ('bbbbbbbb-0000-0000-0000-000000000028',
+   '55555555-0000-0000-0000-000000000014', 'cccccccc-0000-0000-0000-000000000007', '11111111-0000-0000-0000-000000000001',
+   'Data Storytelling with Matplotlib & Seaborn', 1, true, false, 750),
+
+  -- Course 8: Next.js — Section 1
+  ('bbbbbbbb-0000-0000-0000-000000000029',
+   '55555555-0000-0000-0000-000000000015', 'cccccccc-0000-0000-0000-000000000008', '11111111-0000-0000-0000-000000000001',
+   'Next.js 14 App Router & Routing Patterns', 0, true, true, 600),
+
+  ('bbbbbbbb-0000-0000-0000-000000000030',
+   '55555555-0000-0000-0000-000000000015', 'cccccccc-0000-0000-0000-000000000008', '11111111-0000-0000-0000-000000000001',
+   'React Server Components & Streaming', 1, true, false, 720),
+
+  -- Course 8: Next.js — Section 2
+  ('bbbbbbbb-0000-0000-0000-000000000031',
+   '55555555-0000-0000-0000-000000000016', 'cccccccc-0000-0000-0000-000000000008', '11111111-0000-0000-0000-000000000001',
+   'Server Actions, Form Handling & Zod Validation', 0, true, false, 880),
+
+  ('bbbbbbbb-0000-0000-0000-000000000032',
+   '55555555-0000-0000-0000-000000000016', 'cccccccc-0000-0000-0000-000000000008', '11111111-0000-0000-0000-000000000001',
+   'PostgreSQL Database & Auth Integration', 1, true, false, 950),
+
+  -- Course 9: Cybersecurity — Section 1
+  ('bbbbbbbb-0000-0000-0000-000000000033',
+   '55555555-0000-0000-0000-000000000017', 'cccccccc-0000-0000-0000-000000000009', '11111111-0000-0000-0000-000000000001',
+   'Network Protocols, Firewalls & VPNs', 0, true, true, 580),
+
+  ('bbbbbbbb-0000-0000-0000-000000000034',
+   '55555555-0000-0000-0000-000000000017', 'cccccccc-0000-0000-0000-000000000009', '11111111-0000-0000-0000-000000000001',
+   'Symmetric & Asymmetric Cryptography', 1, true, false, 670),
+
+  -- Course 9: Cybersecurity — Section 2
+  ('bbbbbbbb-0000-0000-0000-000000000035',
+   '55555555-0000-0000-0000-000000000018', 'cccccccc-0000-0000-0000-000000000009', '11111111-0000-0000-0000-000000000001',
+   'OWASP Top 10 Web Vulnerabilities', 0, true, false, 910),
+
+  ('bbbbbbbb-0000-0000-0000-000000000036',
+   '55555555-0000-0000-0000-000000000018', 'cccccccc-0000-0000-0000-000000000009', '11111111-0000-0000-0000-000000000001',
+   'Ethical Hacking & Penetration Testing Basics', 1, true, false, 840),
+
+  -- Course 10: DSA — Section 1
+  ('bbbbbbbb-0000-0000-0000-000000000037',
+   '55555555-0000-0000-0000-000000000019', 'cccccccc-0000-0000-0000-000000000010', '11111111-0000-0000-0000-000000000001',
+   'Big-O Notation & Time Complexity', 0, true, true, 490),
+
+  ('bbbbbbbb-0000-0000-0000-000000000038',
+   '55555555-0000-0000-0000-000000000019', 'cccccccc-0000-0000-0000-000000000010', '11111111-0000-0000-0000-000000000001',
+   'Linked Lists, Stacks, Queues & Trees', 1, true, false, 780),
+
+  -- Course 10: DSA — Section 2
+  ('bbbbbbbb-0000-0000-0000-000000000039',
+   '55555555-0000-0000-0000-000000000020', 'cccccccc-0000-0000-0000-000000000010', '11111111-0000-0000-0000-000000000001',
+   'Graph Traversal: BFS & DFS', 0, true, false, 820),
+
+  ('bbbbbbbb-0000-0000-0000-000000000040',
+   '55555555-0000-0000-0000-000000000020', 'cccccccc-0000-0000-0000-000000000010', '11111111-0000-0000-0000-000000000001',
+   'Dynamic Programming Patterns & Memoization', 1, true, false, 950),
+
+  -- Course 11: DevOps — Section 1
+  ('bbbbbbbb-0000-0000-0000-000000000041',
+   '55555555-0000-0000-0000-000000000021', 'cccccccc-0000-0000-0000-000000000011', '11111111-0000-0000-0000-000000000001',
+   'Docker Architecture, Images & Containers', 0, true, true, 530),
+
+  ('bbbbbbbb-0000-0000-0000-000000000042',
+   '55555555-0000-0000-0000-000000000021', 'cccccccc-0000-0000-0000-000000000011', '11111111-0000-0000-0000-000000000001',
+   'Docker Compose & Multi-Container Workflows', 1, true, false, 710),
+
+  -- Course 11: DevOps — Section 2
+  ('bbbbbbbb-0000-0000-0000-000000000043',
+   '55555555-0000-0000-0000-000000000022', 'cccccccc-0000-0000-0000-000000000011', '11111111-0000-0000-0000-000000000001',
+   'Kubernetes Pods, Services & Deployments', 0, true, false, 890),
+
+  ('bbbbbbbb-0000-0000-0000-000000000044',
+   '55555555-0000-0000-0000-000000000022', 'cccccccc-0000-0000-0000-000000000011', '11111111-0000-0000-0000-000000000001',
+   'Automated CI/CD Pipelines with GitHub Actions', 1, true, false, 940),
+
+  -- Course 12: Modern Figma — Section 1
+  ('bbbbbbbb-0000-0000-0000-000000000045',
+   '55555555-0000-0000-0000-000000000023', 'cccccccc-0000-0000-0000-000000000012', '11111111-0000-0000-0000-000000000001',
+   'Figma Interface, Canvas & Vector Tools', 0, true, true, 410),
+
+  ('bbbbbbbb-0000-0000-0000-000000000046',
+   '55555555-0000-0000-0000-000000000023', 'cccccccc-0000-0000-0000-000000000012', '11111111-0000-0000-0000-000000000001',
+   'Auto-Layout & Responsive Constraints', 1, true, false, 680),
+
+  -- Course 12: Modern Figma — Section 2
+  ('bbbbbbbb-0000-0000-0000-000000000047',
+   '55555555-0000-0000-0000-000000000024', 'cccccccc-0000-0000-0000-000000000012', '11111111-0000-0000-0000-000000000001',
+   'Building Design Systems & Component Variants', 0, true, false, 860),
+
+  ('bbbbbbbb-0000-0000-0000-000000000048',
+   '55555555-0000-0000-0000-000000000024', 'cccccccc-0000-0000-0000-000000000012', '11111111-0000-0000-0000-000000000001',
+   'Smart Animate & Interactive Prototypes', 1, true, false, 910),
+
   -- Test Tenant lessons (integration test data)
   ('bbbbbbbb-1111-1111-1111-000000000001',
    '55555555-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111',
-   'Lesson 1', 1, true, false, 600),
+   'Lesson 1: Introduction to Postgres', 1, true, false, 600),
 
   ('bbbbbbbb-1111-1111-1111-000000000002',
    '55555555-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111',
-   'Lesson 2', 2, true, false, 600),
+   'Lesson 2: Tables and Data Types', 2, true, false, 600),
 
   ('bbbbbbbb-1111-1111-1111-000000000003',
    '55555555-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111',
-   'Lesson 3', 3, true, false, 600),
+   'Lesson 3: Queries and Joins', 3, true, false, 600),
 
   ('bbbbbbbb-1111-1111-1111-000000000004',
    '55555555-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111',
-   'Lesson 4', 4, true, false, 600),
+   'Lesson 4: Transactions and ACID', 4, true, false, 600),
 
   ('bbbbbbbb-1111-1111-1111-000000000005',
    '55555555-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111',
-   'Lesson 5', 5, true, false, 600)
+   'Lesson 5: Indexing and Performance', 5, true, false, 600)
 
 ON CONFLICT (id) DO NOTHING;
 
@@ -561,25 +959,54 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.lesson_contents (lesson_id, course_id, section_id, tenant_id, provider, video_path, duration_sec)
 VALUES
-  ('bbbbbbbb-0000-0000-0000-000000000001',
-   'cccccccc-0000-0000-0000-000000000001', '55555555-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001',
-   'youtube', 'dQw4w9WgXcQ', 300),
-
-  ('bbbbbbbb-0000-0000-0000-000000000002',
-   'cccccccc-0000-0000-0000-000000000001', '55555555-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001',
-   'youtube', 'jNQXAC9IVRw', 480),
-
-  ('bbbbbbbb-0000-0000-0000-000000000003',
-   'cccccccc-0000-0000-0000-000000000001', '55555555-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001',
-   'youtube', 'kJQP7kiw5Fk', 620),
-
-  ('bbbbbbbb-0000-0000-0000-000000000004',
-   'cccccccc-0000-0000-0000-000000000002', '55555555-0000-0000-0000-000000000003', '11111111-0000-0000-0000-000000000001',
-   'youtube', 'OgIRAjrFHAY', 540),
-
-  ('bbbbbbbb-0000-0000-0000-000000000005',
-   'cccccccc-0000-0000-0000-000000000002', '55555555-0000-0000-0000-000000000003', '11111111-0000-0000-0000-000000000001',
-   'youtube', 'RgKAFK5djSk', 900)
+  ('bbbbbbbb-0000-0000-0000-000000000001', 'cccccccc-0000-0000-0000-000000000001', '55555555-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001', 'youtube', 'dQw4w9WgXcQ', 300),
+  ('bbbbbbbb-0000-0000-0000-000000000002', 'cccccccc-0000-0000-0000-000000000001', '55555555-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001', 'youtube', 'jNQXAC9IVRw', 480),
+  ('bbbbbbbb-0000-0000-0000-000000000003', 'cccccccc-0000-0000-0000-000000000001', '55555555-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001', 'youtube', 'kJQP7kiw5Fk', 620),
+  ('bbbbbbbb-0000-0000-0000-000000000006', 'cccccccc-0000-0000-0000-000000000001', '55555555-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001', 'youtube', '2lAe1cqCOXo', 750),
+  ('bbbbbbbb-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000002', '55555555-0000-0000-0000-000000000003', '11111111-0000-0000-0000-000000000001', 'youtube', 'OgIRAjrFHAY', 540),
+  ('bbbbbbbb-0000-0000-0000-000000000005', 'cccccccc-0000-0000-0000-000000000002', '55555555-0000-0000-0000-000000000003', '11111111-0000-0000-0000-000000000001', 'youtube', 'RgKAFK5djSk', 900),
+  ('bbbbbbbb-0000-0000-0000-000000000007', 'cccccccc-0000-0000-0000-000000000002', '55555555-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001', 'youtube', 'fBNz5xF-Kx4', 660),
+  ('bbbbbbbb-0000-0000-0000-000000000008', 'cccccccc-0000-0000-0000-000000000002', '55555555-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001', 'youtube', 'kUMe1FH4CHE', 820),
+  ('bbbbbbbb-0000-0000-0000-000000000009', 'cccccccc-0000-0000-0000-000000000003', '55555555-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001', 'youtube', 'ztHopE5Wnpc', 580),
+  ('bbbbbbbb-0000-0000-0000-000000000010', 'cccccccc-0000-0000-0000-000000000003', '55555555-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001', 'youtube', 'wS_2-57Q_yU', 640),
+  ('bbbbbbbb-0000-0000-0000-000000000011', 'cccccccc-0000-0000-0000-000000000003', '55555555-0000-0000-0000-000000000006', '11111111-0000-0000-0000-000000000001', 'youtube', 'cl63m1H9G1I', 840),
+  ('bbbbbbbb-0000-0000-0000-000000000012', 'cccccccc-0000-0000-0000-000000000003', '55555555-0000-0000-0000-000000000006', '11111111-0000-0000-0000-000000000001', 'youtube', 'BHwzDmxjgvA', 790),
+  ('bbbbbbbb-0000-0000-0000-000000000013', 'cccccccc-0000-0000-0000-000000000004', '55555555-0000-0000-0000-000000000007', '11111111-0000-0000-0000-000000000001', 'youtube', 'c9Wg6Cb_YlU', 420),
+  ('bbbbbbbb-0000-0000-0000-000000000014', 'cccccccc-0000-0000-0000-000000000004', '55555555-0000-0000-0000-000000000007', '11111111-0000-0000-0000-000000000001', 'youtube', 'v233P_336l0', 510),
+  ('bbbbbbbb-0000-0000-0000-000000000015', 'cccccccc-0000-0000-0000-000000000004', '55555555-0000-0000-0000-000000000008', '11111111-0000-0000-0000-000000000001', 'youtube', 'FTFaQWZBqQ8', 680),
+  ('bbbbbbbb-0000-0000-0000-000000000016', 'cccccccc-0000-0000-0000-000000000004', '55555555-0000-0000-0000-000000000008', '11111111-0000-0000-0000-000000000001', 'youtube', '126J8Pz9k_U', 600),
+  ('bbbbbbbb-0000-0000-0000-000000000017', 'cccccccc-0000-0000-0000-000000000005', '55555555-0000-0000-0000-000000000009', '11111111-0000-0000-0000-000000000001', 'youtube', 'k1RI5locZE4', 550),
+  ('bbbbbbbb-0000-0000-0000-000000000018', 'cccccccc-0000-0000-0000-000000000005', '55555555-0000-0000-0000-000000000009', '11111111-0000-0000-0000-000000000001', 'youtube', 'hiKPPy582vg', 720),
+  ('bbbbbbbb-0000-0000-0000-000000000019', 'cccccccc-0000-0000-0000-000000000005', '55555555-0000-0000-0000-000000000010', '11111111-0000-0000-0000-000000000001', 'youtube', 'eOBq__h4OJ4', 810),
+  ('bbbbbbbb-0000-0000-0000-000000000020', 'cccccccc-0000-0000-0000-000000000005', '55555555-0000-0000-0000-000000000010', '11111111-0000-0000-0000-000000000001', 'youtube', 'Xp9vV8q3W3k', 870),
+  ('bbbbbbbb-0000-0000-0000-000000000021', 'cccccccc-0000-0000-0000-000000000006', '55555555-0000-0000-0000-000000000011', '11111111-0000-0000-0000-000000000001', 'youtube', '1ukSR1GRt6c', 480),
+  ('bbbbbbbb-0000-0000-0000-000000000022', 'cccccccc-0000-0000-0000-000000000006', '55555555-0000-0000-0000-000000000011', '11111111-0000-0000-0000-000000000001', 'youtube', 'pTJJsmejUOQ', 690),
+  ('bbbbbbbb-0000-0000-0000-000000000023', 'cccccccc-0000-0000-0000-000000000006', '55555555-0000-0000-0000-000000000012', '11111111-0000-0000-0000-000000000001', 'youtube', 'zKnmZq54-e0', 960),
+  ('bbbbbbbb-0000-0000-0000-000000000024', 'cccccccc-0000-0000-0000-000000000006', '55555555-0000-0000-0000-000000000012', '11111111-0000-0000-0000-000000000001', 'youtube', 'd_m5cSmepPI', 1100),
+  ('bbbbbbbb-0000-0000-0000-000000000025', 'cccccccc-0000-0000-0000-000000000007', '55555555-0000-0000-0000-000000000013', '11111111-0000-0000-0000-000000000001', 'youtube', 'kqtD5dpn9C8', 520),
+  ('bbbbbbbb-0000-0000-0000-000000000026', 'cccccccc-0000-0000-0000-000000000007', '55555555-0000-0000-0000-000000000013', '11111111-0000-0000-0000-000000000001', 'youtube', 'QUT1VHiLmmI', 640),
+  ('bbbbbbbb-0000-0000-0000-000000000027', 'cccccccc-0000-0000-0000-000000000007', '55555555-0000-0000-0000-000000000014', '11111111-0000-0000-0000-000000000001', 'youtube', 'vmEHCJofslg', 830),
+  ('bbbbbbbb-0000-0000-0000-000000000028', 'cccccccc-0000-0000-0000-000000000007', '55555555-0000-0000-0000-000000000014', '11111111-0000-0000-0000-000000000001', 'youtube', '3ZWuPVWq7p4', 750),
+  ('bbbbbbbb-0000-0000-0000-000000000029', 'cccccccc-0000-0000-0000-000000000008', '55555555-0000-0000-0000-000000000015', '11111111-0000-0000-0000-000000000001', 'youtube', 'wm5gMKuwSYk', 600),
+  ('bbbbbbbb-0000-0000-0000-000000000030', 'cccccccc-0000-0000-0000-000000000008', '55555555-0000-0000-0000-000000000015', '11111111-0000-0000-0000-000000000001', 'youtube', 'ZjAqacIC_3c', 720),
+  ('bbbbbbbb-0000-0000-0000-000000000031', 'cccccccc-0000-0000-0000-000000000008', '55555555-0000-0000-0000-000000000016', '11111111-0000-0000-0000-000000000001', 'youtube', 'd5x0JCbA9Nc', 880),
+  ('bbbbbbbb-0000-0000-0000-000000000032', 'cccccccc-0000-0000-0000-000000000008', '55555555-0000-0000-0000-000000000016', '11111111-0000-0000-0000-000000000001', 'youtube', 'O3_1FuhAio8', 950),
+  ('bbbbbbbb-0000-0000-0000-000000000033', 'cccccccc-0000-0000-0000-000000000009', '55555555-0000-0000-0000-000000000017', '11111111-0000-0000-0000-000000000001', 'youtube', 'inWWhr5tnEA', 580),
+  ('bbbbbbbb-0000-0000-0000-000000000034', 'cccccccc-0000-0000-0000-000000000009', '55555555-0000-0000-0000-000000000017', '11111111-0000-0000-0000-000000000001', 'youtube', 'jhXCTbFnK8o', 670),
+  ('bbbbbbbb-0000-0000-0000-000000000035', 'cccccccc-0000-0000-0000-000000000009', '55555555-0000-0000-0000-000000000018', '11111111-0000-0000-0000-000000000001', 'youtube', '3Kq1MIfTWCE', 910),
+  ('bbbbbbbb-0000-0000-0000-000000000036', 'cccccccc-0000-0000-0000-000000000009', '55555555-0000-0000-0000-000000000018', '11111111-0000-0000-0000-000000000001', 'youtube', '6mCanDq_g3g', 840),
+  ('bbbbbbbb-0000-0000-0000-000000000037', 'cccccccc-0000-0000-0000-000000000010', '55555555-0000-0000-0000-000000000019', '11111111-0000-0000-0000-000000000001', 'youtube', 'D6xkbGLQesk', 490),
+  ('bbbbbbbb-0000-0000-0000-000000000038', 'cccccccc-0000-0000-0000-000000000010', '55555555-0000-0000-0000-000000000019', '11111111-0000-0000-0000-000000000001', 'youtube', 'RBSGKlAvoiM', 780),
+  ('bbbbbbbb-0000-0000-0000-000000000039', 'cccccccc-0000-0000-0000-000000000010', '55555555-0000-0000-0000-000000000020', '11111111-0000-0000-0000-000000000001', 'youtube', 'pcKY4hjDrxk', 820),
+  ('bbbbbbbb-0000-0000-0000-000000000040', 'cccccccc-0000-0000-0000-000000000010', '55555555-0000-0000-0000-000000000020', '11111111-0000-0000-0000-000000000001', 'youtube', 'oBt53YbR9Kk', 950),
+  ('bbbbbbbb-0000-0000-0000-000000000041', 'cccccccc-0000-0000-0000-000000000011', '55555555-0000-0000-0000-000000000021', '11111111-0000-0000-0000-000000000001', 'youtube', 'fqMOX6JJhGo', 530),
+  ('bbbbbbbb-0000-0000-0000-000000000042', 'cccccccc-0000-0000-0000-000000000011', '55555555-0000-0000-0000-000000000021', '11111111-0000-0000-0000-000000000001', 'youtube', 'HG6yLjDkE_w', 710),
+  ('bbbbbbbb-0000-0000-0000-000000000043', 'cccccccc-0000-0000-0000-000000000011', '55555555-0000-0000-0000-000000000022', '11111111-0000-0000-0000-000000000001', 'youtube', 'X48VuDVv0do', 890),
+  ('bbbbbbbb-0000-0000-0000-000000000044', 'cccccccc-0000-0000-0000-000000000011', '55555555-0000-0000-0000-000000000022', '11111111-0000-0000-0000-000000000001', 'youtube', 'R8_veQiYBjI', 940),
+  ('bbbbbbbb-0000-0000-0000-000000000045', 'cccccccc-0000-0000-0000-000000000012', '55555555-0000-0000-0000-000000000023', '11111111-0000-0000-0000-000000000001', 'youtube', 'jwVkXybcFk4', 410),
+  ('bbbbbbbb-0000-0000-0000-000000000046', 'cccccccc-0000-0000-0000-000000000012', '55555555-0000-0000-0000-000000000023', '11111111-0000-0000-0000-000000000001', 'youtube', 'NrKX46DzkGQ', 680),
+  ('bbbbbbbb-0000-0000-0000-000000000047', 'cccccccc-0000-0000-0000-000000000012', '55555555-0000-0000-0000-000000000024', '11111111-0000-0000-0000-000000000001', 'youtube', 'II-6dSCQTmA', 860),
+  ('bbbbbbbb-0000-0000-0000-000000000048', 'cccccccc-0000-0000-0000-000000000012', '55555555-0000-0000-0000-000000000024', '11111111-0000-0000-0000-000000000001', 'youtube', 'F4T2K9vXgG0', 910)
 
 ON CONFLICT (lesson_id) DO NOTHING;
 
@@ -607,9 +1034,33 @@ VALUES
    '11111111-0000-0000-0000-000000000001',
    'aaaaaaaa-0000-0000-0000-000000000002', 'completed', now(), 100),
 
+  -- Omar enrolled in Flutter (active)
+  ('eeeeeeee-0000-0000-0000-000000000005',
+   'aaaaaaaa-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000006',
+   '11111111-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000002', 'active', NULL, 0),
+
+  -- Omar enrolled in Python Data Science (active)
+  ('eeeeeeee-0000-0000-0000-000000000006',
+   'aaaaaaaa-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000007',
+   '11111111-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000002', 'active', NULL, 0),
+
   -- Lina enrolled in React (active)
   ('eeeeeeee-0000-0000-0000-000000000004',
    'aaaaaaaa-0000-0000-0000-000000000005', 'cccccccc-0000-0000-0000-000000000001',
+   '11111111-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000002', 'active', NULL, 0),
+
+  -- Lina enrolled in UI/UX Fundamentals (active)
+  ('eeeeeeee-0000-0000-0000-000000000007',
+   'aaaaaaaa-0000-0000-0000-000000000005', 'cccccccc-0000-0000-0000-000000000004',
+   '11111111-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000002', 'active', NULL, 0),
+
+  -- Lina enrolled in Modern Figma (active)
+  ('eeeeeeee-0000-0000-0000-000000000008',
+   'aaaaaaaa-0000-0000-0000-000000000005', 'cccccccc-0000-0000-0000-000000000012',
    '11111111-0000-0000-0000-000000000001',
    'aaaaaaaa-0000-0000-0000-000000000002', 'active', NULL, 0)
 
@@ -933,8 +1384,16 @@ ON CONFLICT (tenant_id, viewed_at, id) DO NOTHING;
 
 INSERT INTO private.user_access_cache (user_id, course_id, tenant_id, status)
 VALUES
+  -- Omar
   ('aaaaaaaa-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001', 'active'),
-  ('aaaaaaaa-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001', 'active')
+  ('aaaaaaaa-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000001', 'active'),
+  ('aaaaaaaa-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000001', 'completed'),
+  ('aaaaaaaa-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000006', '11111111-0000-0000-0000-000000000001', 'active'),
+  ('aaaaaaaa-0000-0000-0000-000000000004', 'cccccccc-0000-0000-0000-000000000007', '11111111-0000-0000-0000-000000000001', 'active'),
+  -- Lina
+  ('aaaaaaaa-0000-0000-0000-000000000005', 'cccccccc-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001', 'active'),
+  ('aaaaaaaa-0000-0000-0000-000000000005', 'cccccccc-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000001', 'active'),
+  ('aaaaaaaa-0000-0000-0000-000000000005', 'cccccccc-0000-0000-0000-000000000012', '11111111-0000-0000-0000-000000000001', 'active')
 
 ON CONFLICT (user_id, course_id) DO NOTHING;
 
@@ -945,7 +1404,7 @@ ON CONFLICT (user_id, course_id) DO NOTHING;
 INSERT INTO public.schema_migrations (version, description)
 VALUES
   ('13.0.0',
-   'v13 QA Consolidated seed — 6 users, 3 tenants, 6 courses, 4 sections, 10 lessons, 5 lesson_contents, 4 enrollments, 3 warnings, 5 tenant_settings, 3 notifications, 4 feature_flags, 3 video_views, 2 user_access_cache, 1 course_prerequisites, 5 course_learning_objectives, 2 user_location_logs, 2 user_last_location, 2 access_rules, 2 user_access_rules, 3 todos, 2 rate_limits, 2 devices, 3 activity_logs')
+   'v13 QA Consolidated seed — 6 users, 3 tenants, 13 courses, 25 sections, 53 lessons, 48 lesson_contents, 8 enrollments, 3 warnings, 5 tenant_settings, 3 notifications, 4 feature_flags, 3 video_views, 8 user_access_cache, 5 course_prerequisites, 24 course_learning_objectives, 2 user_location_logs, 2 user_last_location, 2 access_rules, 2 user_access_rules, 3 todos, 2 rate_limits, 2 devices, 3 activity_logs')
 
 ON CONFLICT (version) DO NOTHING;
 

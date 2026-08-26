@@ -85,14 +85,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final groupsMap = <String, CategoryGroup>{};
 
     for (final course in courses) {
-      final rawCat = course.category;
-      final isGeneral = rawCat == null || rawCat.trim().isEmpty;
-      final normalizedKey = isGeneral ? 'general' : rawCat.trim().toLowerCase();
+      final isGeneral = course.isGeneralCategory;
+      final normalizedKey = isGeneral ? 'general' : course.category!.trim().toLowerCase();
 
       if (!groupsMap.containsKey(normalizedKey)) {
         groupsMap[normalizedKey] = CategoryGroup(
           normalizedKey: normalizedKey,
-          displayName: isGeneral ? l10n.generalCategory : rawCat.trim(),
+          displayName: course.categoryLabel(l10n),
           courses: [],
         );
       }

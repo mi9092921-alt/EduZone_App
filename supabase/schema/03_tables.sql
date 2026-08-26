@@ -582,7 +582,7 @@ CREATE TABLE IF NOT EXISTS public.courses (
   thumbnail_url text,
   slug text CHECK (slug IS NULL OR length(btrim(slug)) > 0),
   teacher_id uuid REFERENCES public.users(id) ON DELETE RESTRICT,
-  category text,
+  category text NOT NULL DEFAULT 'general',
   level text NOT NULL DEFAULT 'beginner'
     CHECK (level IN ('beginner', 'intermediate', 'advanced')),
   price numeric(12,2) NOT NULL DEFAULT 0 CHECK (price >= 0),
