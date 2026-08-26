@@ -68,8 +68,7 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
           ),
           error: (err, stack) => AppEmptyState(
             icon: Icons.error_outline_rounded,
-            title: l10n.failedToLoadCourses,
-            description: ErrorHandler.getMessage(context, err),
+            title: ErrorHandler.getMessage(context, err),
             actionLabel: l10n.retryButton,
             onActionPressed: () {
               ref.invalidate(courseDetailsProvider(widget.courseId));

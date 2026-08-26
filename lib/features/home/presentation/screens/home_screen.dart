@@ -214,8 +214,7 @@ class _RecentCoursesSection extends ConsumerWidget {
             error: (err, _) => AppEmptyState(
               isFullPage: false,
               icon: Icons.error_outline_rounded,
-              title: l10n.failedToLoadCourses,
-              description: ErrorHandler.getMessage(context, err),
+              title: ErrorHandler.getMessage(context, err),
               actionLabel: l10n.retryButton,
               onActionPressed: () => ref.invalidate(recentCoursesProvider),
             ),
@@ -308,8 +307,7 @@ class _DailyTasksSection extends ConsumerWidget {
           error: (err, _) => AppEmptyState(
             isFullPage: false,
             icon: Icons.error_outline_rounded,
-            title: l10n.errorLoadingTasks,
-            description: ErrorHandler.getMessage(context, err),
+            title: ErrorHandler.getMessage(context, err),
             actionLabel: l10n.retryButton,
             onActionPressed: () {
               ref.invalidate(recentTodosProvider);

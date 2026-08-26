@@ -49,9 +49,18 @@ class AppScreen extends StatelessWidget {
 
     Widget content;
     if (error != null) {
+      // `error` here is already the caller-classified, user-facing message
+      // (e.g. via `ErrorHandler.getMessage()` -- "No internet connection."
+      // vs a real server error) -- every screen that sets it did the work
+      // of telling offline apart from a genuine failure. Showing a fixed
+      // `errorGeneric` ("An error occurred") as the large bold title and
+      // relegating the actual, already-correct reason to small print
+      // underneath defeated that classification from the user's point of
+      // view: every failure *looked* like the same generic error at a
+      // glance, connectivity included. The classified message belongs in
+      // the headline.
       content = AppEmptyState(
-        title: l10n?.errorGeneric ?? 'Something went wrong',
-        description: error!,
+        title: error!,
         icon: Icons.error_outline,
         actionLabel: l10n?.retryButton ?? 'Retry',
         onActionPressed: onRetry,
