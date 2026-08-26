@@ -31,6 +31,27 @@ class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
         if (userId == null) return null;
 
         // Use direct query instead of RPC to avoid dependency on missing database function
+        //
+        // EDUZONE-1 (Sentry PGRST201): `public.user_progress` carries TWO
+        // foreign keys to `public.courses` — the plain single-column
+        // `user_progress_course_id_fkey` (from the inline
+        // `course_id ... REFERENCES public.courses(id)` in
+        // supabase/schema/03_tables.sql) AND the composite
+        // `user_progress_course_tenant_fkey` (course_id, tenant_id) added
+        // in supabase/schema/04_constraints.sql for tenant-integrity
+        // enforcement. PostgREST embeds a related table via `table(...)`
+        // by resolving exactly one FK between the two tables; with two
+        // candidates it cannot pick and returns PGRST201 ("more than one
+        // relationship was found") on every call — this is a schema
+        // constant, not a transient failure, so it reproduced on every
+        // launch as reported. Disambiguated by naming the intended
+        // constraint explicitly, matching the same
+        // `!<fk_name>` pattern already used elsewhere in this codebase
+        // (see CoursesQueries.teacherJoin and the prerequisite-course
+        // join in courses_remote_ds_impl.dart). `lesson:lessons(...)`
+        // below is left as-is: user_progress has only a single FK to
+        // lessons (`user_progress_lesson_id_fkey`), so that embed is
+        // already unambiguous.
         final response = await _client
             .from('user_progress')
             .select('''
@@ -38,7 +59,7 @@ class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
             completed,
             progress_pct,
             last_watched,
-            course:courses(id, title, thumbnail_url),
+            course:courses!user_progress_course_id_fkey(id, title, thumbnail_url),
             lesson:lessons(id, title, section_id, section:sections(title))
           ''')
             .eq('user_id', userId)

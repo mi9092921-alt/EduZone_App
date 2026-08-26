@@ -134,19 +134,30 @@ class AppInitializer {
             chunksReset: 0,
             chunksInvalidated: 0,
           );
-        } finally {
-          // Section 20 SQLite lifecycle (M25/M26): this is a one-shot,
-          // pre-ProviderScope `StorageService`/`Database` handle distinct
-          // from the app-wide `storageServiceProvider` instance (see the
-          // comment above on why it can't reuse that provider yet). Without
-          // an explicit close(), this connection would otherwise be left
-          // open for the rest of the app's life with nothing left holding
-          // a reference to it. Best-effort: a close failure must not turn
-          // an otherwise-successful recovery pass into a reported failure.
-          try {
-            await recoveryStorageService.close();
-          } catch (_) {}
         }
+        // EDUZONE-2 (Sentry, SqfliteDatabaseException: database_closed,
+        // reproduced on every launch): this pass previously closed
+        // `recoveryStorageService` in a `finally` block. sqflite's
+        // `openDatabase()` defaults to `singleInstance: true`, which
+        // means every `StorageService` opened against the same on-disk
+        // path (`eduzone_downloads.db`) — this one, the four sibling
+        // one-shot instances in 7b-7e below, the long-lived instance
+        // behind `storageServiceProvider`, and `CleanupScheduler`'s
+        // main-isolate usage — share ONE underlying native connection,
+        // not five/six independent ones. Passes 7-7e all run
+        // concurrently (`unawaited`, fired back-to-back, no `await`
+        // between them) and each held its own non-null `_database`
+        // field pointing at that shared connection. Whichever pass
+        // finished first and called `close()` tore down the connection
+        // out from under every other pass/provider still mid-flight or
+        // about to run its first query, which then threw
+        // `database_closed` — deterministically, on every cold start,
+        // exactly as reported. There is nothing to leak by not closing
+        // here: the connection is a process-lifetime, path-keyed cache
+        // owned by sqflite itself, already kept alive for the rest of
+        // the app's life by `storageServiceProvider`, and released by
+        // the OS at process death — a one-shot wrapper around a shared
+        // resource must not unilaterally close it.
       }());
 
       // 7b. Same crash-recovery pass, but for leftover *plaintext* offline
@@ -172,14 +183,12 @@ class AppInitializer {
           // exactly the kind of failure that must never go unobserved.
           GlobalErrorHandler.logError(e, stack);
           return 0;
-        } finally {
-          // See matching comment on the DownloadRecoveryService pass above
-          // — same one-shot, pre-ProviderScope StorageService that must be
-          // explicitly closed since nothing else will release it.
-          try {
-            await crashRecoveryStorageService.close();
-          } catch (_) {}
         }
+        // No `finally { crashRecoveryStorageService.close() }` — see the
+        // EDUZONE-2 explanation on pass 7 above: this shares the same
+        // singleInstance sqflite connection as every other pass here,
+        // and closing it out from under them is the actual bug, not a
+        // missing cleanup.
       }());
 
       // 7c. download-subsystem-production-hardening-plan.md, "Manifest +
@@ -216,11 +225,9 @@ class AppInitializer {
           // forever with nothing surfaced to diagnose why.
           GlobalErrorHandler.logError(e, stack);
           return 0;
-        } finally {
-          try {
-            await interruptedDownloadsStorageService.close();
-          } catch (_) {}
         }
+        // No close() here either — see the EDUZONE-2 explanation on
+        // pass 7 above.
       }());
 
       // 7d. download-subsystem-production-hardening-plan.md, "Manifest +
@@ -252,11 +259,9 @@ class AppInitializer {
           // with nothing surfaced to diagnose why.
           GlobalErrorHandler.logError(e, stack);
           return 0;
-        } finally {
-          try {
-            await orphanedFilesStorageService.close();
-          } catch (_) {}
         }
+        // No close() here either — see the EDUZONE-2 explanation on
+        // pass 7 above.
       }());
 
       // 7e. download-subsystem-production-hardening-plan.md, "Manifest +
@@ -288,11 +293,9 @@ class AppInitializer {
           // surfaced to diagnose why the next playback attempt fails.
           GlobalErrorHandler.logError(e, stack);
           return 0;
-        } finally {
-          try {
-            await missingFilesStorageService.close();
-          } catch (_) {}
         }
+        // No close() here either — see the EDUZONE-2 explanation on
+        // pass 7 above.
       }());
 
     } catch (e) {

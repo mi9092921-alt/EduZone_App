@@ -8,6 +8,42 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// FB-001 (Sentry EDUZONE-3, "Failed to load FirebaseOptions from resource"):
+// firebase_core/firebase_messaging were declared in pubspec.yaml and
+// Firebase.initializeApp() was called from FcmService, but the
+// `com.google.gms.google-services` Gradle plugin was never applied
+// anywhere in this project. That plugin is what reads
+// android/app/google-services.json at build time and generates the
+// values.xml resources (default_web_client_id, google_app_id,
+// google_api_key, etc.) that native FirebaseApp auto-initialization
+// reads at runtime. Without the plugin applied, those resources never
+// exist — so even a developer machine with a real, valid
+// google-services.json in place still fails with exactly this error on
+// every single launch, which matches the reported repro (same device,
+// two runs, both failing).
+//
+// google-services.json is intentionally gitignored (see .gitignore) —
+// it is per-Firebase-project configuration, not committed to the repo —
+// so the plugin is applied conditionally on the file actually being
+// present locally/in CI. This keeps `flutter build` working on a
+// checkout that has no Firebase project wired up yet (push notifications
+// simply stay disabled, exactly as FcmService.init()'s existing
+// try/catch already assumes), while fixing the crash-path for any
+// machine — like the one that generated this Sentry report — that does
+// have the file in place.
+val googleServicesJson = file("google-services.json")
+if (googleServicesJson.exists()) {
+    apply(plugin = "com.google.gms.google-services")
+} else {
+    logger.warn(
+        "[EduZone] android/app/google-services.json not found — skipping " +
+            "com.google.gms.google-services plugin. Firebase Messaging will " +
+            "stay disabled for this build (FcmService.init() already " +
+            "degrades to a no-op + logged error in that case). Place a real " +
+            "google-services.json here to enable push notifications."
+    )
+}
+
 // REL-001: Load the real production keystore credentials from
 // android/key.properties. This file is NEVER committed to the repository
 // (see .gitignore) — it must be created locally per machine, or written
