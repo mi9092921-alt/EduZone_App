@@ -68,7 +68,21 @@ class AppScreen extends StatelessWidget {
       content = SafeArea(child: content);
     }
 
-    if (scrollable) {
+    // RefreshIndicator only responds to a swipe if it can see scroll
+    // notifications bubbling up from a real Scrollable. `AppEmptyState`
+    // (the error widget above) is a plain Center/Column with nothing
+    // scrollable inside it. Callers that pass `scrollable: false` because
+    // their *normal* `child` already supplies its own scroll view (e.g.
+    // `AppPageScaffold`'s `CustomScrollView`) unintentionally lost pull-to-
+    // refresh the moment an error occurred, since the CustomScrollView is
+    // discarded above and replaced by the non-scrollable error widget.
+    // Give the error state its own scrollable whenever a refresh callback
+    // is wired up, regardless of `scrollable`, so pull-to-refresh keeps
+    // working and users aren't limited to the Retry button.
+    final bool errorNeedsOwnScrollable =
+        error != null && !scrollable && onRefresh != null;
+
+    if (scrollable || errorNeedsOwnScrollable) {
       content = SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),

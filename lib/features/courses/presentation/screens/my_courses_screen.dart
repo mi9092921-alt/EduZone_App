@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../application/providers/courses_provider.dart';
 import '../widgets/my_courses_preview.dart';
 
@@ -19,7 +20,9 @@ class MyCoursesScreen extends ConsumerWidget {
       title: l10n.coursesTab,
       onRefresh: () async => ref.invalidate(myCoursesProvider),
       onRetry: () => ref.invalidate(myCoursesProvider),
-      error: myCoursesAsync.hasError ? l10n.failedToLoadCourses : null,
+      error: myCoursesAsync.hasError
+          ? ErrorHandler.getMessage(context, myCoursesAsync.error!)
+          : null,
       actions: [
         IconButton(
           icon: const Icon(Icons.download_rounded),

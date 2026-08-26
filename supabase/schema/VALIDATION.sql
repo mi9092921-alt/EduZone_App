@@ -1811,7 +1811,54 @@ BEGIN
   );
 END $$;
 
--- Display Results (includes Checks 27-36 above)
+-- Check 37: public.user_progress and public.activity_log_queue must NOT
+-- have FORCE ROW LEVEL SECURITY (same AUTH-BUG-01 root cause as Check 26,
+-- found this pass via a live-Postgres repro rather than static review
+-- alone -- see the comments beside each ALTER TABLE in 09_rls.sql for the
+-- exact mechanism). public.update_lesson_progress() is SECURITY DEFINER
+-- and does its own INSERT ... ON CONFLICT DO UPDATE into user_progress;
+-- internal.log_activity_internal() is SECURITY DEFINER and does its own
+-- INSERT INTO activity_log_queue. Both run as the table owner, not
+-- `authenticated`, and both tables' write policies only ever grant to
+-- `authenticated` (user_progress) or deny everyone via `TO public
+-- USING (false)` (activity_log_queue). With FORCE in effect neither write
+-- has any matching policy, so both fail 100% of the time -- reproduced
+-- with an isolated PostgreSQL 16 instance mirroring this exact
+-- owner/role/policy shape. This is the confirmed root cause of the
+-- "watched" checkbox in lesson_tile.dart always showing a generic error,
+-- and of lesson-progress activity logging silently never persisting
+-- (swallowed by the `EXCEPTION WHEN OTHERS THEN NULL` around every
+-- log_activity_internal() call site, so it never surfaced as a visible
+-- failure). RLS is still fully ENABLEd and enforced for anon/authenticated
+-- on both tables regardless of this setting -- FORCE only ever affects
+-- the table owner/superuser, and neither table is written to directly by
+-- any client path in this app today.
+DO $$
+DECLARE
+  v_bad text[];
+BEGIN
+  SELECT array_agg(c.relname ORDER BY c.relname) INTO v_bad
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public'
+    AND c.relname IN ('user_progress', 'activity_log_queue')
+    AND c.relforcerowsecurity = true;
+
+  INSERT INTO validation_results VALUES (
+    'user_progress/activity_log_queue Do Not FORCE Row Level Security',
+    CASE WHEN v_bad IS NULL THEN 'PASS' ELSE 'FAIL' END,
+    COALESCE(
+      'CRITICAL: FORCE ROW LEVEL SECURITY is set on: ' || array_to_string(v_bad, ', ')
+        || ' -- the SECURITY DEFINER function that writes to this table runs as '
+        || 'the table owner, which has no matching policy on this table, so '
+        || 'every write from that RPC will fail with a row-level security '
+        || 'violation (reproduced against a live PostgreSQL 16 instance)',
+      'Neither user_progress nor activity_log_queue force RLS on the table owner (RLS remains enforced for anon/authenticated either way)'
+    )
+  );
+END $$;
+
+-- Display Results (includes Checks 27-37 above)
 SELECT * FROM validation_results ORDER BY check_name;
 
 -- Summary

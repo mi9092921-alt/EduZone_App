@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
 import '../core/network/supabase_client.dart';
 import '../core/security/secure_storage_config.dart';
@@ -36,6 +37,19 @@ class AppInitializer {
       SystemChrome.setSystemUIOverlayStyle(
         const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
       );
+
+      // 2.5. Register Arabic relative-time messages for the `timeago`
+      // package. It only ships English/Spanish by default — every
+      // `timeago.format(date, locale: 'ar')` call site (Todo due dates in
+      // TodoDateFormatter, notification timestamps in notification_tile,
+      // and the course "last watched" label in course_details_screen) was
+      // silently falling back to English, e.g. an Arabic overdue label
+      // wrapping an English "18 hours ago" instead of a real Arabic
+      // relative time. This is a one-line, synchronous, no-I/O call, so it
+      // must simply run once before first frame — same reasoning as the
+      // Platform Config step right above.
+      timeago.setLocaleMessages('ar', timeago.ArMessages());
+      timeago.setLocaleMessages('ar_short', timeago.ArShortMessages());
 
       // 3. Security protections (screenshot guard, screen-share guard, freeRASP).
       // Requires SECURITY_ANDROID_SIGNING_HASH / SECURITY_IOS_TEAM_ID to be

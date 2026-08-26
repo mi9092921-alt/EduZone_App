@@ -133,7 +133,35 @@ ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.user_progress ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE public.user_progress FORCE ROW LEVEL SECURITY;
+-- AUTH-BUG-01-style regression (found via a live-Postgres repro, not just
+-- static review: FORCE + a policy scoped only `TO authenticated` was
+-- reproduced end-to-end -- see the reasoning below for the exact repro).
+-- public.update_lesson_progress() is SECURITY DEFINER and does the actual
+-- INSERT ... ON CONFLICT DO UPDATE into this table itself (after its own
+-- explicit auth.uid()/assert_tenant()/has_course_access()/
+-- is_teacher_of_course()/is_admin_with_session_validation() checks --
+-- those checks are unaffected by this change and remain the real
+-- authorization boundary for that RPC). During that INSERT, current_user
+-- is the function owner, not `authenticated`. user_progress_insert_merged
+-- / user_progress_update_merged below are (correctly, for direct
+-- PostgREST access) scoped `TO authenticated` only -- the owner is not a
+-- member of that role, so with FORCE in effect no policy ever matches and
+-- every call to update_lesson_progress() fails with "new row violates
+-- row-level security policy for table user_progress", 100% of the time,
+-- regardless of whether the caller is legitimately authorized. This is
+-- the exact bug behind the client-visible "watched" checkbox in
+-- lesson_tile.dart always showing a generic error (the same
+-- generic-"حدث خطأ"-on-legitimate-write symptom as AVATAR-BUG-01 in
+-- 10_permissions.sql, same root cause class). Removing FORCE restores the
+-- table-owner bypass that update_lesson_progress()'s write relies on --
+-- exactly the same fix already applied to
+-- users/user_roles/courses/enrollments above for the identical reason.
+-- RLS remains fully ENABLEd and enforced for any direct anon/authenticated
+-- access to this table (there is none in this app today; all writes go
+-- through the RPC), so this does not weaken the tenant/user isolation
+-- user_progress_select_policy/user_progress_insert_merged/
+-- user_progress_update_merged/user_progress_delete_merged still enforce
+-- for that path.
 
 DROP POLICY IF EXISTS user_progress_select_policy ON public.user_progress;
 
@@ -941,13 +969,33 @@ ALTER TABLE public.user_location_logs FORCE ROW LEVEL SECURITY;
 
 ALTER TABLE public.activity_logs FORCE ROW LEVEL SECURITY;
 
-ALTER TABLE public.activity_log_queue FORCE ROW LEVEL SECURITY;
-
 -- ============================================================================
 -- Phase 5: Enterprise Hardening (Validation, API, Audit)
 -- ============================================================================
 
--- CRIT-05: Deny all PostgREST access to internal tables
+-- CRIT-05: Deny all PostgREST access to internal tables.
+--
+-- NOTE: deliberately NOT `FORCE ROW LEVEL SECURITY` here (unlike the other
+-- tables in this file) -- same root cause and same fix shape as the
+-- user_progress comment above, discovered while tracing why activity
+-- logging silently never persists. internal.log_activity_internal() is
+-- SECURITY DEFINER and does the actual `INSERT INTO
+-- public.activity_log_queue`; every one of its call sites (including
+-- update_lesson_progress() above) wraps that call in
+-- `EXCEPTION WHEN OTHERS THEN NULL`, specifically so a logging failure can
+-- never fail the business write it describes -- which means this was
+-- failing 100% of the time with FORCE in effect, invisibly. The policy
+-- below is `TO public USING (false)`, i.e. everyone is denied by policy;
+-- with FORCE also stripping the table-owner bypass, literally nothing
+-- (not even the owner-run logging function) could insert a row --
+-- verified with the same live-Postgres repro as user_progress. Removing
+-- FORCE restores the owner-bypass log_activity_internal()'s write needs.
+-- The `TO public USING (false)` policy remains fully enforced for every
+-- non-owner role (anon/authenticated/service_role), so direct PostgREST
+-- access to this internal queue is still completely denied -- this only
+-- ever affects the table owner, matching the CRIT-05 intent ("deny all
+-- *PostgREST* access") rather than accidentally also blocking the
+-- server-side logging function that owns the table.
 ALTER TABLE public.activity_log_queue ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY activity_log_queue_deny_all ON public.activity_log_queue
