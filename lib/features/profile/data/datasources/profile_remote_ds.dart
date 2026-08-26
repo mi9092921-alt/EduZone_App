@@ -92,7 +92,7 @@ class ProfileRemoteDataSource {
 
   /// Upload avatar image to Supabase Storage.
   ///
-  /// Uploads to `avatars/{uid}/avatar.jpg` with upsert,
+  /// Uploads to `avatars/{uid}/avatar.<ext>` with upsert,
   /// then updates `users.avatar_url` with the public URL.
   /// Returns the public URL.
   Future<String> uploadAvatar(String filePath) async {
@@ -104,24 +104,49 @@ class ProfileRemoteDataSource {
         try {
           final uid = SupabaseService.client.auth.currentUser!.id;
           final file = File(filePath);
-          final storagePath = '$uid/avatar.jpg';
 
-          // Upload with upsert to replace existing avatar
+          // Derive MIME type from the actual file extension so iOS HEIC/PNG
+          // images are not uploaded with a lying `image/jpeg` contentType,
+          // which Supabase Storage rejects or stores with wrong metadata.
+          // Falls back to `image/jpeg` for unknown extensions because
+          // ImagePicker's `imageQuality` param re-encodes as JPEG by default
+          // on most platforms.
+          final ext = filePath.split('.').last.toLowerCase();
+          final contentType = switch (ext) {
+            'jpg' || 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'webp' => 'image/webp',
+            'gif' => 'image/gif',
+            'heic' || 'heif' => 'image/heic',
+            _ => 'image/jpeg',
+          };
+          final storagePath = '$uid/avatar.$ext';
+
+          // Upload with upsert to replace existing avatar.
+          // NOTE: upsert internally SELECTs storage.objects to decide between
+          // INSERT and UPDATE — this requires the `avatars_select_own_folder`
+          // RLS policy on storage.objects (see 10_permissions.sql,
+          // AVATAR-BUG-01 FIX). Without that policy the SELECT is blocked by
+          // RLS even on a public bucket, raising a StorageException.
           await SupabaseService.client.storage
               .from('avatars')
               .upload(
                 storagePath,
                 file,
-                fileOptions: const FileOptions(
+                fileOptions: FileOptions(
                   upsert: true,
-                  contentType: 'image/jpeg',
+                  contentType: contentType,
                 ),
               );
 
-          // Get public URL
-          final publicUrl = SupabaseService.client.storage
+          // Get public URL with a cache-busting timestamp so CachedNetworkImage,
+          // browser, and CDN caches immediately fetch the fresh avatar on update
+          // rather than serving the stale cached image for the same path.
+          final baseUrl = SupabaseService.client.storage
               .from('avatars')
               .getPublicUrl(storagePath);
+          final publicUrl =
+              '$baseUrl?t=${DateTime.now().millisecondsSinceEpoch}';
 
           // Update user record with new avatar URL via `api_update_profile`
           // -- same RLS/permission constraint as `updateProfile` above: a

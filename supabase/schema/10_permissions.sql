@@ -212,6 +212,24 @@ END $$;
 -- authorization, never through a direct authenticated/anon storage.objects
 -- query. This matches the existing reports/exports pattern above.
 
+-- AVATAR-BUG-01 FIX: upsert requires a SELECT on storage.objects to check
+-- whether the object already exists before deciding INSERT vs UPDATE.
+-- Without this policy, Postgres RLS blocks the internal SELECT even on a
+-- public bucket (bucket-level `public = true` controls HTTP access, not RLS),
+-- causing every avatar upload to fail with a generic StorageException that
+-- surfaces to the user as "حدث خطأ" / "An error occurred".
+-- Scope is restricted to the user's own uid-prefix folder, matching the
+-- INSERT/UPDATE/DELETE policies that were already in place.
+DROP POLICY IF EXISTS avatars_select_own_folder ON storage.objects;
+CREATE POLICY avatars_select_own_folder
+  ON storage.objects
+  FOR SELECT
+  TO authenticated
+  USING (
+    bucket_id = 'avatars'
+    AND split_part(name, '/', 1) = auth.uid()::text
+  );
+
 DROP POLICY IF EXISTS avatars_insert_own_folder ON storage.objects;
 CREATE POLICY avatars_insert_own_folder
   ON storage.objects

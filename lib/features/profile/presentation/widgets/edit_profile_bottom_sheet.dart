@@ -119,6 +119,12 @@ class _EditProfileBottomSheetState
       setState(() => _isSaving = false);
       if (success) {
         Navigator.pop(context);
+        AppSnackbar.showSuccess(
+          context: context,
+          message: _selectedImagePath != null
+              ? l10n.avatarUpdated
+              : l10n.profileUpdated,
+        );
       } else {
         // Previously: on failure the sheet just stayed open with zero
         // feedback -- ProfileActionsState.error was being set by the

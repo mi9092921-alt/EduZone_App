@@ -820,6 +820,7 @@ BEGIN
   WHERE schemaname = 'storage'
     AND tablename = 'objects'
     AND policyname IN (
+      'avatars_select_own_folder',
       'avatars_insert_own_folder',
       'avatars_update_own_folder',
       'avatars_delete_own_folder'
@@ -840,14 +841,14 @@ BEGIN
     'Storage Buckets And Client Write Boundaries',
     CASE
       WHEN v_bad_buckets IS NULL
-       AND v_avatar_policies = 3
+       AND v_avatar_policies = 4
        AND v_non_avatar_client_policies = 0
       THEN 'PASS' ELSE 'FAIL' END,
     CASE
       WHEN v_bad_buckets IS NULL
-       AND v_avatar_policies = 3
+       AND v_avatar_policies = 4
        AND v_non_avatar_client_policies = 0
-      THEN 'avatars is intentionally public with owner-only writes; reports/exports are private and have no report/export client policies'
+      THEN 'avatars is intentionally public with owner-only read+writes (select/insert/update/delete); reports/exports are private and have no report/export client policies'
       ELSE 'CRITICAL: storage bucket visibility or client policy boundaries are not in the expected hardened state'
     END
   );
