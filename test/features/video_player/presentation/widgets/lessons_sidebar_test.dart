@@ -6,6 +6,7 @@ import 'package:app/features/courses/domain/entities/lesson.dart';
 import 'package:app/features/courses/domain/entities/section.dart';
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
 import 'package:app/features/video_player/presentation/widgets/lessons_sidebar.dart';
+import 'package:app/shared/components/lesson_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -151,8 +152,24 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Intro (free preview)'), findsOneWidget);
-      expect(find.byIcon(Icons.lock_outline_rounded), findsNothing);
+      final previewTile = find.ancestor(
+        of: find.text('Intro (free preview)'),
+        matching: find.byType(LessonTile),
+      );
+      expect(
+        find.descendant(
+          of: previewTile,
+          matching: find.byIcon(Icons.lock_outline_rounded),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: previewTile,
+          matching: find.byType(Checkbox),
+        ),
+        findsOneWidget,
+      );
     });
   });
 }

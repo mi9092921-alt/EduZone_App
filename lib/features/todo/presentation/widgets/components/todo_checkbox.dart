@@ -5,12 +5,14 @@ class TodoCheckbox extends StatelessWidget {
   final bool value;
   final ValueChanged<bool?> onChanged;
   final String? label;
+  final EdgeInsetsGeometry padding;
 
   const TodoCheckbox({
     super.key,
     required this.value,
     required this.onChanged,
     this.label,
+    this.padding = const EdgeInsets.all(AppSpacing.xs),
   });
 
   @override
@@ -23,7 +25,7 @@ class TodoCheckbox extends StatelessWidget {
         onTap: () => onChanged(!value),
         behavior: HitTestBehavior.opaque,
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: padding,
           child: AnimatedContainer(
             duration: AppMotion.fast,
             curve: Curves.easeOutBack,
