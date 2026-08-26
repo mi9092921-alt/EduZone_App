@@ -87,9 +87,22 @@ class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
           'lesson_id': lesson['id'] as String,
           'lesson_title': lesson['title'] as String? ?? '',
           'section_title': section?['title'] as String? ?? '',
-          'last_watched': data['last_watched'] != null
-              ? DateTime.parse(data['last_watched'] as String)
-              : DateTime.now(),
+          // Sentry (ServerException: "type 'DateTime' is not a subtype of
+          // type 'String' in type cast", culprit NetworkGuard.read via
+          // this method): must stay a raw ISO8601 *string* here, not a
+          // parsed DateTime. ResumeLesson.fromJson() -> the generated
+          // _$ResumeLessonFromJson in resume_lesson.g.dart does its own
+          // `DateTime.parse(json['last_watched'] as String)` -- handing
+          // it an already-parsed DateTime object made that `as String`
+          // cast fail on every call where a resume-lesson row actually
+          // existed (i.e. whenever data['last_watched'] was non-null),
+          // which every affected user would hit on essentially every
+          // Home-screen load. PostgREST serializes timestamptz columns as
+          // ISO8601 strings, never as a native DateTime, so
+          // `data['last_watched']` here is always either null or already
+          // exactly the string ResumeLesson.fromJson() needs.
+          'last_watched':
+              data['last_watched'] as String? ?? DateTime.now().toIso8601String(),
           'progress_pct': (data['progress_pct'] as num?)?.toDouble() ?? 0.0,
         };
 
