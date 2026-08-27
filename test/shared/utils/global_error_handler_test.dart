@@ -1,9 +1,77 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:app/shared/utils/global_error_handler.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
+  group('GlobalErrorHandler.isConnectivityNoise (GLOBALERRORHANDLER-BUG-01)', () {
+    // Production incident: Supabase's own internal background token
+    // auto-refresh timer (GoTrueClient._callRefreshToken) fails with a
+    // DNS/socket-level error while the device has no connectivity. That
+    // failure is never caught by app code, so it reaches
+    // PlatformDispatcher.instance.onError -> GlobalErrorHandler.logError
+    // as a raw AuthRetryableFetchException(statusCode: null) wrapping a
+    // "Failed host lookup" SocketException -- the exact shape seen in the
+    // incident. It must be classified as non-actionable connectivity
+    // noise, mirroring the fix already applied to
+    // CheckUserAccessService._check() for the equivalent case.
+    test('classifies a raw SocketException (DNS failure) as noise', () {
+      expect(
+        GlobalErrorHandler.isConnectivityNoise(
+          const SocketException(
+            "Failed host lookup: 'evmrahlzcgqgjhwvxzih.supabase.co'",
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+        'classifies AuthRetryableFetchException with null statusCode '
+        '(GoTrue refresh-timer DNS failure) as noise', () {
+      expect(
+        GlobalErrorHandler.isConnectivityNoise(
+          AuthRetryableFetchException(
+            message: 'ClientException with SocketException: '
+                "Failed host lookup: 'evmrahlzcgqgjhwvxzih.supabase.co'",
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('classifies a TimeoutException as noise', () {
+      expect(
+        GlobalErrorHandler.isConnectivityNoise(
+          TimeoutException('deadline exceeded'),
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+        'does NOT classify AuthRetryableFetchException with a real '
+        'statusCode (server-side failure, not connectivity) as noise', () {
+      expect(
+        GlobalErrorHandler.isConnectivityNoise(
+          AuthRetryableFetchException(message: 'bad gateway', statusCode: '502'),
+        ),
+        isFalse,
+      );
+    });
+
+    test('does NOT classify an unrelated application exception as noise', () {
+      expect(
+        GlobalErrorHandler.isConnectivityNoise(StateError('bad widget state')),
+        isFalse,
+      );
+    });
+  });
+
   group('GlobalErrorHandler.logError', () {
     test('does not throw for a plain exception with no stack trace', () {
       expect(
@@ -29,6 +97,36 @@ void main() {
       } finally {
         debugPrint = originalDebugPrint;
       }
+    });
+
+    test(
+        'flags a connectivity failure in the console output instead of '
+        'silently dropping it', () {
+      final logs = <String>[];
+      final originalDebugPrint = debugPrint;
+      debugPrint = (message, {wrapWidth}) => logs.add(message ?? '');
+      try {
+        GlobalErrorHandler.logError(
+          const SocketException('Failed host lookup'),
+          null,
+        );
+        expect(
+          logs.any((line) => line.contains('not reported to Sentry')),
+          isTrue,
+        );
+      } finally {
+        debugPrint = originalDebugPrint;
+      }
+    });
+
+    test('does not throw for a connectivity failure with no stack trace', () {
+      expect(
+        () => GlobalErrorHandler.logError(
+          const SocketException('Failed host lookup'),
+          null,
+        ),
+        returnsNormally,
+      );
     });
   });
 

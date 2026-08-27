@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../core/error/exceptions.dart';
+import '../../core/network/network_exception_mapper.dart';
+
 /// Centralized error management system for the EduZone app.
 ///
 /// Handles logging, crash reporting via Sentry, and provides
@@ -23,8 +26,42 @@ class GlobalErrorHandler {
     };
   }
 
-  /// Logs errors to the console and forwards to Sentry.
+  /// Whether [error] is an expected, non-actionable connectivity failure
+  /// that must never be reported to Sentry as a production "error" event.
+  ///
+  /// Extracted as its own pure, `@visibleForTesting` method (mirroring
+  /// `AuthErrorPolicy.isTransient`) because [logError] is the *sole*
+  /// funnel for uncaught Flutter framework/platform-level errors (see
+  /// [init]) -- unlike every other call site in the app, which already
+  /// classifies via [NetworkExceptionMapper] before deciding whether to
+  /// report -- so this funnel's own classification decision needs to be
+  /// independently testable without a live/mocked Sentry Hub.
+  ///
+  /// This mirrors CHECKUSERACCESS-BUG-01
+  /// (`check_user_access_service.dart`): a device with no connectivity
+  /// makes *every* Supabase call fail with a DNS/socket-level error. That
+  /// fix only covered the `check_user_access` RPC's own catch block.
+  /// Supabase's own *internal* background token auto-refresh timer
+  /// (`GoTrueClient._callRefreshToken`) throws the same class of error on
+  /// its own, uncaught by app code, so it surfaces here via
+  /// `PlatformDispatcher.instance.onError` instead and needs the same
+  /// treatment applied at this funnel too -- otherwise every DNS blip
+  /// while a session's background refresh timer happens to fire becomes
+  /// a recurring "error"-level Sentry event indistinguishable from a
+  /// genuine crash (Section 15: Sentry must stay useful, not just
+  /// complete).
+  @visibleForTesting
+  static bool isConnectivityNoise(Object error) {
+    final classified = NetworkExceptionMapper.map(error);
+    return classified is NoInternetException ||
+        classified is RequestTimeoutException;
+  }
+
+  /// Logs errors to the console and forwards non-connectivity errors to
+  /// Sentry.
   static void logError(Object error, StackTrace? stack) {
+    final isConnectivity = isConnectivityNoise(error);
+
     // This is the single funnel for every uncaught Flutter/platform error
     // in the app (see [init] below), so `error` can be anything --
     // including a PostgrestException/DioException whose message embeds
@@ -46,10 +83,18 @@ class GlobalErrorHandler {
       if (stack != null) {
         debugPrint('StackTrace: \n$stack');
       }
+      if (isConnectivity) {
+        debugPrint('(connectivity failure — not reported to Sentry)');
+      }
       debugPrint('---------------------------');
     } else {
-      debugPrint('[EduZone] Unhandled error: ${error.runtimeType}');
+      debugPrint(
+        '[EduZone] Unhandled error: ${error.runtimeType}'
+        '${isConnectivity ? ' (connectivity — not reported to Sentry)' : ''}',
+      );
     }
+
+    if (isConnectivity) return;
 
     // Forward to Sentry (no-op if SDK not initialized / DSN empty)
     try {
