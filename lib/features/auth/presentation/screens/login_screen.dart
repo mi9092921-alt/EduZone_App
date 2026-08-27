@@ -69,186 +69,193 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     return AppScreen(
       isLoading: isLoading,
+      scrollable: false,
       child: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Logo
-                  ShaderMask(
-                    shaderCallback: (bounds) =>
-                        AppColors.primaryGradient.createShader(bounds),
-                    child: const Icon(
-                      AppIcons.home,
-                      size: 80,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  Text(
-                    l10n!.loginTitle,
-                    style: AppTextStyles.h1.copyWith(
-                      color: AppColors.onSurfacePrimary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    l10n.loginSubtitle,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xl2),
-
-                  // Email field
-                  AppTextField(
-                    controller: _emailController,
-                    label: l10n.emailHint,
-                    prefixIcon: Icons.email_outlined,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return l10n.emailHint;
-                      }
-                      final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-                      if (!emailRegex.hasMatch(value.trim())) {
-                        return l10n.errorInvalidEmail;
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-
-                  // Password field
-                  AppTextField(
-                    controller: _passwordController,
-                    label: l10n.passwordHint,
-                    prefixIcon: AppIcons.lock,
-                    obscureText: _obscurePassword,
-                    textInputAction: TextInputAction.done,
-                    onFieldSubmitted: (_) => _signIn(),
-                    suffixIcon: IconButton(
-                     tooltip: _obscurePassword ? l10n.passwordShow : l10n.passwordHide,
-                      icon: Icon(
-                        _obscurePassword
-                            ? AppIcons.visibilityOff
-                            : AppIcons.visibility,
-                        color: AppColors.textSecondary,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return l10n.passwordHint;
-                      }
-                      if (value.length < 8) {
-                        return l10n.errorPasswordTooShort;
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-
-                  // Terms Agreement
-                  Row(
+        behavior: HitTestBehavior.opaque,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      SizedBox(
-                        height: 24,
-                        width: 24,
-                        child: Checkbox(
-                          value: _agreedToTerms,
-                          activeColor: AppColors.primary,
-                          shape: const RoundedRectangleBorder(
-                            borderRadius: AppRadius.xxsBorder,
-                          ),
-                          onChanged: (value) =>
-                              setState(() => _agreedToTerms = value ?? false),
+                      // Logo
+                      ShaderMask(
+                        shaderCallback: (bounds) =>
+                            AppColors.primaryGradient.createShader(bounds),
+                        child: const Icon(
+                          AppIcons.home,
+                          size: 80,
+                          color: Colors.white,
                         ),
                       ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text.rich(
-                          TextSpan(
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary,
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        l10n!.loginTitle,
+                        style: AppTextStyles.h1.copyWith(
+                          color: AppColors.onSurfacePrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        l10n.loginSubtitle,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xl2),
+
+                      // Email field
+                      AppTextField(
+                        controller: _emailController,
+                        label: l10n.emailHint,
+                        prefixIcon: Icons.email_outlined,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return l10n.emailHint;
+                          }
+                          final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+                          if (!emailRegex.hasMatch(value.trim())) {
+                            return l10n.errorInvalidEmail;
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+
+                      // Password field
+                      AppTextField(
+                        controller: _passwordController,
+                        label: l10n.passwordHint,
+                        prefixIcon: AppIcons.lock,
+                        obscureText: _obscurePassword,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => _signIn(),
+                        suffixIcon: IconButton(
+                         tooltip: _obscurePassword ? l10n.passwordShow : l10n.passwordHide,
+                          icon: Icon(
+                            _obscurePassword
+                                ? AppIcons.visibilityOff
+                                : AppIcons.visibility,
+                            color: AppColors.textSecondary,
+                          ),
+                          onPressed: () =>
+                              setState(() => _obscurePassword = !_obscurePassword),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return l10n.passwordHint;
+                          }
+                          if (value.length < 8) {
+                            return l10n.errorPasswordTooShort;
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+
+                      // Terms Agreement
+                      Row(
+                        children: [
+                          SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: Checkbox(
+                              value: _agreedToTerms,
+                              activeColor: AppColors.primary,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: AppRadius.xxsBorder,
+                              ),
+                              onChanged: (value) =>
+                                  setState(() => _agreedToTerms = value ?? false),
                             ),
-                            children: [
-                              TextSpan(text: l10n.agreeToTermsPrefix),
-                              TextSpan(
-                                text: l10n.termsAndConditions,
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.bold,
-                                  decoration: TextDecoration.underline,
-                                ),
-                                recognizer: _termsRecognizer,
-                              ),
-                              TextSpan(text: l10n.agreeToTermsMiddle),
-                              TextSpan(
-                                text: l10n.privacyPolicy,
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.bold,
-                                  decoration: TextDecoration.underline,
-                                ),
-                                recognizer: _privacyRecognizer,
-                              ),
-                              TextSpan(text: l10n.agreeToTermsSuffix),
-                            ],
                           ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Text.rich(
+                              TextSpan(
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                                children: [
+                                  TextSpan(text: l10n.agreeToTermsPrefix),
+                                  TextSpan(
+                                    text: l10n.termsAndConditions,
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.bold,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                    recognizer: _termsRecognizer,
+                                  ),
+                                  TextSpan(text: l10n.agreeToTermsMiddle),
+                                  TextSpan(
+                                    text: l10n.privacyPolicy,
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.bold,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                    recognizer: _privacyRecognizer,
+                                  ),
+                                  TextSpan(text: l10n.agreeToTermsSuffix),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: AppSpacing.xl),
+
+                      // Login button
+                      SizedBox(
+                        width: double.infinity,
+                        child: AppButton(
+                          label: l10n.loginButton,
+                          variant: AppButtonVariant.gradient,
+                          isLoading: isLoading,
+                          onPressed: _signIn,
                         ),
                       ),
+
+                      // Error message
+                      if (errorKey != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: AppSpacing.md),
+                          child: Text(
+                            _getErrorMessage(errorKey, l10n),
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.error,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+
+                      const SizedBox(height: AppSpacing.xl2),
+                      // Version Footer
+                      if (_appVersion.isNotEmpty)
+                        Text(
+                          '${l10n.appTitle} ${l10n.versionLabel(_appVersion)}',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textSecondary.withValues(alpha: 0.5),
+                            letterSpacing: 0.5,
+                          ),
+                        ),
                     ],
                   ),
-
-                  const SizedBox(height: AppSpacing.xl),
-
-                  // Login button
-                  SizedBox(
-                    width: double.infinity,
-                    child: AppButton(
-                      label: l10n.loginButton,
-                      variant: AppButtonVariant.gradient,
-                      isLoading: isLoading,
-                      onPressed: _signIn,
-                    ),
-                  ),
-
-                  // Error message
-                  if (errorKey != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.md),
-                      child: Text(
-                        _getErrorMessage(errorKey, l10n),
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.error,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-
-                  const SizedBox(height: AppSpacing.xl2),
-                  // Version Footer
-                  if (_appVersion.isNotEmpty)
-                    Text(
-                      '${l10n.appTitle} ${l10n.versionLabel(_appVersion)}',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.textSecondary.withValues(alpha: 0.5),
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );

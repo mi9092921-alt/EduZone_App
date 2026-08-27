@@ -247,6 +247,48 @@ void main() {
     });
   });
 
+  group('layout / dead-space regression (LOGIN-LAYOUT-BUG-01)', () {
+    // Production UX report: the logo/title/fields/button were visually
+    // packed into the top third of the screen with the rest of the
+    // viewport left empty. Root cause was `Center` + `SingleChildScrollView`
+    // around a `Column(mainAxisAlignment: center)` — a Column inside a
+    // scroll view receives unbounded height, so `mainAxisAlignment.center`
+    // silently becomes a no-op and the Column just packs to its intrinsic
+    // (top) size, plus `AppScreen`'s own default `scrollable: true` was
+    // wrapping the screen in a *second*, redundant scroll view. Fixed via
+    // `AppScreen(scrollable: false)` + `LayoutBuilder` +
+    // `ConstrainedBox(minHeight: viewport height)`, which lets the form
+    // genuinely center when short and still scroll when the keyboard makes
+    // it taller than the viewport.
+    //
+    // This can't be pinned with a golden image in this environment, so it
+    // pins the *user-facing consequence* instead: with the form no longer
+    // collapsed into the top third, the previously dead space at the
+    // bottom of the screen is now part of the actual layout and must be
+    // tappable (the screen's tap-outside-to-dismiss-keyboard gesture must
+    // reach it).
+    testWidgets(
+        'tapping the empty space near the bottom of a phone-sized viewport '
+        'dismisses the keyboard', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await pumpLogin(tester);
+      await tester.pump();
+
+      await tester.tap(find.byType(TextFormField).at(0));
+      await tester.pump();
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      // Near the bottom edge of the viewport -- before the fix this was
+      // unreachable dead space below the top-packed form.
+      await tester.tapAt(const Offset(200, 780));
+      await tester.pump();
+
+      expect(tester.testTextInput.isVisible, isFalse);
+    });
+  });
+
   group('password visibility toggle', () {
     testWidgets('starts obscured and toggles when the suffix icon is tapped',
         (tester) async {
