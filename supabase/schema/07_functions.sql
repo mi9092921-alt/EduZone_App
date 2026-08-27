@@ -4254,6 +4254,7 @@ AS $$
 DECLARE
   v_url text;
   v_key text;
+  v_jwt text;
   v_request_id bigint;
 BEGIN
   IF coalesce(auth.role(), current_user) NOT IN
@@ -4270,15 +4271,20 @@ BEGIN
   WHERE name = 'eduzone_push_worker_url';
   SELECT decrypted_secret INTO v_key
   FROM vault.decrypted_secrets
-  WHERE name = 'eduzone_push_worker_service_role_key';
-  IF v_url IS NULL OR v_key IS NULL OR btrim(v_url) = '' OR btrim(v_key) = '' THEN
+  WHERE name = 'eduzone_push_worker_auth_token';
+  SELECT decrypted_secret INTO v_jwt
+  FROM vault.decrypted_secrets
+  WHERE name = 'eduzone_push_worker_jwt';
+  IF v_url IS NULL OR v_key IS NULL OR v_jwt IS NULL
+     OR btrim(v_url) = '' OR btrim(v_key) = '' OR btrim(v_jwt) = '' THEN
     RAISE EXCEPTION 'PUSH_WORKER_SECRETS_MISSING';
   END IF;
 
   SELECT net.http_post(
     url := v_url,
     headers := jsonb_build_object(
-      'Authorization', 'Bearer ' || v_key,
+      'Authorization', 'Bearer ' || v_jwt,
+      'X-Push-Worker-Token', v_key,
       'Content-Type', 'application/json'
     ),
     body := '{}'::jsonb

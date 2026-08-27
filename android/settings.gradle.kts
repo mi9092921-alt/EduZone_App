@@ -29,7 +29,7 @@ plugins {
     // runtime; without it, Firebase.initializeApp() fails with "Failed
     // to load FirebaseOptions from resource" even when the JSON file
     // exists on disk).
-    id("com.google.gms.google-services") version "4.4.2" apply false
+    id("com.google.gms.google-services") version "4.5.0" apply false
 }
 
 include(":app")

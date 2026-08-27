@@ -10,8 +10,12 @@ Functions:
 `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY`.
 
 The canonical database scheduler invokes this function every minute through
-Vault secrets named `eduzone_push_worker_url` and
-`eduzone_push_worker_service_role_key`. Deploy the function before enabling
+Vault secrets named `eduzone_push_worker_url`, `eduzone_push_worker_jwt`, and
+`eduzone_push_worker_auth_token`. The JWT satisfies the Edge Function gateway
+check, while the matching token is sent in `X-Push-Worker-Token` and checked by
+the function. The Supabase service-role key remains an internal Edge Function
+secret and is not used as the worker bearer token.
+Deploy the function before enabling
 those secrets; the scheduler stays inactive until Vault, pg_net, and pg_cron
 are available.
 `create-user` — admin-only: create an auth user + matching `public.users` profile row

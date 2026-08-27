@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const workerAuthToken = Deno.env.get("PUSH_WORKER_AUTH_TOKEN") ?? "";
 const projectId = Deno.env.get("FCM_PROJECT_ID") ?? "";
 const clientEmail = Deno.env.get("FCM_CLIENT_EMAIL") ?? "";
 const privateKey = Deno.env.get("FCM_PRIVATE_KEY") ?? "";
@@ -15,8 +16,8 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 function authorized(req: Request): boolean {
-  return Boolean(serviceRoleKey) &&
-    req.headers.get("Authorization") === `Bearer ${serviceRoleKey}`;
+  return Boolean(workerAuthToken) &&
+    req.headers.get("X-Push-Worker-Token") === workerAuthToken;
 }
 
 function base64Url(value: Uint8Array): string {
