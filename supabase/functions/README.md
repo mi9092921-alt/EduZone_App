@@ -5,6 +5,15 @@ This folder contains all Supabase Edge Functions for the project (moved from `su
 Each function lives in its own subfolder with an `index.ts` entrypoint; several also have a dedicated README describing inputs, outputs, and required behavior.
 
 Functions:
+- `send-push-notification` — service-role-only FCM HTTP v1 sender for
+  `notification_push` jobs. Required secrets: `FCM_PROJECT_ID`,
+`FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY`.
+
+The canonical database scheduler invokes this function every minute through
+Vault secrets named `eduzone_push_worker_url` and
+`eduzone_push_worker_service_role_key`. Deploy the function before enabling
+those secrets; the scheduler stays inactive until Vault, pg_net, and pg_cron
+are available.
 `create-user` — admin-only: create an auth user + matching `public.users` profile row
 - `get-lesson-content` — resolve a lesson's signed video/caption URLs after a server-side access check
 - `bulk-action` — admin-only: enqueue a bulk operation (see `bulk-worker`)

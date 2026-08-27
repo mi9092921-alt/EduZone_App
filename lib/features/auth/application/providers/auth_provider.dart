@@ -18,6 +18,7 @@ import '../../../../core/services/device_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/sentry_service.dart';
 import '../../../../shared/cross_feature/downloads_shared.dart';
+import '../../../../shared/services/push_token_registration_service.dart';
 import '../../../../shared/utils/global_error_handler.dart';
 import '../../data/datasources/auth_remote_ds.dart';
 import '../../domain/entities/app_user.dart';
@@ -207,6 +208,9 @@ class Auth extends _$Auth {
                   : null,
             ),
           );
+          // Register only after access and student-role checks have passed.
+          // The operation is best-effort and retried by the core service.
+          unawaited(PushTokenRegistrationService.registerCurrentUserToken());
           // Guard, matching login()'s equivalent call: if a concurrent
           // logout()/passive-revocation already superseded this operation,
           // _safeSetStateIfStillPending above was a silent no-op (state is
@@ -406,6 +410,8 @@ class Auth extends _$Auth {
 
         _safeSetState(AuthAuthenticated(user: appUser, access: access));
         if (!_isCurrentAuthOperation(generation)) return;
+
+        unawaited(PushTokenRegistrationService.registerCurrentUserToken());
 
         // Section 15 ("user identification policy"): attach the opaque
         // user UUID to every subsequent Sentry event so production crash

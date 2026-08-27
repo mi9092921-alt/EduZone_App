@@ -154,6 +154,15 @@ CREATE INDEX IF NOT EXISTS idx_push_tokens_user_active ON public.push_tokens (us
 
 CREATE INDEX IF NOT EXISTS idx_push_tokens_tenant ON public.push_tokens (tenant_id);
 
+CREATE INDEX IF NOT EXISTS idx_push_tokens_device_active
+  ON public.push_tokens (user_id, device_id) WHERE is_active;
+
+CREATE INDEX IF NOT EXISTS idx_push_deliveries_pending
+  ON public.push_deliveries (status, next_attempt_at, created_at)
+  WHERE status IN ('pending', 'sending');
+CREATE INDEX IF NOT EXISTS idx_push_deliveries_notification
+  ON public.push_deliveries (notification_id, tenant_id);
+
 CREATE INDEX IF NOT EXISTS idx_location_user_time ON public.user_location_logs (user_id, logged_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_location_tenant_user_time ON public.user_location_logs (tenant_id, user_id, logged_at DESC);
@@ -580,4 +589,3 @@ CREATE INDEX IF NOT EXISTS idx_feature_flag_roles_eval
 
 CREATE INDEX IF NOT EXISTS idx_feature_flag_roles_flag_role
   ON public.feature_flag_roles (flag_id, role_id, tenant_id);
-

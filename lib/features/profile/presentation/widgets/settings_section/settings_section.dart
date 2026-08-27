@@ -14,6 +14,7 @@ import '../../../../../core/permissions/permission_builder.dart';
 import '../../../../../core/permissions/permission_item.dart';
 import '../../../../../core/services/permission_service.dart';
 import '../../../../../shared/cross_feature/auth_shared.dart';
+import '../../../../../shared/services/push_token_registration_service.dart';
 import '../../../../../shared/utils/app_snackbar.dart';
 import '../../../../../shared/widgets/confirm_dialog.dart';
 import '../../../../auth/domain/entities/auth_state.dart';
@@ -108,6 +109,10 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
     setState(() {
       _permissionStatuses[item.kind] = status;
     });
+
+    if (item.kind == AppPermissionKind.notifications && status.isGranted) {
+      await PushTokenRegistrationService.requestPermissionAndRegister();
+    }
 
     if (status.isPermanentlyDenied) {
       await _showPermanentlyDeniedDialog(item);

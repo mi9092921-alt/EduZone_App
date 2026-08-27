@@ -35,6 +35,11 @@ class NotificationsRepositoryImpl implements NotificationsRepository {
   }
 
   @override
+  Stream<void> watchChanges(String userId) {
+    return remoteDataSource.watchChanges(userId);
+  }
+
+  @override
   Future<Either<Failure, void>> markAsRead(String notificationId) async {
     try {
       await remoteDataSource.markAsRead(notificationId);

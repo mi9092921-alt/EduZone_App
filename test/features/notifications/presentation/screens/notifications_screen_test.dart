@@ -61,6 +61,9 @@ class _RecordingNotificationsRepository implements NotificationsRepository {
       const Right([]);
 
   @override
+  Stream<void> watchChanges(String userId) => const Stream<void>.empty();
+
+  @override
   Future<Either<Failure, void>> markAsRead(String notificationId) async {
     lastMarkedAsReadId = notificationId;
     return const Right(null);

@@ -244,6 +244,12 @@ CREATE TRIGGER trg_push_tokens_updated_at
   BEFORE UPDATE ON public.push_tokens
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_push_deliveries_updated_at ON public.push_deliveries;
+
+CREATE TRIGGER trg_push_deliveries_updated_at
+  BEFORE UPDATE ON public.push_deliveries
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 DROP TRIGGER IF EXISTS trg_notifications_updated_at ON public.notifications;
 
 CREATE TRIGGER trg_notifications_updated_at

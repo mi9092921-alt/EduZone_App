@@ -6,9 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
-import '../../../../core/network/network_config.dart';
-import '../../../../core/network/supabase_client.dart';
-import '../../../../core/utils/device_info_helper.dart';
+import '../../../../shared/services/push_token_registration_service.dart';
 import '../../../../shared/utils/global_error_handler.dart';
 
 class FcmService {
@@ -85,21 +83,20 @@ class FcmService {
       
       final messaging = FirebaseMessaging.instance;
       
-      // Request permission
-      await messaging.requestPermission(
-        
-      );
+      // Permission is requested from the user-facing permissions surface,
+      // not during cold start. This prevents an unexplained OS prompt before
+      // login/home and keeps denied permission recoverable from Settings.
 
       // Get initial token
       final token = await messaging.getToken();
       if (token != null) {
-        await _saveToken(token);
+        await PushTokenRegistrationService.registerCurrentUserToken();
       }
 
       // Listen to token refresh
       await _tokenRefreshSubscription?.cancel();
-      _tokenRefreshSubscription = messaging.onTokenRefresh.listen((newToken) {
-        _saveToken(newToken);
+      _tokenRefreshSubscription = messaging.onTokenRefresh.listen((_) {
+        unawaited(PushTokenRegistrationService.registerCurrentUserToken());
       });
 
       await _setupLocalNotifications();
@@ -144,61 +141,11 @@ class FcmService {
 
   /// Register/update FCM token for the currently authenticated user.
   static Future<void> registerCurrentUserToken() async {
-    try {
-      final token = await FirebaseMessaging.instance.getToken();
-      if (token != null) {
-        await _saveToken(token);
-      }
-    } catch (e) {
-      debugPrint('Error getting FCM token on register: ${e.runtimeType}');
-    }
-  }
-
-  /// Best-effort — every failure is swallowed below. Previously had no
-  /// timeout on either call, so a stalled connection left this hanging
-  /// indefinitely instead of failing fast. See Section 13 ("Networking
-  /// Reliability") of the project instructions.
-  static Future<void> _saveToken(String fcmToken) async {
-    final uid = SupabaseService.client.auth.currentUser?.id;
-    if (uid == null) return;
-
-    try {
-      final profile = await SupabaseService.client
-          .from('users')
-          .select('tenant_id')
-          .eq('id', uid)
-          .maybeSingle()
-          .timeout(NetworkConfig.telemetryTimeout);
-      final tenantId = profile?['tenant_id'] as String?;
-      if (tenantId == null || tenantId.isEmpty) return;
-
-      await SupabaseService.client.from('push_tokens').upsert({
-        'user_id': uid,
-        'tenant_id': tenantId,
-        'token': fcmToken,
-        'platform': DeviceInfoHelper.platform,
-        'device_info': DeviceInfoHelper.deviceInfoJson,
-        'is_active': true,
-        'updated_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'token').timeout(NetworkConfig.telemetryTimeout);
-    } catch (e) {
-      debugPrint('Error saving FCM token: ${e.runtimeType}');
-    }
+    await PushTokenRegistrationService.registerCurrentUserToken();
   }
 
   static Future<void> deactivateToken() async {
-    final uid = SupabaseService.client.auth.currentUser?.id;
-    if (uid == null) return;
-
-    try {
-       await SupabaseService.client
-          .from('push_tokens')
-          .update({'is_active': false})
-          .eq('user_id', uid)
-          .timeout(NetworkConfig.telemetryTimeout);
-    } catch (e) {
-      debugPrint('Error deactivating FCM token: ${e.runtimeType}');
-    }
+    await PushTokenRegistrationService.deactivateCurrentUserToken();
   }
 
   static Future<void> initLocalNotifications() async {
@@ -229,9 +176,8 @@ class FcmService {
 
   static void _showLocalNotification(RemoteMessage message) {
     final notification = message.notification;
-    final android = message.notification?.android;
 
-    if (notification != null && android != null) {
+    if (notification != null) {
       unawaited(_localNotificationsPlugin.show(
         id: notification.hashCode,
         title: notification.title,

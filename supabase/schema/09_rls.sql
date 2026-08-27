@@ -286,6 +286,12 @@ ALTER TABLE public.warnings ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.push_tokens ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.push_deliveries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.push_deliveries FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS push_deliveries_deny_client ON public.push_deliveries;
+CREATE POLICY push_deliveries_deny_client ON public.push_deliveries
+  FOR ALL TO anon, authenticated USING (false) WITH CHECK (false);
+
 ALTER TABLE public.user_location_logs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.user_last_location ENABLE ROW LEVEL SECURITY;

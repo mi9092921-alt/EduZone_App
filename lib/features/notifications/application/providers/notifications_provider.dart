@@ -57,6 +57,13 @@ class NotificationFilter extends _$NotificationFilter {
 }
 
 @riverpod
+Stream<void> notificationsChanges(Ref ref) {
+  final userId = SupabaseService.client.auth.currentUser?.id;
+  if (userId == null) return const Stream<void>.empty();
+  return ref.watch(notificationsRepositoryProvider).watchChanges(userId);
+}
+
+@riverpod
 int unreadCount(Ref ref) {
   final notifications = ref.watch(notificationsProvider).value;
   if (notifications == null) return 0;
@@ -74,4 +81,5 @@ void invalidateNotificationsProviders(Ref ref) {
   ref.invalidate(notificationFilterProvider);
   ref.invalidate(unreadCountProvider);
   ref.invalidate(notificationsRemoteDataSourceProvider);
+  ref.invalidate(notificationsChangesProvider);
 }

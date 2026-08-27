@@ -5,6 +5,7 @@ import '../../core/l10n/arb/app_localizations.dart';
 import '../core/logging/logging_providers.dart';
 import '../design_system/tokens/app_theme.dart';
 import '../features/notifications/data/services/fcm_service.dart';
+import '../features/notifications/presentation/widgets/realtime_notification_handler.dart';
 import '../shared/utils/app_snackbar.dart';
 import '../shared/widgets/network_banner.dart';
 import 'app_providers.dart';
@@ -45,7 +46,9 @@ class EduZoneApp extends ConsumerWidget {
               maxScaleFactor: 1.6,
             ),
           ),
-          child: NetworkBanner(child: child!),
+          child: RealtimeNotificationHandler(
+            child: NetworkBanner(child: child!),
+          ),
         );
       },
     );

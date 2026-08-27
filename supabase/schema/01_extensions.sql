@@ -23,6 +23,11 @@ CREATE EXTENSION IF NOT EXISTS btree_gin WITH SCHEMA extensions;
 
 CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA extensions;
 
+-- Used only by the backend cron invoker for short Edge Function requests.
+-- The URL and service-role credential are read from Supabase Vault, never
+-- stored in this schema or exposed to clients.
+CREATE EXTENSION IF NOT EXISTS pg_net;
+
 -- pg_partman intentionally NOT installed: partitioning is implemented natively
 -- via maintenance.create_next_partition_if_not_exists() / manage_partitions()
 -- (declarative range partitioning + explicit yearly partition creation).

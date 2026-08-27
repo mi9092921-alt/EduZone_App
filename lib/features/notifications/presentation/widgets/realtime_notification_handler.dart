@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/utils/app_snackbar.dart';
+import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/notifications_provider.dart';
 
 /// A global widget that listens to the notification stream and shows
@@ -22,6 +23,15 @@ class _RealtimeNotificationHandlerState
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild the subscription when the authenticated user changes. Without
+    // this dependency, the handler created during splash would keep the
+    // empty pre-auth stream after login.
+    ref.watch(authProvider);
+
+    ref.listen(notificationsChangesProvider, (previous, next) {
+      next.whenData((_) => ref.invalidate(notificationsProvider));
+    });
+
     // Listen to the notifications provider
     ref.listen(notificationsProvider, (previous, next) {
       next.whenData((notifications) {

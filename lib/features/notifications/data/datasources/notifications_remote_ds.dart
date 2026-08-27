@@ -7,6 +7,7 @@ import '../../../../core/network/supabase_client.dart';
 
 abstract class NotificationsRemoteDataSource {
   Future<List<Map<String, dynamic>>> getNotifications(String userId);
+  Stream<void> watchChanges(String userId);
   Future<void> markAsRead(String notificationId);
   Future<void> markAllAsRead(String userId);
 }
@@ -87,6 +88,15 @@ class NotificationsRemoteDataSourceImpl
         throw NetworkExceptionMapper.map(e);
       }
     });
+  }
+
+  @override
+  Stream<void> watchChanges(String userId) {
+    return _client
+        .from('user_notifications')
+        .stream(primaryKey: ['id'])
+        .eq('user_id', userId)
+        .map<void>((_) {});
   }
 
   @override

@@ -289,6 +289,38 @@ abstract class _$NotificationFilter extends $Notifier<String> {
   }
 }
 
+@ProviderFor(notificationsChanges)
+final notificationsChangesProvider = NotificationsChangesProvider._();
+
+final class NotificationsChangesProvider
+    extends $FunctionalProvider<AsyncValue<void>, void, Stream<void>>
+    with $FutureModifier<void>, $StreamProvider<void> {
+  NotificationsChangesProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'notificationsChangesProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$notificationsChangesHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<void> $createElement($ProviderPointer pointer) =>
+      $StreamProviderElement(pointer);
+
+  @override
+  Stream<void> create(Ref ref) => notificationsChanges(ref);
+}
+
+String _$notificationsChangesHash() =>
+    r'1f9b9a8d5a03c3b4ab4db6a8f9ce2e1a4c6d7e8f';
+
 @ProviderFor(unreadCount)
 final unreadCountProvider = UnreadCountProvider._();
 

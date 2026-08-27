@@ -108,6 +108,9 @@ class _RecordingNotificationsRepository implements NotificationsRepository {
       Right([_notification(isRead: false)]);
 
   @override
+  Stream<void> watchChanges(String userId) => const Stream<void>.empty();
+
+  @override
   Future<Either<Failure, void>> markAsRead(String notificationId) async =>
       const Right(null);
 

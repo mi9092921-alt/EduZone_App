@@ -1007,13 +1007,29 @@ CREATE TABLE IF NOT EXISTS public.push_tokens (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE RESTRICT,
+  device_id text NOT NULL CHECK (btrim(device_id) <> ''),
   token text NOT NULL UNIQUE CHECK (btrim(token) <> ''),
   platform text CHECK (platform IN ('android', 'ios', 'web')),
   device_info jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(device_info) = 'object'),
+  app_version text,
   is_active boolean NOT NULL DEFAULT true,
+  last_seen_at timestamptz NOT NULL DEFAULT now(),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.push_tokens ADD COLUMN IF NOT EXISTS device_id text;
+ALTER TABLE public.push_tokens ADD COLUMN IF NOT EXISTS app_version text;
+ALTER TABLE public.push_tokens ADD COLUMN IF NOT EXISTS last_seen_at timestamptz;
+UPDATE public.push_tokens
+SET device_id = 'legacy-' || id::text
+WHERE device_id IS NULL OR btrim(device_id) = '';
+UPDATE public.push_tokens
+SET last_seen_at = COALESCE(last_seen_at, updated_at, created_at, now())
+WHERE last_seen_at IS NULL;
+ALTER TABLE public.push_tokens ALTER COLUMN device_id SET NOT NULL;
+ALTER TABLE public.push_tokens ALTER COLUMN last_seen_at SET DEFAULT now();
+ALTER TABLE public.push_tokens ALTER COLUMN last_seen_at SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.user_location_logs (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -1263,6 +1279,28 @@ CREATE TABLE IF NOT EXISTS public.user_notifications (
   created_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz,
   UNIQUE (user_id, notification_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.push_deliveries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  notification_id uuid NOT NULL REFERENCES public.notifications(id) ON DELETE CASCADE,
+  user_notification_id uuid REFERENCES public.user_notifications(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  push_token_id uuid REFERENCES public.push_tokens(id) ON DELETE SET NULL,
+  status text NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'sending', 'sent', 'failed', 'invalid_token')),
+  attempt_count integer NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  provider_message_id text,
+  provider_error_code text,
+  provider_error_message text,
+  next_attempt_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_attempt_at timestamptz,
+  sent_at timestamptz,
+  failed_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (notification_id, push_token_id)
 );
 
 CREATE TABLE IF NOT EXISTS public.access_rules (

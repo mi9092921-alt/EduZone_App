@@ -122,7 +122,7 @@ GRANT INSERT, UPDATE, DELETE ON public.lesson_contents           TO authenticate
 GRANT INSERT, UPDATE, DELETE ON public.devices                   TO authenticated;
 GRANT INSERT, UPDATE, DELETE ON public.activity_logs             TO authenticated;
 GRANT INSERT, UPDATE, DELETE ON public.notifications             TO authenticated;
-GRANT INSERT, UPDATE, DELETE ON public.push_tokens               TO authenticated;
+REVOKE INSERT, UPDATE, DELETE ON public.push_tokens FROM PUBLIC, anon, authenticated;
 
 -- Service role access
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
@@ -170,6 +170,7 @@ REVOKE ALL ON audit.pii_access_log FROM anon, authenticated, public;
 REVOKE ALL ON audit.deletion_audit FROM anon, authenticated, public;
 REVOKE ALL ON internal.workers FROM anon, authenticated, public;
 REVOKE ALL ON internal.job_progress FROM anon, authenticated, public;
+REVOKE ALL ON public.push_deliveries FROM anon, authenticated, public;
 
 -- ============================================================================
 -- Storage security (source of truth)
@@ -354,6 +355,32 @@ GRANT EXECUTE ON FUNCTION public.logout_current_user() TO authenticated, service
 -- can call it, anon and PUBLIC cannot.
 REVOKE ALL ON FUNCTION public.bind_device_for_current_user(text, jsonb, text, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.bind_device_for_current_user(text, jsonb, text, text) TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.register_push_token(text, text, text, jsonb, text)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.register_push_token(text, text, text, jsonb, text)
+  TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.deactivate_push_token(text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.deactivate_push_token(text, text)
+  TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.claim_push_delivery(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_push_delivery(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.complete_push_delivery(uuid, text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.complete_push_delivery(uuid, text) TO service_role;
+REVOKE ALL ON FUNCTION public.fail_push_delivery(uuid, text, text, boolean)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fail_push_delivery(uuid, text, text, boolean)
+  TO service_role;
+REVOKE ALL ON FUNCTION public.complete_notification_push_job(uuid, boolean, text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.complete_notification_push_job(uuid, boolean, text)
+  TO service_role;
+REVOKE ALL ON FUNCTION internal.invoke_notification_push_worker()
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION internal.invoke_notification_push_worker() TO service_role;
 
 REVOKE ALL ON FUNCTION public.record_current_user_activity(boolean, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.record_current_user_activity(boolean, text) TO authenticated, service_role;

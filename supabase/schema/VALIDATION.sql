@@ -1858,7 +1858,41 @@ BEGIN
   );
 END $$;
 
--- Display Results (includes Checks 27-37 above)
+-- Check 38: push delivery pipeline must exist and remain backend-only.
+DO $$
+DECLARE
+  v_table boolean;
+  v_register boolean;
+  v_deactivate boolean;
+  v_claim boolean;
+  v_anon_claim boolean;
+BEGIN
+  SELECT to_regclass('public.push_deliveries') IS NOT NULL INTO v_table;
+  SELECT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'register_push_token'
+  ) INTO v_register;
+  SELECT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'deactivate_push_token'
+  ) INTO v_deactivate;
+  SELECT has_function_privilege('service_role', 'public.claim_push_delivery(uuid)', 'EXECUTE')
+    INTO v_claim;
+  SELECT has_function_privilege('anon', 'public.claim_push_delivery(uuid)', 'EXECUTE')
+    INTO v_anon_claim;
+
+  INSERT INTO validation_results VALUES (
+    'Reliable Push Delivery Pipeline',
+    CASE WHEN v_table AND v_register AND v_deactivate AND v_claim AND NOT v_anon_claim
+         THEN 'PASS' ELSE 'FAIL' END,
+    format(
+      'push_deliveries=%s, register_rpc=%s, deactivate_rpc=%s, service_claim=%s, anon_claim=%s',
+      v_table, v_register, v_deactivate, v_claim, v_anon_claim
+    )
+  );
+END $$;
+
+-- Display Results (includes Checks 27-38 above)
 SELECT * FROM validation_results ORDER BY check_name;
 
 -- Summary

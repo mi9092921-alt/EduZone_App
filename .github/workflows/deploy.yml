@@ -24,6 +24,7 @@ jobs:
           [ -z "${{ secrets.ANDROID_KEY_ALIAS }}" ] && missing+=("ANDROID_KEY_ALIAS")
           [ -z "${{ secrets.ANDROID_KEY_PASSWORD }}" ] && missing+=("ANDROID_KEY_PASSWORD")
           [ -z "${{ secrets.PLAY_STORE_JSON_KEY }}" ] && missing+=("PLAY_STORE_JSON_KEY")
+          [ -z "${{ secrets.GOOGLE_SERVICES_JSON }}" ] && missing+=("GOOGLE_SERVICES_JSON")
           if [ ${#missing[@]} -gt 0 ]; then
             echo "::error::Android deploy cannot proceed; missing required repo secret(s): ${missing[*]}"
             {

@@ -4245,6 +4245,69 @@ BEGIN
   END IF;
 END $$;
 
+CREATE OR REPLACE FUNCTION internal.invoke_notification_push_worker()
+RETURNS bigint
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, internal, pg_temp
+AS $$
+DECLARE
+  v_url text;
+  v_key text;
+  v_request_id bigint;
+BEGIN
+  IF coalesce(auth.role(), current_user) NOT IN
+      ('service_role', 'postgres', 'supabase_admin') THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'vault')
+     OR NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'net') THEN
+    RAISE EXCEPTION 'PUSH_WORKER_EXTENSIONS_UNAVAILABLE';
+  END IF;
+
+  SELECT decrypted_secret INTO v_url
+  FROM vault.decrypted_secrets
+  WHERE name = 'eduzone_push_worker_url';
+  SELECT decrypted_secret INTO v_key
+  FROM vault.decrypted_secrets
+  WHERE name = 'eduzone_push_worker_service_role_key';
+  IF v_url IS NULL OR v_key IS NULL OR btrim(v_url) = '' OR btrim(v_key) = '' THEN
+    RAISE EXCEPTION 'PUSH_WORKER_SECRETS_MISSING';
+  END IF;
+
+  SELECT net.http_post(
+    url := v_url,
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || v_key,
+      'Content-Type', 'application/json'
+    ),
+    body := '{}'::jsonb
+  ) INTO v_request_id;
+  RETURN v_request_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION internal.invoke_notification_push_worker()
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION internal.invoke_notification_push_worker() TO service_role;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron')
+     AND EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net')
+     AND EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'vault')
+     AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'cron' AND tablename = 'job') THEN
+    PERFORM cron.unschedule(jobid)
+    FROM cron.job
+    WHERE jobname = 'notification_push_worker';
+    PERFORM cron.schedule(
+      'notification_push_worker',
+      '* * * * *',
+      'SELECT internal.invoke_notification_push_worker();'
+    );
+  END IF;
+END $$;
+
 -- HIGH-06: Automatic vacuum/analyze for partitions
 CREATE OR REPLACE FUNCTION maintenance.vacuum_partition(p_schema text, p_table text)
 RETURNS void
@@ -4970,6 +5033,259 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 -- Phase 4 consolidated into main sections.
 -- Permissions and RLS for user_notifications, devices, push_tokens moved to main sections.
 
+-- Push token lifecycle is deliberately exposed through SECURITY DEFINER RPCs.
+-- The client can prove its authenticated identity and an active device binding,
+-- but it cannot choose a tenant or mutate push_tokens directly.
+CREATE OR REPLACE FUNCTION public.register_push_token(
+  p_token text,
+  p_device_id text,
+  p_platform text,
+  p_device_info jsonb DEFAULT '{}',
+  p_app_version text DEFAULT NULL
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_tenant_id uuid := public.get_current_tenant_id();
+  v_token_id uuid;
+BEGIN
+  IF v_user_id IS NULL OR v_tenant_id IS NULL THEN
+    RAISE EXCEPTION 'AUTH_REQUIRED' USING ERRCODE = '42501';
+  END IF;
+  IF p_token IS NULL OR btrim(p_token) = ''
+     OR p_device_id IS NULL OR btrim(p_device_id) = ''
+     OR p_platform NOT IN ('android', 'ios', 'web')
+     OR jsonb_typeof(COALESCE(p_device_info, '{}'::jsonb)) <> 'object' THEN
+    RAISE EXCEPTION 'INVALID_PUSH_TOKEN' USING ERRCODE = '22023';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.devices d
+    WHERE d.user_id = v_user_id
+      AND d.tenant_id = v_tenant_id
+      AND d.device_id = p_device_id
+      AND d.platform = p_platform
+      AND d.is_active
+  ) THEN
+    RAISE EXCEPTION 'DEVICE_NOT_BOUND' USING ERRCODE = '42501';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.users u
+    WHERE u.id = v_user_id AND u.tenant_id = v_tenant_id
+      AND u.account_status = 'active' AND u.deleted_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'ACCOUNT_NOT_ACTIVE' USING ERRCODE = '42501';
+  END IF;
+
+  INSERT INTO public.push_tokens (
+    user_id, tenant_id, device_id, token, platform, device_info,
+    app_version, is_active, last_seen_at, updated_at
+  ) VALUES (
+    v_user_id, v_tenant_id, p_device_id, btrim(p_token), p_platform,
+    COALESCE(p_device_info, '{}'::jsonb), NULLIF(btrim(COALESCE(p_app_version, '')), ''),
+    true, pg_catalog.now(), pg_catalog.now()
+  )
+  ON CONFLICT (token) DO UPDATE SET
+    user_id = EXCLUDED.user_id,
+    tenant_id = EXCLUDED.tenant_id,
+    device_id = EXCLUDED.device_id,
+    platform = EXCLUDED.platform,
+    device_info = EXCLUDED.device_info,
+    app_version = EXCLUDED.app_version,
+    is_active = true,
+    last_seen_at = pg_catalog.now(),
+    updated_at = pg_catalog.now()
+  RETURNING id INTO v_token_id;
+
+  RETURN v_token_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.deactivate_push_token(
+  p_token text DEFAULT NULL,
+  p_device_id text DEFAULT NULL
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_count integer;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'AUTH_REQUIRED' USING ERRCODE = '42501';
+  END IF;
+  UPDATE public.push_tokens
+  SET is_active = false, updated_at = pg_catalog.now()
+  WHERE user_id = auth.uid()
+    AND tenant_id = public.get_current_tenant_id()
+    AND (p_token IS NULL OR token = p_token)
+    AND (p_device_id IS NULL OR device_id = p_device_id)
+    AND is_active;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.claim_push_delivery(p_delivery_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, internal, pg_temp
+AS $$
+DECLARE
+  v_delivery public.push_deliveries%ROWTYPE;
+  v_result jsonb;
+BEGIN
+  IF coalesce(auth.role(), current_user) NOT IN
+      ('service_role', 'postgres', 'supabase_admin') THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED';
+  END IF;
+
+  SELECT * INTO v_delivery
+  FROM public.push_deliveries
+  WHERE id = p_delivery_id
+  FOR UPDATE;
+  IF NOT FOUND OR v_delivery.status IN ('sent', 'invalid_token') THEN
+    RETURN NULL;
+  END IF;
+  IF v_delivery.status = 'sending'
+     AND v_delivery.last_attempt_at > now() - interval '5 minutes' THEN
+    RETURN NULL;
+  END IF;
+  IF v_delivery.next_attempt_at IS NOT NULL
+     AND v_delivery.next_attempt_at > now() THEN
+    RETURN NULL;
+  END IF;
+
+  UPDATE public.push_deliveries
+  SET status = 'sending', attempt_count = attempt_count + 1,
+      last_attempt_at = now(), updated_at = now()
+  WHERE id = v_delivery.id;
+
+  SELECT jsonb_build_object(
+    'delivery_id', v_delivery.id,
+    'notification_id', v_delivery.notification_id,
+    'user_id', v_delivery.user_id,
+    'push_token_id', v_delivery.push_token_id,
+    'token', pt.token,
+    'title', n.title,
+    'body', n.body,
+    'attempt_count', v_delivery.attempt_count + 1
+  ) INTO v_result
+  FROM public.push_tokens pt
+  JOIN public.notifications n ON n.id = v_delivery.notification_id
+  WHERE pt.id = v_delivery.push_token_id AND pt.is_active;
+
+  IF v_result IS NULL THEN
+    UPDATE public.push_deliveries
+    SET status = 'invalid_token', failed_at = now(), updated_at = now(),
+        provider_error_code = 'TOKEN_NOT_ACTIVE'
+    WHERE id = v_delivery.id;
+  END IF;
+  RETURN v_result;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.complete_push_delivery(
+  p_delivery_id uuid,
+  p_provider_message_id text
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF coalesce(auth.role(), current_user) NOT IN
+      ('service_role', 'postgres', 'supabase_admin') THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED';
+  END IF;
+  UPDATE public.push_deliveries
+  SET status = 'sent', provider_message_id = p_provider_message_id,
+      sent_at = now(), updated_at = now(), next_attempt_at = NULL
+  WHERE id = p_delivery_id AND status = 'sending';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.fail_push_delivery(
+  p_delivery_id uuid,
+  p_error_code text,
+  p_error_message text,
+  p_retryable boolean DEFAULT false
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, internal, pg_temp
+AS $$
+DECLARE
+  v_delivery public.push_deliveries%ROWTYPE;
+  v_invalid boolean := upper(coalesce(p_error_code, '')) IN
+    ('UNREGISTERED', 'INVALID_ARGUMENT', 'SENDER_ID_MISMATCH');
+  v_retry boolean;
+BEGIN
+  IF coalesce(auth.role(), current_user) NOT IN
+      ('service_role', 'postgres', 'supabase_admin') THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED';
+  END IF;
+  SELECT * INTO v_delivery FROM public.push_deliveries
+  WHERE id = p_delivery_id FOR UPDATE;
+  IF NOT FOUND OR v_delivery.status = 'sent' THEN RETURN; END IF;
+  v_retry := p_retryable AND NOT v_invalid AND v_delivery.attempt_count < 5;
+
+  UPDATE public.push_deliveries
+  SET status = CASE WHEN v_invalid THEN 'invalid_token'
+                    WHEN v_retry THEN 'pending' ELSE 'failed' END,
+      provider_error_code = left(p_error_code, 100),
+      provider_error_message = left(p_error_message, 1000),
+      next_attempt_at = CASE WHEN v_retry
+        THEN now() + make_interval(secs => least(3600, 30 * (2 ^ greatest(0, v_delivery.attempt_count - 1))))
+        ELSE NULL END,
+      failed_at = CASE WHEN v_invalid OR NOT v_retry THEN now() ELSE NULL END,
+      updated_at = now()
+  WHERE id = p_delivery_id;
+
+  IF v_invalid AND v_delivery.push_token_id IS NOT NULL THEN
+    UPDATE public.push_tokens SET is_active = false, updated_at = now()
+    WHERE id = v_delivery.push_token_id;
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.complete_notification_push_job(
+  p_job_id uuid,
+  p_retryable boolean DEFAULT false,
+  p_error_message text DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, internal, pg_temp
+AS $$
+BEGIN
+  IF coalesce(auth.role(), current_user) NOT IN
+      ('service_role', 'postgres', 'supabase_admin') THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED';
+  END IF;
+  UPDATE internal.job_queue
+  SET status = CASE WHEN p_retryable AND attempts < max_attempts
+                    THEN 'pending' ELSE 'done' END,
+      next_retry_at = CASE WHEN p_retryable AND attempts < max_attempts
+                            THEN now() + interval '30 seconds' ELSE NULL END,
+      error_message = left(p_error_message, 1000),
+      locked_by_worker_id = NULL, locked_at = NULL, lock_expires_at = NULL,
+      finished_at = CASE WHEN NOT (p_retryable AND attempts < max_attempts)
+                         THEN now() ELSE NULL END,
+      updated_at = now()
+  WHERE id = p_job_id AND job_type = 'notification_push';
+END;
+$$;
+
 -- 2.4 Auto-terminate sessions when user account is locked/banned/suspended
 CREATE OR REPLACE FUNCTION public.terminate_sessions_on_status_change()
 RETURNS TRIGGER
@@ -5563,6 +5879,45 @@ BEGIN
           WHERE un2.user_id = u.id AND un2.notification_id = v_notif_id
         )
       ON CONFLICT (user_id, notification_id) DO NOTHING;
+
+      -- Create one durable delivery per active device token. The unique key
+      -- makes fanout retries safe and keeps FCM delivery independent from
+      -- creation of the source notification/inbox row.
+      INSERT INTO public.push_deliveries (
+        notification_id, user_notification_id, user_id, tenant_id, push_token_id
+      )
+      SELECT un.notification_id, un.id, un.user_id, un.tenant_id, pt.id
+      FROM public.user_notifications un
+      JOIN public.push_tokens pt
+        ON pt.user_id = un.user_id
+       AND pt.tenant_id = un.tenant_id
+       AND pt.is_active
+      WHERE un.notification_id = v_notif_id
+        AND un.tenant_id = v_tenant_id
+      ON CONFLICT (notification_id, push_token_id) DO NOTHING;
+
+      -- The sender is an external FCM integration. Queue only the durable
+      -- delivery identity; it can safely retry without duplicating records.
+      INSERT INTO internal.job_queue (tenant_id, job_type, payload, priority)
+      SELECT pd.tenant_id, 'notification_push',
+             jsonb_build_object(
+               'push_delivery_id', pd.id,
+               'notification_id', pd.notification_id,
+               'user_notification_id', pd.user_notification_id,
+               'push_token_id', pd.push_token_id
+             ), 10
+      FROM public.push_deliveries pd
+      WHERE pd.notification_id = v_notif_id
+        AND pd.status = 'pending'
+        AND pd.attempt_count = 0
+        AND NOT EXISTS (
+          SELECT 1 FROM internal.job_queue jq
+          WHERE jq.job_type = 'notification_push'
+            AND jq.payload ->> 'push_delivery_id' = pd.id::text
+            AND jq.status IN ('pending', 'processing', 'done')
+        )
+      ON CONFLICT (job_type, payload_hash)
+        WHERE status IN ('pending', 'processing') DO NOTHING;
 
       UPDATE internal.job_queue
       SET status      = 'done',

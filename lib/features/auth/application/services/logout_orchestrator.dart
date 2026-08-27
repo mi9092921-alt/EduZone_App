@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/network/request_cancellation_manager.dart';
+import '../../../../shared/services/push_token_registration_service.dart';
 import '../../../../shared/utils/global_error_handler.dart';
 import '../models/logout_result.dart';
 
@@ -70,18 +71,7 @@ class LogoutOrchestrator {
     // ── Step 2: FCM remote token deactivation (best effort) ─────────────────
     if (_fcmConfigured && AppConfig.fcmEnabled && userId != null) {
       try {
-        final fcmToken = await FirebaseMessaging.instance
-            .getToken()
-            .timeout(_remoteTimeout);
-
-        if (fcmToken != null) {
-          await _supabase
-              .from('push_tokens')
-              .update({'is_active': false})
-              .eq('token', fcmToken)
-              .eq('user_id', userId)
-              .timeout(_remoteTimeout);
-        }
+        await PushTokenRegistrationService.deactivateCurrentUserToken();
       } catch (e) {
         failedSteps.add('fcm_deactivation_remote');
       }
