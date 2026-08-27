@@ -98,19 +98,23 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       groupsMap[normalizedKey]!.courses.add(course);
     }
 
-    // Separate general category
-    final generalGroup = groupsMap.remove('general');
+    // No explicit sort here on purpose. `groupsMap` is a LinkedHashMap
+    // (default Dart map literal), so it preserves insertion order: each
+    // category first appears in the position of the first course of that
+    // category encountered in `courses`. Since `courses` arrives ordered
+    // by created_at DESC (see getPublicCourses() in
+    // courses_remote_ds_impl.dart), this means categories are ordered by
+    // "most recently created course belongs to this category" — the
+    // category of the newest course comes first, and so on.
+    //
+    // Caveat: `courses` here reflects only what has been loaded so far
+    // from the paginated publicCoursesProvider (see PaginatedCoursesState
+    // in courses_provider.dart), not the full catalog, so this ordering
+    // can still shift slightly as more pages load and new categories
+    // first appear.
+    final orderedGroups = groupsMap.values.toList();
 
-    // Sort other categories descending by count
-    final sortedGroups = groupsMap.values.toList()
-      ..sort((a, b) => b.courses.length.compareTo(a.courses.length));
-
-    // If general group exists and is not empty, add it to the end
-    if (generalGroup != null && generalGroup.courses.isNotEmpty) {
-      sortedGroups.add(generalGroup);
-    }
-
-    return sortedGroups;
+    return orderedGroups;
   }
 
   @override
@@ -309,7 +313,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
               childCount: categoryGroups.length,
             ),
           ),
-          if (data.hasMore)
+          if (data.isLoadingMore)
             const SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.all(AppSpacing.lg),

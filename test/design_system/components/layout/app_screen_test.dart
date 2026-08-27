@@ -1,4 +1,5 @@
 import 'package:app/design_system/components/layout/app_screen.dart';
+import 'package:app/design_system/components/status/app_empty_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -49,7 +50,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Something went wrong'), findsOneWidget);
+      expect(find.byType(AppEmptyState), findsOneWidget);
       expect(find.text('Could not load your courses'), findsOneWidget);
       expect(find.text('Should be hidden while erroring'), findsNothing);
     },

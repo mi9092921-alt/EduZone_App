@@ -69,7 +69,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.text(l10n.failedToLoadCourses), findsOneWidget);
+      expect(find.text(l10n.errorGeneric), findsOneWidget);
       expect(find.text(l10n.retryButton), findsOneWidget);
       // The description text is produced by ErrorHandler.getMessage(),
       // which classifies the error and maps it to a fixed, localized
@@ -88,7 +88,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(fetchCount, greaterThan(initialFetchCount));
-      expect(find.text(l10n.failedToLoadCourses), findsOneWidget);
+      expect(find.text(l10n.errorGeneric), findsOneWidget);
     });
   });
 

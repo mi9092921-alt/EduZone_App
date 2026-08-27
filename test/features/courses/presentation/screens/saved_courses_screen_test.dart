@@ -116,7 +116,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.text(l10n.failedToLoadCourses), findsOneWidget);
+      expect(find.text(l10n.errorGeneric), findsOneWidget);
       expect(find.text(l10n.retryButton), findsOneWidget);
     });
 

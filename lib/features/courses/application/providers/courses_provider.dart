@@ -183,13 +183,37 @@ class PaginatedCoursesState {
   final Set<String> loadedIds;
   final int page;
   final bool hasMore;
+  // True only while an actual fetchNextPage() network request is in
+  // flight. Distinct from `hasMore`, which just means "the last page was
+  // full, so there might be another page" and stays true whether or not a
+  // request is currently running. The pagination loading indicator in the
+  // UI should key off this flag, not `hasMore`, or it would appear to spin
+  // continuously any time more pages could exist, even while idle.
+  final bool isLoadingMore;
 
   PaginatedCoursesState({
     required this.items,
     required this.loadedIds,
     this.page = 1,
     this.hasMore = true,
+    this.isLoadingMore = false,
   });
+
+  PaginatedCoursesState copyWith({
+    List<Course>? items,
+    Set<String>? loadedIds,
+    int? page,
+    bool? hasMore,
+    bool? isLoadingMore,
+  }) {
+    return PaginatedCoursesState(
+      items: items ?? this.items,
+      loadedIds: loadedIds ?? this.loadedIds,
+      page: page ?? this.page,
+      hasMore: hasMore ?? this.hasMore,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+    );
+  }
 }
 
 @riverpod
@@ -223,6 +247,7 @@ class PublicCourses extends _$PublicCourses {
     final buildGeneration = _buildGeneration;
     final pageRequestGeneration = ++_pageRequestGeneration;
     _isLoadingPage = true;
+    state = AsyncData(currentState.copyWith(isLoadingMore: true));
     try {
       final nextPage = currentState.page + 1;
       final getPublicCourses = ref.read(getPublicCoursesProvider);

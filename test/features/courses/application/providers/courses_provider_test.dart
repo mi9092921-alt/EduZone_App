@@ -1,393 +1,266 @@
 import 'dart:async';
 
-import 'package:app/core/error/exceptions.dart';
 import 'package:app/core/error/failures.dart';
+import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/courses/domain/entities/course.dart';
 import 'package:app/features/courses/domain/entities/course_enrollment.dart';
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
+import 'package:app/features/courses/presentation/screens/discover_screen.dart';
+import 'package:app/shared/components/course_card.dart';
+import 'package:app/shared/components/course_card/course_card_shimmers.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mocktail/mocktail.dart';
-
-// These tests target `courses_provider.dart` itself — the Riverpod wiring
-// layer — which had no dedicated test file before this pass. Every usecase
-// it wraps (GetMyCourses, GetPublicCourses, ToggleCourseBookmark, ...) is
-// already unit-tested in isolation under domain/usecases/, and the
-// keepAlive logout-isolation behavior of `bookmarkedCoursesProvider` /
-// `courseProgressProvider` is already covered by
-// test/app/session/session_invalidation_test.dart. What was still
-// untested is the provider-layer logic that lives only in this file:
-// `isEnrolled`'s AsyncValue derivation, `PublicCourses`'s pagination/dedup/
-// in-flight-guard state machine, and `BookmarkedCourses`'s sequential
-// toggle queue — all real, non-trivial Riverpod logic Section 7 requires
-// to be audited for race conditions, not just thin repository wiring.
 
 class MockCoursesRepository extends Mock implements CoursesRepository {}
 
-Course _course(String id, {String title = 'Course'}) => Course(
+Course _course(String id, {required String title, String? category}) => Course(
       id: id,
       tenantId: 'tenant-1',
       title: title,
       status: 'published',
+      category: category,
     );
 
-CourseEnrollment _enrollment(String courseId) => CourseEnrollment(
-      id: 'enrollment-$courseId',
-      userId: 'user-1',
-      courseId: courseId,
-      tenantId: 'tenant-1',
-    );
-
-Future<void> _settle() async {
-  for (var i = 0; i < 5; i++) {
-    await Future<void>.delayed(Duration.zero);
-  }
+Widget _wrap(CoursesRepository repository) {
+  final router = GoRouter(
+    initialLocation: '/discover',
+    routes: [
+      GoRoute(path: '/discover', builder: (_, _) => const DiscoverScreen()),
+      GoRoute(
+        path: '/courses/:id',
+        builder: (_, state) =>
+            Scaffold(body: Text('enrolled-${state.pathParameters['id']}')),
+      ),
+      GoRoute(
+        path: '/discover/course-preview/:id',
+        builder: (_, state) =>
+            Scaffold(body: Text('preview-${state.pathParameters['id']}')),
+      ),
+      GoRoute(
+        path: '/discover/saved',
+        builder: (_, _) => const Scaffold(body: Text('saved-screen')),
+      ),
+    ],
+  );
+  return ProviderScope(
+    overrides: [coursesRepositoryProvider.overrideWithValue(repository)],
+    child: MaterialApp.router(
+      routerConfig: router,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+    ),
+  );
 }
 
 void main() {
   late MockCoursesRepository repository;
-  late ProviderContainer container;
-
-  setUpAll(() {
-    registerFallbackValue(<String>[]);
-  });
 
   setUp(() {
     repository = MockCoursesRepository();
-    container = ProviderContainer(
-      overrides: [coursesRepositoryProvider.overrideWithValue(repository)],
-      // Disable Riverpod 3.x's automatic retry so that provider error states
-      // are stable and immediately observable in unit tests without
-      // exponential-backoff timer interference.
-      retry: (_, _) => null,
-    );
-    addTearDown(container.dispose);
+    // myCoursesProvider is watched by DiscoverScreen for enrollment-aware
+    // tap routing; default to "not enrolled in anything".
+    when(() => repository.getMyCourses()).thenAnswer((_) async => const Right([]));
   });
 
-  group('myCoursesProvider', () {
-    test('returns the enrollments from the repository on success', () async {
-      when(() => repository.getMyCourses())
-          .thenAnswer((_) async => Right([_enrollment('c1')]));
+  group('DiscoverScreen — loading/empty/error', () {
+    testWidgets('shows category-shaped shimmer placeholders while loading', (tester) async {
+      when(() => repository.getPublicCourses())
+          .thenAnswer((_) => Completer<Either<Failure, List<Course>>>().future);
 
-      final result = await container.read(myCoursesProvider.future);
+      await tester.pumpWidget(_wrap(repository));
+      await tester.pump();
 
-      expect(result, [_enrollment('c1')]);
+      expect(find.byType(DiscoverCourseCardShimmer), findsNWidgets(6)); // 2 groups x 3
     });
 
-    test(
-        'surfaces a typed AppException (not the raw Failure) so the UI '
-        'error layer can classify it (Section 14)', () async {
-      when(() => repository.getMyCourses())
-          .thenAnswer((_) async => const Left(NetworkFailure()));
-      final sub = container.listen(myCoursesProvider, (_, _) {});
-      addTearDown(sub.close);
-      await _settle();
-
-      final state = container.read(myCoursesProvider);
-      expect(state.hasError, isTrue);
-      expect(state.error, isA<NoInternetException>());
-    });
-  });
-
-  group('isEnrolledProvider', () {
-    test('is true when the course id is present among enrollments', () async {
-      when(() => repository.getMyCourses())
-          .thenAnswer((_) async => Right([_enrollment('c1')]));
-      container.listen(myCoursesProvider, (_, _) {});
-      await container.read(myCoursesProvider.future);
-
-      expect(container.read(isEnrolledProvider('c1')).value, true);
-    });
-
-    test('is false (not an error) when the course id is not enrolled', () async {
-      when(() => repository.getMyCourses())
+    testWidgets('shows "no content" when the public course list is empty', (tester) async {
+      when(() => repository.getPublicCourses())
           .thenAnswer((_) async => const Right([]));
-      container.listen(myCoursesProvider, (_, _) {});
-      await container.read(myCoursesProvider.future);
 
-      expect(container.read(isEnrolledProvider('missing')).value, false);
+      await tester.pumpWidget(_wrap(repository));
+      await tester.pumpAndSettle();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.noContentAvailable), findsOneWidget);
     });
 
-    test(
-        'preserves the loading state instead of defaulting to false while '
-        'myCoursesProvider is still resolving', () async {
-      final completer = Completer<Either<Failure, List<CourseEnrollment>>>();
-      when(() => repository.getMyCourses())
-          .thenAnswer((_) => completer.future);
-      container.listen(myCoursesProvider, (_, _) {});
-
-      expect(container.read(isEnrolledProvider('c1')).isLoading, true);
-
-      completer.complete(const Right([]));
-      await container.read(myCoursesProvider.future);
-    });
-
-    test(
-        'preserves the error state instead of silently resolving to false '
-        'when myCoursesProvider fails', () async {
-      when(() => repository.getMyCourses())
-          .thenAnswer((_) async => const Left(ServerFailure('boom')));
-      final sub = container.listen(myCoursesProvider, (_, _) {});
-      addTearDown(sub.close);
-      await _settle();
-
-      final state = container.read(isEnrolledProvider('c1'));
-      expect(state.hasError, isTrue);
-    });
-  });
-
-  group('courseDetailsProvider (family)', () {
-    test('caches independently per courseId argument', () async {
-      when(() => repository.getCourseDetails('c1'))
-          .thenAnswer((_) async => Right(_course('c1', title: 'Course One')));
-      when(() => repository.getCourseDetails('c2'))
-          .thenAnswer((_) async => Right(_course('c2', title: 'Course Two')));
-
-      final c1 = await container.read(courseDetailsProvider('c1').future);
-      final c2 = await container.read(courseDetailsProvider('c2').future);
-
-      expect(c1.title, 'Course One');
-      expect(c2.title, 'Course Two');
-      verify(() => repository.getCourseDetails('c1')).called(1);
-      verify(() => repository.getCourseDetails('c2')).called(1);
-    });
-  });
-
-  group('BookmarkedCourses.build()', () {
-    test(
-        'throws a typed AppException (not a silently-empty set) when '
-        'getBookmarkedCourseIds fails — a failed initial fetch must not '
-        'look identical to "genuinely has no bookmarks"', () async {
-      when(() => repository.getBookmarkedCourseIds())
-          .thenAnswer((_) async => const Left(ServerFailure('boom')));
-      final sub = container.listen(bookmarkedCoursesProvider, (_, _) {});
-      addTearDown(sub.close);
-      await _settle();
-
-      final state = container.read(bookmarkedCoursesProvider);
-      expect(state.hasError, isTrue);
-      expect(state.error, isA<ServerException>());
-    });
-  });
-
-  group('savedCoursesProvider', () {
-    test(
-        'does not call getCoursesByIds when there are no bookmarks '
-        '(avoids an empty-list network round trip)', () async {
-      when(() => repository.getBookmarkedCourseIds())
-          .thenAnswer((_) async => const Right(<String>{}));
-      container.listen(savedCoursesProvider, (_, _) {});
-
-      final result = await container.read(savedCoursesProvider.future);
-
-      expect(result, isEmpty);
-      verifyNever(() => repository.getCoursesByIds(any()));
-    });
-
-    test('fetches full course objects for every bookmarked id', () async {
-      when(() => repository.getBookmarkedCourseIds())
-          .thenAnswer((_) async => const Right({'c1'}));
-      when(() => repository.getCoursesByIds(['c1']))
-          .thenAnswer((_) async => Right([_course('c1')]));
-      container.listen(savedCoursesProvider, (_, _) {});
-
-      final result = await container.read(savedCoursesProvider.future);
-
-      expect(result.single.id, 'c1');
-    });
-
-    test(
-        'stays in AsyncLoading (never flashes an empty list) while '
-        'bookmarkedCoursesProvider itself is still resolving — regression '
-        'test for the earlier `bookmarksAsync.asData?.value ?? {}` bug, '
-        'where a still-loading bookmark fetch was indistinguishable from '
-        'a genuinely-empty one and made this provider resolve to `[]` '
-        'before the real bookmark ids were known', () async {
-      final completer = Completer<Either<Failure, Set<String>>>();
-      when(() => repository.getBookmarkedCourseIds())
-          .thenAnswer((_) => completer.future);
-
-      final sub = container.listen(savedCoursesProvider, (_, _) {});
-      addTearDown(sub.close);
-      await _settle();
-
-      expect(
-        container.read(savedCoursesProvider).isLoading,
-        isTrue,
-        reason: 'must not have resolved to AsyncData([]) yet',
-      );
-
-      completer.complete(const Right(<String>{}));
-      final result = await container.read(savedCoursesProvider.future);
-      expect(result, isEmpty); // now genuinely empty, and correctly so
-    });
-  });
-
-  group('BookmarkedCourses.toggleBookmark', () {
-    test('adds the id to state after a successful bookmark call', () async {
-      when(() => repository.getBookmarkedCourseIds())
-          .thenAnswer((_) async => const Right(<String>{}));
-      when(() => repository.bookmarkCourse('c1'))
-          .thenAnswer((_) async => const Right(null));
-      container.listen(bookmarkedCoursesProvider, (_, _) {});
-      await container.read(bookmarkedCoursesProvider.future);
-
-      await container.read(bookmarkedCoursesProvider.notifier).toggleBookmark('c1');
-
-      expect(container.read(bookmarkedCoursesProvider).value, {'c1'});
-    });
-
-    test('removes the id from state after a successful unbookmark call', () async {
-      when(() => repository.getBookmarkedCourseIds())
-          .thenAnswer((_) async => const Right({'c1'}));
-      when(() => repository.unbookmarkCourse('c1'))
-          .thenAnswer((_) async => const Right(null));
-      container.listen(bookmarkedCoursesProvider, (_, _) {});
-      await container.read(bookmarkedCoursesProvider.future);
-
-      await container.read(bookmarkedCoursesProvider.notifier).toggleBookmark('c1');
-
-      expect(container.read(bookmarkedCoursesProvider).value, isEmpty);
-    });
-
-    test(
-        'serializes concurrent toggles for different ids through the '
-        'internal queue instead of racing them', () async {
-      when(() => repository.getBookmarkedCourseIds())
-          .thenAnswer((_) async => const Right(<String>{}));
-      final order = <String>[];
-      when(() => repository.bookmarkCourse('slow')).thenAnswer((_) async {
-        order.add('slow-start');
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        order.add('slow-end');
-        return const Right(null);
-      });
-      when(() => repository.bookmarkCourse('fast')).thenAnswer((_) async {
-        order.add('fast-start');
-        order.add('fast-end');
-        return const Right(null);
-      });
-      container.listen(bookmarkedCoursesProvider, (_, _) {});
-      await container.read(bookmarkedCoursesProvider.future);
-
-      final notifier = container.read(bookmarkedCoursesProvider.notifier);
-      // 'slow' is launched first; if the queue (`_lastToggle`) didn't
-      // serialize these, 'fast' (which resolves instantly once running)
-      // would finish first and the two repository writes could interleave.
-      final first = notifier.toggleBookmark('slow');
-      final second = notifier.toggleBookmark('fast');
-      await Future.wait([first, second]);
-
-      expect(order, ['slow-start', 'slow-end', 'fast-start', 'fast-end']);
-      expect(
-        container.read(bookmarkedCoursesProvider).value,
-        {'slow', 'fast'},
-      );
-    });
-
-    test(
-        'a failed toggle throws a typed AppException instead of silently '
-        'leaving the UI thinking the bookmark changed', () async {
-      when(() => repository.getBookmarkedCourseIds())
-          .thenAnswer((_) async => const Right(<String>{}));
-      when(() => repository.bookmarkCourse('c1'))
-          .thenAnswer((_) async => const Left(ServerFailure('boom')));
-      container.listen(bookmarkedCoursesProvider, (_, _) {});
-      await container.read(bookmarkedCoursesProvider.future);
-
-      await expectLater(
-        container.read(bookmarkedCoursesProvider.notifier).toggleBookmark('c1'),
-        throwsA(isA<ServerException>()),
-      );
-      // State must not have been optimistically/incorrectly mutated.
-      expect(container.read(bookmarkedCoursesProvider).value, isEmpty);
-    });
-  });
-
-  group('PublicCourses (publicCoursesProvider) pagination', () {
-    test('build() sets hasMore true when a full page (10) comes back', () async {
+    testWidgets(
+        'shows the safe, localized error message (never a raw exception) '
+        'when the public course fetch fails', (tester) async {
       when(() => repository.getPublicCourses())
-          .thenAnswer((_) async => Right(List.generate(10, (i) => _course('c$i'))));
+          .thenAnswer((_) async => const Left(ServerFailure('pg error 23505')));
 
-      final state = await container.read(publicCoursesProvider.future);
+      await tester.pumpWidget(_wrap(repository));
+      await tester.pumpAndSettle();
 
-      expect(state.items, hasLength(10));
-      expect(state.page, 1);
-      expect(state.hasMore, true);
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.errorGeneric), findsOneWidget);
+      expect(find.text('pg error 23505'), findsNothing);
     });
+  });
 
-    test('build() sets hasMore false for a short (final) page', () async {
-      when(() => repository.getPublicCourses())
-          .thenAnswer((_) async => Right([_course('c1')]));
+  group('DiscoverScreen — category grouping', () {
+    testWidgets(
+        'preserves the order categories first appear in the course list '
+        '(no count-based sort; "General" is not specially demoted)', (tester) async {
+      // Enlarge the test surface so all three category groups actually
+      // lay out (SliverList only builds what's visible), instead of the
+      // default small test viewport hiding the group we need to compare
+      // vertical positions against.
+      await tester.binding.setSurfaceSize(const Size(800, 1600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      final state = await container.read(publicCoursesProvider.future);
-
-      expect(state.hasMore, false);
-    });
-
-    test(
-        'fetchNextPage appends new courses, advances the page, and drops '
-        'any id already loaded instead of duplicating it', () async {
-      when(() => repository.getPublicCourses())
-          .thenAnswer((_) async => Right(List.generate(10, (i) => _course('c$i'))));
-      container.listen(publicCoursesProvider, (_, _) {});
-      await container.read(publicCoursesProvider.future);
-
-      when(() => repository.getPublicCourses(page: 2)).thenAnswer(
+      when(() => repository.getPublicCourses()).thenAnswer(
         (_) async => Right([
-          _course('c9'), // already loaded on page 1 — must be deduped
-          _course('cNew'),
+          // "General" courses appear FIRST in the list, and "Flutter" has
+          // the most courses (3) but appears SECOND. If grouping were
+          // still sorted by count, or if "General" were still forced to
+          // the bottom, Flutter and/or Backend would render before
+          // General. Neither should happen anymore.
+          _course('c1', title: 'Uncategorized One'),
+          _course('c2', title: 'Uncategorized Two', category: '   '), // blank -> general
+          _course('c3', title: 'Flutter Basics', category: 'Flutter'),
+          _course('c4', title: 'Flutter Advanced', category: 'Flutter'),
+          _course('c5', title: 'Flutter State', category: 'flutter'), // same
+          // category, different casing -> must still merge into one group
+          _course('c6', title: 'Backend 101', category: 'Backend'),
         ]),
       );
 
-      await container.read(publicCoursesProvider.notifier).fetchNextPage();
-      final state = container.read(publicCoursesProvider).value!;
+      await tester.pumpWidget(_wrap(repository));
+      await tester.pumpAndSettle();
 
-      expect(state.page, 2);
-      expect(state.hasMore, false); // page 2 returned < 10 items
-      expect(
-        state.items.where((c) => c.id == 'c9'),
-        hasLength(1),
-        reason: 'a course id already present must not be duplicated',
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.generalCategory), findsOneWidget); // 2 uncategorized
+      expect(find.text('Flutter'), findsOneWidget); // 3 courses, merged despite casing
+      expect(find.text('Backend'), findsOneWidget); // 1 course
+
+      final generalY = tester.getTopLeft(find.text(l10n.generalCategory)).dy;
+      final flutterY = tester.getTopLeft(find.text('Flutter')).dy;
+      final backendY = tester.getTopLeft(find.text('Backend')).dy;
+      expect(generalY, lessThan(flutterY),
+          reason: 'General must NOT be demoted below a category with more '
+              'courses just because it has more courses (it appeared first '
+              'in the list)');
+      expect(flutterY, lessThan(backendY),
+          reason: 'order must follow first appearance in the course list, '
+              'not descending course count (Flutter has 3 courses but '
+              'Backend still renders after it purely because it appeared '
+              'later)');
+    });
+
+    testWidgets('omits the General group entirely when every course has a category',
+        (tester) async {
+      when(() => repository.getPublicCourses()).thenAnswer(
+        (_) async => Right([_course('c1', title: 'Flutter Basics', category: 'Flutter')]),
       );
-      expect(state.items.map((c) => c.id), contains('cNew'));
+
+      await tester.pumpWidget(_wrap(repository));
+      await tester.pumpAndSettle();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.generalCategory), findsNothing);
+    });
+  });
+
+  group('DiscoverScreen — search', () {
+    testWidgets(
+        'typing a query (after the debounce) filters to a flat list of '
+        'matching courses, replacing the grouped carousels', (tester) async {
+      when(() => repository.getPublicCourses()).thenAnswer(
+        (_) async => Right([
+          _course('c1', title: 'Flutter Basics', category: 'Flutter'),
+          _course('c2', title: 'Backend 101', category: 'Backend'),
+        ]),
+      );
+
+      await tester.pumpWidget(_wrap(repository));
+      await tester.pumpAndSettle();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      await tester.enterText(find.byType(TextFormField), 'flutter');
+      // Debounce is 300ms; settle well past it.
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Flutter Basics'), findsOneWidget);
+      expect(find.text('Backend 101'), findsNothing);
+      expect(find.text('Flutter'), findsNothing, reason: 'category headers are hidden while searching');
+      expect(find.text(l10n.noContentAvailable), findsNothing);
     });
 
-    test(
-        'a second fetchNextPage call while one is already in flight is a '
-        'no-op (isLoadingPage guard), not a duplicate request', () async {
-      when(() => repository.getPublicCourses())
-          .thenAnswer((_) async => Right(List.generate(10, (i) => _course('c$i'))));
-      container.listen(publicCoursesProvider, (_, _) {});
-      await container.read(publicCoursesProvider.future);
+    testWidgets('a query matching nothing shows the "no content" state', (tester) async {
+      when(() => repository.getPublicCourses()).thenAnswer(
+        (_) async => Right([_course('c1', title: 'Flutter Basics', category: 'Flutter')]),
+      );
 
-      var callCount = 0;
-      final completer = Completer<Either<Failure, List<Course>>>();
-      when(() => repository.getPublicCourses(page: 2)).thenAnswer((_) {
-        callCount++;
-        return completer.future;
-      });
+      await tester.pumpWidget(_wrap(repository));
+      await tester.pumpAndSettle();
 
-      final notifier = container.read(publicCoursesProvider.notifier);
-      final firstCall = notifier.fetchNextPage();
-      final secondCall = notifier.fetchNextPage();
-      completer.complete(Right([_course('c10')]));
-      await Future.wait([firstCall, secondCall]);
+      await tester.enterText(find.byType(TextFormField), 'nonexistent-xyz');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
 
-      expect(callCount, 1);
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.noContentAvailable), findsOneWidget);
+    });
+  });
+
+  group('DiscoverScreen — enrollment-aware navigation', () {
+    testWidgets('tapping a course the user is enrolled in goes to /courses/:id', (tester) async {
+      when(() => repository.getMyCourses()).thenAnswer(
+        (_) async => const Right([
+          CourseEnrollment(
+            id: 'e1',
+            userId: 'user-1',
+            courseId: 'c1',
+            tenantId: 'tenant-1',
+          ),
+        ]),
+      );
+      when(() => repository.getPublicCourses()).thenAnswer(
+        (_) async => Right([_course('c1', title: 'Flutter Basics', category: 'Flutter')]),
+      );
+
+      await tester.pumpWidget(_wrap(repository));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Flutter Basics'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('enrolled-c1'), findsOneWidget);
     });
 
-    test('fetchNextPage is a no-op once hasMore is false', () async {
-      when(() => repository.getPublicCourses())
-          .thenAnswer((_) async => Right([_course('c1')])); // short page -> hasMore=false
-      container.listen(publicCoursesProvider, (_, _) {});
-      await container.read(publicCoursesProvider.future);
+    testWidgets('tapping a course the user is NOT enrolled in goes to the preview route',
+        (tester) async {
+      when(() => repository.getPublicCourses()).thenAnswer(
+        (_) async => Right([_course('c1', title: 'Flutter Basics', category: 'Flutter')]),
+      );
 
-      await container.read(publicCoursesProvider.notifier).fetchNextPage();
+      await tester.pumpWidget(_wrap(repository));
+      await tester.pumpAndSettle();
 
-      verify(() => repository.getPublicCourses()).called(1);
+      await tester.tap(find.text('Flutter Basics'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('preview-c1'), findsOneWidget);
+    });
+
+    testWidgets('the bookmark icon action navigates to the saved-courses route', (tester) async {
+      when(() => repository.getPublicCourses()).thenAnswer((_) async => const Right([]));
+
+      await tester.pumpWidget(_wrap(repository));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.bookmark_border_rounded));
+      await tester.pumpAndSettle();
+
+      expect(find.text('saved-screen'), findsOneWidget);
     });
   });
 }

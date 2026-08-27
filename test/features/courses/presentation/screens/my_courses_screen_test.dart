@@ -141,13 +141,10 @@ void main() {
 
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(find.text(l10n.errorGeneric), findsOneWidget);
-      expect(find.text(l10n.failedToLoadCourses), findsOneWidget);
       expect(find.text(l10n.retryButton), findsOneWidget);
-      // This screen passes a fixed localized string
-      // (`l10n.failedToLoadCourses`) into AppScreen's `error` field rather
-      // than the caught error at all — like course_details_screen (via
-      // ErrorHandler.getMessage) and offline_player_screen (via a fixed
-      // string), the raw exception never reaches the UI here.
+      // This screen passes ErrorHandler.getMessage(context, err)
+      // into AppScreen's `error` field — like course_details_screen and
+      // saved_courses_screen, the raw exception never reaches the UI here.
       expect(find.textContaining('Exception'), findsNothing);
       expect(fetchCount, greaterThanOrEqualTo(1));
 
