@@ -4,7 +4,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/network_config.dart';
+import '../../../../core/network/network_exception_mapper.dart';
 import '../../../../shared/utils/global_error_handler.dart';
 import '../../domain/entities/user_access.dart';
 import '../../domain/enums/account_status.dart';
@@ -198,9 +200,35 @@ class CheckUserAccessService {
       // This is the background polling/Realtime security-monitoring loop
       // (token_version checks), not a user-triggered call — an unexpected
       // failure here directly affects whether revocation/version-mismatch
-      // detection is actually running.
-      GlobalErrorHandler.logError(e, st);
-      debugPrint('[Security] Check error: ${e.runtimeType}');
+      // detection is actually running, so genuine failures must still
+      // reach Sentry.
+      //
+      // But this loop fires unconditionally every [pollingInterval]
+      // (default 5 min) for as long as the service is active, including
+      // while the device has no connectivity at all — in which case
+      // `_supabase.rpc()` fails with a DNS/socket-level error on *every
+      // tick* for as long as the device stays offline. That surfaces as a
+      // plain `ClientException` wrapping a `SocketException`/`OSError`
+      // (not a `PostgrestException`, since the request never reached
+      // Supabase), and is expected, non-actionable environment noise —
+      // not a defect in this service. Forwarding it to Sentry unfiltered
+      // turns "user's phone lost signal" into a recurring production
+      // "error" every 5 minutes, which drowns out real signal (Section 15:
+      // observability must stay useful, not just complete). Mirrors how
+      // `AuthErrorPolicy.isTransient` / `login()`'s catch block in
+      // `auth_provider.dart` already keep connectivity failures out of
+      // Sentry while still surfacing genuinely unexpected errors.
+      final classified = NetworkExceptionMapper.map(e);
+      final isConnectivityFailure = classified is NoInternetException ||
+          classified is RequestTimeoutException;
+
+      if (!isConnectivityFailure) {
+        GlobalErrorHandler.logError(e, st);
+      }
+      debugPrint(
+        '[Security] Check error: ${e.runtimeType}'
+        '${isConnectivityFailure ? ' (connectivity — not reported to Sentry)' : ''}',
+      );
     }
   }
 

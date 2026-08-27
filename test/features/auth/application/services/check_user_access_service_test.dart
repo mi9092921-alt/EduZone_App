@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:app/features/auth/application/services/check_user_access_service.dart';
 import 'package:app/features/auth/domain/entities/user_access.dart';
 import 'package:app/features/auth/domain/enums/account_status.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -58,6 +60,23 @@ class _DelayedPostgrestFilterBuilder<T> extends Fake
     Function? onError,
   }) {
     return _future.then(onValue, onError: onError);
+  }
+}
+
+/// Simulates `supabase.rpc()` itself failing before any response is ever
+/// received — e.g. the DNS/socket-level failure a device with no network
+/// connectivity produces (see CHECKUSERACCESS-BUG-01 below).
+class _ThrowingPostgrestFilterBuilder<T> extends Fake
+    implements PostgrestFilterBuilder<T> {
+  _ThrowingPostgrestFilterBuilder(this._error);
+  final Object _error;
+
+  @override
+  Future<S> then<S>(
+    FutureOr<S> Function(T value) onValue, {
+    Function? onError,
+  }) {
+    return Future<T>.error(_error).then(onValue, onError: onError);
   }
 }
 
@@ -215,6 +234,99 @@ void main() {
       await service.checkNow(); // strike 2
       expect(deniedReasons, isEmpty);
       await service.checkNow(); // strike 3
+      expect(deniedReasons, ['token_version_mismatch']);
+    });
+  });
+
+  group('connectivity failure during check (CHECKUSERACCESS-BUG-01)', () {
+    // Production incident: a device with no network at all makes
+    // `supabase.rpc('check_user_access')` fail with a DNS/socket-level
+    // error (`http.ClientException` wrapping a `SocketException`/`OSError`
+    // — never even reaches Supabase, so it is not a `PostgrestException`)
+    // on every 5-minute poll for as long as the device stays offline. This
+    // must never crash the polling loop and must never be treated as a
+    // real access denial/forced logout — a network blip is not the server
+    // saying "no". (It also must not be reported to Sentry as a recurring
+    // production error, but that filtering — see the service's `_check`
+    // catch block — isn't independently observable from a unit test
+    // without mocking the static `GlobalErrorHandler`/`Sentry` funnel, so
+    // this suite pins down the functional contract instead: no crash, no
+    // denial, and normal operation resumes once connectivity returns.)
+    test(
+        'ClientException wrapping a SocketException does not throw and '
+        'does not deny access', () async {
+      when(() => supabase.rpc('check_user_access')).thenAnswer(
+        (_) => _ThrowingPostgrestFilterBuilder<Map<String, dynamic>>(
+          http.ClientException(
+            'ClientException with SocketException: Failed host lookup: '
+            "'evmrahlzcgqgjhwvxzih.supabase.co' (OS Error: No address "
+            'associated with hostname, errno = 7)',
+          ),
+        ),
+      );
+
+      final service = buildService();
+
+      await expectLater(service.checkNow(), completes);
+      expect(deniedReasons, isEmpty);
+      expect(restrictedAccesses, isEmpty);
+    });
+
+    test('a plain SocketException also does not throw or deny access',
+        () async {
+      when(() => supabase.rpc('check_user_access')).thenAnswer(
+        (_) => _ThrowingPostgrestFilterBuilder<Map<String, dynamic>>(
+          const SocketException('Network is unreachable'),
+        ),
+      );
+
+      final service = buildService();
+
+      await expectLater(service.checkNow(), completes);
+      expect(deniedReasons, isEmpty);
+    });
+
+    test('a TimeoutException also does not throw or deny access', () async {
+      when(() => supabase.rpc('check_user_access')).thenAnswer(
+        (_) => _ThrowingPostgrestFilterBuilder<Map<String, dynamic>>(
+          TimeoutException('check_user_access'),
+        ),
+      );
+
+      final service = buildService();
+
+      await expectLater(service.checkNow(), completes);
+      expect(deniedReasons, isEmpty);
+    });
+
+    test('connectivity failures do not corrupt the missing-jwtVersion '
+        'strike counter for the next successful check', () async {
+      // mockAccessToken defaults to a JWT with no token_version claim, so a
+      // *successful* response would normally count as a strike. A failed
+      // check must not silently consume/advance that counter either way.
+      when(() => supabase.rpc('check_user_access')).thenAnswer(
+        (_) => _ThrowingPostgrestFilterBuilder<Map<String, dynamic>>(
+          const SocketException('Network is unreachable'),
+        ),
+      );
+      final service = buildService();
+
+      await service.checkNow(); // network failure — ignored
+      await service.checkNow(); // network failure — ignored
+
+      // Connectivity returns; RPC now succeeds again.
+      when(() => supabase.rpc('check_user_access')).thenAnswer(
+        (_) =>
+            _FakePostgrestFilterBuilder<Map<String, dynamic>>(mockRpcResponse),
+      );
+
+      await service.checkNow(); // strike 1 (missing jwtVersion)
+      await service.checkNow(); // strike 2
+      expect(deniedReasons, isEmpty,
+          reason: 'two network failures + two real strikes must not have '
+              'been conflated into three strikes');
+
+      await service.checkNow(); // strike 3 -> forced logout
       expect(deniedReasons, ['token_version_mismatch']);
     });
   });
