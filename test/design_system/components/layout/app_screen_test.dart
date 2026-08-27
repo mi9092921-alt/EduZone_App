@@ -56,6 +56,38 @@ void main() {
     },
   );
 
+  testWidgets(
+    'AppScreen centers a short error state vertically in the viewport '
+    '(regression for UI-001: SingleChildScrollView previously sized its '
+    'child to content height, so AppEmptyState\'s own Center had no effect '
+    'and the state collapsed to the top of the screen instead of being '
+    'centered)',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: AppScreen(
+            error: 'Could not load your courses',
+            child: Text('unused'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final screenHeight =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      final emptyStateCenter = tester.getCenter(find.byType(AppEmptyState));
+
+      // Should land roughly in the middle of the screen. Before the fix
+      // this was pinned near the top (well outside this tolerance) because
+      // SingleChildScrollView gave the Center inside AppEmptyState an
+      // unbounded height to lay out against.
+      expect(
+        emptyStateCenter.dy,
+        closeTo(screenHeight / 2, screenHeight * 0.15),
+      );
+    },
+  );
+
   testWidgets('AppScreen invokes onRetry when the error state\'s retry '
       'button is tapped', (WidgetTester tester) async {
     bool retried = false;

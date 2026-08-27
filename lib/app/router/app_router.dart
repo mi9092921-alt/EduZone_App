@@ -441,7 +441,24 @@ class _RouteNotFoundScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    // UI-001: this screen has no app bar, no bottom navigation, and — when
+    // reached from a stale/typo'd in-app link with earlier screens still on
+    // the stack — nothing but the device's own back button/edge-swipe to
+    // get out of it. That's an especially poor experience on iOS, where
+    // there is no persistent OS-level back control to fall back on. Only
+    // show an explicit in-app back affordance when there's actually
+    // somewhere to go back to (`context.canPop()`); when this is the very
+    // first thing shown (e.g. the app was cold-started from a bad deep
+    // link), there genuinely is nothing to pop back to, and "Go to Home"
+    // below remains the correct, sole way out.
+    final canGoBack = context.canPop();
     return AppScreen(
+      appBar: canGoBack
+          ? AppBar(
+              elevation: 0,
+              leading: BackButton(onPressed: () => context.pop()),
+            )
+          : null,
       child: AppEmptyState(
         icon: AppIcons.error,
         title: l10n.errorGeneric,

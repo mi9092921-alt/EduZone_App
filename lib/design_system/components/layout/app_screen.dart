@@ -92,11 +92,33 @@ class AppScreen extends StatelessWidget {
         error != null && !scrollable && onRefresh != null;
 
     if (scrollable || errorNeedsOwnScrollable) {
-      content = SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(
-          parent: BouncingScrollPhysics(),
-        ),
-        child: content,
+      // UI-001: `SingleChildScrollView` sizes its child to its natural
+      // (unbounded) height, so a `Center`-based full-page body — every
+      // `AppEmptyState` error/empty state rendered through this widget,
+      // plus screens like `LockedScreen` that build their own `Center` —
+      // was never actually centered: it just collapsed to whatever height
+      // its content needed and sat at the top of the scroll view, leaving
+      // the rest of the screen as dead space below it. Wrapping the
+      // scrollable's child in a `ConstrainedBox` with `minHeight` pinned
+      // to the available viewport height fixes this: short content is
+      // now genuinely centered in the visible area (matching what a user
+      // expects from a system-style alert/empty state), while content
+      // taller than the viewport is completely unaffected and still
+      // scrolls exactly as before — `minHeight` never caps how tall the
+      // child can grow.
+      final Widget contentToScroll = content;
+      content = LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: contentToScroll,
+            ),
+          );
+        },
       );
     }
 
