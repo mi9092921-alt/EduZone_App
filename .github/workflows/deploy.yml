@@ -33,6 +33,32 @@ jobs:
             exit 1
           fi
           echo "ready=true" >> "$GITHUB_OUTPUT"
+      # FB-001 (Sentry EDUZONE-3, "Failed to load FirebaseOptions from
+      # resource"): android/app/build.gradle.kts already applies the
+      # com.google.gms.google-services plugin conditionally on
+      # android/app/google-services.json existing, and FcmService.init()
+      # already degrades to a no-op + logged error when Firebase isn't
+      # configured. Both of those are the *code-side* half of this fix.
+      # The half that was still missing is here: nothing in this workflow
+      # ever wrote a real google-services.json into the checkout, so every
+      # release built by this pipeline would silently skip the plugin and
+      # reproduce the exact same "Failed to load FirebaseOptions from
+      # resource" report on every install, forever, with push
+      # notifications permanently dead in production. This check does not
+      # block the deploy (push notifications are a product gap, not a
+      # signing/security one — see IMPLEMENTATION.md, FB-001), but it
+      # makes the gap impossible to miss instead of being one skippable
+      # line in a Gradle configuration log.
+      - name: Check optional Firebase configuration (FB-001)
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          if [ -z "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+            echo "::warning::GOOGLE_SERVICES_JSON secret is not set. This release build will ship with the com.google.gms.google-services plugin skipped and Firebase Messaging disabled — push notifications will not work for any user on this build. See IMPLEMENTATION.md, FB-001."
+            {
+              echo "## ⚠️ Firebase not configured for this release (FB-001)"
+              echo "\`GOOGLE_SERVICES_JSON\` secret is missing. The build will still succeed, but push notifications will be disabled for every user on this release (FcmService already degrades to a no-op — this is not a crash). See \`IMPLEMENTATION.md\` → FB-001 before shipping a release that is meant to have working push notifications."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Write signing + env config from secrets
         if: steps.check.outputs.ready == 'true'
         env:
@@ -42,6 +68,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           printf '%s' "$ENV_PROD" > .env.prod
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/release.keystore
@@ -52,6 +79,9 @@ jobs:
             echo "keyPassword=$ANDROID_KEY_PASSWORD"
           } > android/key.properties
           printf '%s' "$PLAY_STORE_JSON_KEY" > android/play-store-key.json
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          fi
       - name: flutter build appbundle --release
         if: steps.check.outputs.ready == 'true'
         run: flutter build appbundle --release --dart-define-from-file=.env.prod
