@@ -132,7 +132,7 @@ class CheckUserAccessService {
       // timeout. Besides keeping the production timeout, this avoids calling
       // a builder-specific timeout override in lightweight test doubles.
       final response = await Future<dynamic>.value(
-        _supabase.rpc('check_user_access'),
+        _supabase.rpc('check_student_app_access'),
       ).timeout(NetworkConfig.readTimeout);
       if (!_active) return;
 

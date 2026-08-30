@@ -171,7 +171,7 @@ void main() {
 
     // CheckUserAccessService._check() (started automatically after a
     // successful login/session-restore) calls
-    // `await _supabase.rpc('check_user_access')` for its background
+    // `await _supabase.rpc('check_student_app_access')` for its background
     // polling/monitoring check. Without this stub, mocktail cannot return
     // null for this non-nullable-Future-returning method and throws
     // "type 'Null' is not a subtype of type 'PostgrestFilterBuilder<dynamic>'"
@@ -180,7 +180,7 @@ void main() {
     // result directly, but stubbing it properly removes the noise and
     // exercises the real polling path deterministically.
 // ✅ صحيح:
-when(() => mockSupabase.rpc('check_user_access')).thenAnswer(
+when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
   (_) => _FakeCheckAccessRpcBuilder(const {
     'allowed': true,
     'token_version': null,
@@ -1164,7 +1164,7 @@ class _FakeRealtimeChannel extends Fake implements RealtimeChannel {
 class _MockRpcBuilder extends Mock
     implements PostgrestFilterBuilder<dynamic> {}
 
-/// Makes `await supabase.rpc('check_user_access')` resolve to a fixed
+/// Makes `await supabase.rpc('check_student_app_access')` resolve to a fixed
 /// map, so [CheckUserAccessService._check] (started automatically after
 /// login/session-restore) behaves deterministically instead of throwing.
 class _FakeCheckAccessRpcBuilder extends Fake

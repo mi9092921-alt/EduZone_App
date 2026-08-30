@@ -60,7 +60,7 @@ void main() {
 
   group('checkUserAccess', () {
     test('returns active status when allowed is true', () async {
-      stubRpc('check_user_access', {'allowed': true});
+      stubRpc('check_student_app_access', {'allowed': true});
 
       final result = await dataSource.checkUserAccess();
 
@@ -69,7 +69,7 @@ void main() {
     });
 
     test('returns banned status when allowed is false', () async {
-      stubRpc('check_user_access', {
+      stubRpc('check_student_app_access', {
         'allowed': false,
         'reason': 'account_banned',
       });
@@ -81,7 +81,7 @@ void main() {
     });
 
     test('fails closed when response is null', () async {
-      stubRpc('check_user_access', null);
+      stubRpc('check_student_app_access', null);
 
       await expectLater(
         () => dataSource.checkUserAccess(),
@@ -91,7 +91,7 @@ void main() {
 
     test('throws ServerException on PostgrestException', () async {
       stubRpcThrows(
-        'check_user_access',
+        'check_student_app_access',
         const PostgrestException(message: 'DB error'),
       );
 
@@ -101,9 +101,9 @@ void main() {
       );
     });
 
-    test('preserves RLS recursion code from check_user_access', () async {
+    test('preserves RLS recursion code from check_student_app_access', () async {
       stubRpcThrows(
-        'check_user_access',
+        'check_student_app_access',
         const PostgrestException(
           message: 'infinite recursion detected in policy for relation "users"',
           code: '42P17',

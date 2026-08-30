@@ -288,8 +288,14 @@ GRANT EXECUTE ON FUNCTION public.immutable_tsvector(text) TO authenticated, anon
 -- Note: For functions with parameters, use full signature or rely on default privileges
 -- Most functions with complex signatures are already blocked by ALTER DEFAULT PRIVILEGES above
 
-REVOKE EXECUTE ON FUNCTION public.check_user_access() FROM anon;
-GRANT EXECUTE ON FUNCTION public.check_user_access() TO authenticated, service_role;
+-- check_user_access() was split into two role-scoped gates (see
+-- 07_functions.sql): check_student_app_access() for the student app and
+-- check_dashboard_access() for the admin/teacher/super_admin dashboard.
+REVOKE EXECUTE ON FUNCTION public.check_student_app_access() FROM anon;
+GRANT EXECUTE ON FUNCTION public.check_student_app_access() TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.check_dashboard_access() FROM anon;
+GRANT EXECUTE ON FUNCTION public.check_dashboard_access() TO authenticated, service_role;
 
 REVOKE EXECUTE ON FUNCTION public.assert_tenant() FROM anon;
 GRANT EXECUTE ON FUNCTION public.assert_tenant() TO authenticated, service_role;
@@ -381,6 +387,20 @@ GRANT EXECUTE ON FUNCTION public.complete_notification_push_job(uuid, boolean, t
 REVOKE ALL ON FUNCTION internal.invoke_notification_push_worker()
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION internal.invoke_notification_push_worker() TO service_role;
+
+-- BUG-NOTIF-01 FIX: public.process_notification_fanout_jobs() was defined
+-- (07_functions.sql) as the single source of truth for turning a queued
+-- 'notification_fanout' job into user_notifications + push_deliveries rows,
+-- and GET /api/cron/routine is documented to call it every tick -- but it was
+-- never granted to service_role, so even after the route is fixed to call it
+-- (instead of the removed hand-rolled TS reimplementation), the RPC would
+-- fail with PERMISSION_DENIED / "permission denied for function" and
+-- audience-targeted notifications ('all'/'students'/'teachers'/'admins')
+-- would silently never reach any student's inbox.
+REVOKE ALL ON FUNCTION public.process_notification_fanout_jobs(integer, text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.process_notification_fanout_jobs(integer, text)
+  TO service_role;
 
 REVOKE ALL ON FUNCTION public.record_current_user_activity(boolean, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.record_current_user_activity(boolean, text) TO authenticated, service_role;

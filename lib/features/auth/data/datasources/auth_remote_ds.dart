@@ -35,9 +35,9 @@ class AuthRemoteDataSource {
   AuthRemoteDataSource([SupabaseClient? client])
     : _client = client ?? SupabaseService.client;
 
-  // ─── check_user_access() ──────────────────────────────────────
+  // ─── check_student_app_access() (formerly check_user_access()) ────────
 
-  /// Calls the `check_user_access()` RPC and maps the response
+  /// Calls the `check_student_app_access()` RPC and maps the response
   /// to a [UserAccess] entity with [AccountStatus].
   ///
   /// Previously had no client-side timeout -- a stalled connection meant
@@ -49,7 +49,7 @@ class AuthRemoteDataSource {
   Future<UserAccess> checkUserAccess() async {
     return NetworkGuard.read(() async {
       try {
-        final res = await _client.rpc('check_user_access');
+        final res = await _client.rpc('check_student_app_access');
 
         if (res == null) {
           // Missing authorization data is not proof of access. Treat an
@@ -477,7 +477,7 @@ class AuthRemoteDataSource {
     }
 
     // AUTH-BUG-01: the RPCs called on the post-authentication path
-    // (bind_device_for_current_user, check_user_access) can raise several
+    // (bind_device_for_current_user, check_student_app_access) can raise several
     // more server-side conditions beyond the three business-rule cases
     // above. All of these still map to the same safe, generic UI message
     // via AuthErrorPolicy (ServerException -> 'errorGeneric') -- none of

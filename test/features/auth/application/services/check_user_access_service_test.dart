@@ -109,7 +109,7 @@ void main() {
     when(() => auth.currentSession).thenReturn(session);
     // thenAnswer (not thenReturn) — rpc returns a Future-like builder.
     when(() => session.accessToken).thenAnswer((_) => mockAccessToken);
-    when(() => supabase.rpc('check_user_access')).thenAnswer(
+    when(() => supabase.rpc('check_student_app_access')).thenAnswer(
       (_) => _FakePostgrestFilterBuilder<Map<String, dynamic>>(mockRpcResponse),
     );
   });
@@ -240,7 +240,7 @@ void main() {
 
   group('connectivity failure during check (CHECKUSERACCESS-BUG-01)', () {
     // Production incident: a device with no network at all makes
-    // `supabase.rpc('check_user_access')` fail with a DNS/socket-level
+    // `supabase.rpc('check_student_app_access')` fail with a DNS/socket-level
     // error (`http.ClientException` wrapping a `SocketException`/`OSError`
     // — never even reaches Supabase, so it is not a `PostgrestException`)
     // on every 5-minute poll for as long as the device stays offline. This
@@ -255,7 +255,7 @@ void main() {
     test(
         'ClientException wrapping a SocketException does not throw and '
         'does not deny access', () async {
-      when(() => supabase.rpc('check_user_access')).thenAnswer(
+      when(() => supabase.rpc('check_student_app_access')).thenAnswer(
         (_) => _ThrowingPostgrestFilterBuilder<Map<String, dynamic>>(
           http.ClientException(
             'ClientException with SocketException: Failed host lookup: '
@@ -274,7 +274,7 @@ void main() {
 
     test('a plain SocketException also does not throw or deny access',
         () async {
-      when(() => supabase.rpc('check_user_access')).thenAnswer(
+      when(() => supabase.rpc('check_student_app_access')).thenAnswer(
         (_) => _ThrowingPostgrestFilterBuilder<Map<String, dynamic>>(
           const SocketException('Network is unreachable'),
         ),
@@ -287,9 +287,9 @@ void main() {
     });
 
     test('a TimeoutException also does not throw or deny access', () async {
-      when(() => supabase.rpc('check_user_access')).thenAnswer(
+      when(() => supabase.rpc('check_student_app_access')).thenAnswer(
         (_) => _ThrowingPostgrestFilterBuilder<Map<String, dynamic>>(
-          TimeoutException('check_user_access'),
+          TimeoutException('check_student_app_access'),
         ),
       );
 
@@ -304,7 +304,7 @@ void main() {
       // mockAccessToken defaults to a JWT with no token_version claim, so a
       // *successful* response would normally count as a strike. A failed
       // check must not silently consume/advance that counter either way.
-      when(() => supabase.rpc('check_user_access')).thenAnswer(
+      when(() => supabase.rpc('check_student_app_access')).thenAnswer(
         (_) => _ThrowingPostgrestFilterBuilder<Map<String, dynamic>>(
           const SocketException('Network is unreachable'),
         ),
@@ -315,7 +315,7 @@ void main() {
       await service.checkNow(); // network failure — ignored
 
       // Connectivity returns; RPC now succeeds again.
-      when(() => supabase.rpc('check_user_access')).thenAnswer(
+      when(() => supabase.rpc('check_student_app_access')).thenAnswer(
         (_) =>
             _FakePostgrestFilterBuilder<Map<String, dynamic>>(mockRpcResponse),
       );
@@ -334,7 +334,7 @@ void main() {
   group('stale async security callbacks', () {
     test('a check that completes after stop cannot force access denial', () async {
       final completer = Completer<Map<String, dynamic>>();
-      when(() => supabase.rpc('check_user_access')).thenAnswer(
+      when(() => supabase.rpc('check_student_app_access')).thenAnswer(
         (_) => _DelayedPostgrestFilterBuilder<Map<String, dynamic>>(
           completer.future,
         ),

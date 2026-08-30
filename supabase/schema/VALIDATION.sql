@@ -66,60 +66,90 @@ BEGIN
   );
 END $$;
 
--- Check 4: check_user_access RPC Exists
+-- Check 4: check_student_app_access / check_dashboard_access RPCs Exist
+-- (replaces the old single check_user_access RPC)
 DO $$
 DECLARE
+  v_fn text;
   v_exists boolean;
 BEGIN
-  SELECT EXISTS(
-    SELECT 1 FROM information_schema.routines 
-    WHERE routine_name = 'check_user_access' 
-      AND routine_schema = 'public'
-  ) INTO v_exists;
-  
-  INSERT INTO validation_results VALUES (
-    'check_user_access RPC Exists',
-    CASE WHEN v_exists THEN 'PASS' ELSE 'FAIL' END,
-    CASE WHEN v_exists 
-      THEN 'RPC is available'
-      ELSE 'CRITICAL: RPC missing - auth hydration will fail'
-    END
-  );
+  FOREACH v_fn IN ARRAY ARRAY['check_student_app_access', 'check_dashboard_access']
+  LOOP
+    SELECT EXISTS(
+      SELECT 1 FROM information_schema.routines
+      WHERE routine_name = v_fn
+        AND routine_schema = 'public'
+    ) INTO v_exists;
+
+    INSERT INTO validation_results VALUES (
+      v_fn || ' RPC Exists',
+      CASE WHEN v_exists THEN 'PASS' ELSE 'FAIL' END,
+      CASE WHEN v_exists
+        THEN 'RPC is available'
+        ELSE 'CRITICAL: RPC missing - auth hydration will fail'
+      END
+    );
+  END LOOP;
 END $$;
 
--- Check 5: check_user_access Grants
+-- Check 5: check_student_app_access / check_dashboard_access Grants
 DO $$
 DECLARE
+  v_fn text;
   v_authenticated_grant boolean;
   v_anon_grant boolean;
 BEGIN
+  FOREACH v_fn IN ARRAY ARRAY['check_student_app_access', 'check_dashboard_access']
+  LOOP
+    SELECT EXISTS(
+      SELECT 1 FROM information_schema.role_routine_grants
+      WHERE routine_name = v_fn
+        AND grantee = 'authenticated'
+    ) INTO v_authenticated_grant;
+
+    SELECT EXISTS(
+      SELECT 1 FROM information_schema.role_routine_grants
+      WHERE routine_name = v_fn
+        AND grantee = 'anon'
+    ) INTO v_anon_grant;
+
+    INSERT INTO validation_results VALUES (
+      v_fn || ' Permissions',
+      CASE
+        WHEN v_authenticated_grant AND NOT v_anon_grant THEN 'PASS'
+        WHEN NOT v_anon_grant THEN 'WARN'
+        ELSE 'FAIL'
+      END,
+      CASE
+        WHEN v_authenticated_grant AND NOT v_anon_grant
+          THEN 'authenticated: GRANT, anon: REVOKE (correct)'
+        WHEN v_authenticated_grant AND v_anon_grant
+          THEN 'WARNING: anon has access to ' || v_fn || ' (should be revoked)'
+        WHEN NOT v_authenticated_grant
+          THEN 'CRITICAL: authenticated cannot execute ' || v_fn
+        ELSE 'anon only has access (incorrect)'
+      END
+    );
+  END LOOP;
+END $$;
+
+-- Check 6: check_user_access has been fully removed (no dangling gate)
+DO $$
+DECLARE
+  v_still_exists boolean;
+BEGIN
   SELECT EXISTS(
-    SELECT 1 FROM information_schema.role_routine_grants
+    SELECT 1 FROM information_schema.routines
     WHERE routine_name = 'check_user_access'
-      AND grantee = 'authenticated'
-  ) INTO v_authenticated_grant;
-  
-  SELECT EXISTS(
-    SELECT 1 FROM information_schema.role_routine_grants
-    WHERE routine_name = 'check_user_access'
-      AND grantee = 'anon'
-  ) INTO v_anon_grant;
-  
+      AND routine_schema = 'public'
+  ) INTO v_still_exists;
+
   INSERT INTO validation_results VALUES (
-    'check_user_access Permissions',
-    CASE 
-      WHEN v_authenticated_grant AND NOT v_anon_grant THEN 'PASS'
-      WHEN NOT v_anon_grant THEN 'WARN'
-      ELSE 'FAIL'
-    END,
-    CASE 
-      WHEN v_authenticated_grant AND NOT v_anon_grant 
-        THEN 'authenticated: GRANT, anon: REVOKE (correct)'
-      WHEN v_authenticated_grant AND v_anon_grant
-        THEN 'WARNING: anon has access to check_user_access (should be revoked)'
-      WHEN NOT v_authenticated_grant
-        THEN 'CRITICAL: authenticated cannot execute check_user_access'
-      ELSE 'anon only has access (incorrect)'
+    'check_user_access Removed',
+    CASE WHEN v_still_exists THEN 'FAIL' ELSE 'PASS' END,
+    CASE WHEN v_still_exists
+      THEN 'CRITICAL: legacy check_user_access() still deployed alongside the new gates'
+      ELSE 'Legacy gate fully removed'
     END
   );
 END $$;
