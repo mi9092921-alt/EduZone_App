@@ -15,20 +15,20 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  flutter_riverpod: ^3.3.1
-  riverpod_annotation: ^4.0.2
+  flutter_riverpod: ^3.4.2
+  riverpod_annotation: ^4.0.6
   go_router: ^17.2.0
-  equatable: ^2.0.5
+  equatable: ^2.1.0
   fpdart: ^1.1.0
   freezed_annotation: ^3.1.0
-  json_annotation: ^4.11.0
+  json_annotation: ^4.12.0
   uuid: ^4.5.1
 
   # Backend & Services
   http: ^1.2.0
   supabase_flutter: ^2.6.0
 
-  firebase_core: ^4.6.0
+  firebase_core: ^4.14.0
   firebase_messaging: ^16.1.3
   sentry_flutter: ^8.14.2
 
@@ -37,13 +37,13 @@ dependencies:
   geolocator: ^13.0.2
   device_info_plus: ^12.4.0
   package_info_plus: ^9.0.1
-  connectivity_plus: ^7.1.1
+  connectivity_plus: ^7.3.1
   flutter_secure_storage: ^10.0.0
   shared_preferences: ^2.3.2
   flutter_local_notifications: ^21.0.0
-  workmanager: ^0.9.0+3
-  path_provider: ^2.1.5
-  sqflite: ^2.4.2
+  workmanager: ^0.10.9
+  path_provider: ^2.1.6
+  sqflite: ^2.4.3
   path: ^1.9.1
   crypto: ^3.0.5
   encrypt: ^5.0.3
@@ -53,19 +53,19 @@ dependencies:
   # UI, Icons & Media
   cupertino_icons: ^1.0.8
   cached_network_image: ^3.4.1
-  flutter_cache_manager: ^3.4.1
+  flutter_cache_manager: ^3.4.2
   skeletonizer: ^2.1.3
   youtube_player_flutter: ^9.0.1
   media_kit: ^1.2.6
   media_kit_video: ^2.0.1
   media_kit_libs_video: ^1.0.7
-  image_picker: ^1.1.2
+  image_picker: ^1.2.3
   url_launcher: ^6.3.1
   font_awesome_flutter: ^11.0.0
-  dio: ^5.9.2
+  dio: ^5.11.0
   flutter_inappwebview: ^6.1.5
-  freerasp: ^8.0.0
-  screen_protector: ^1.5.2
+  freerasp: ^8.2.2
+  screen_protector: ^1.5.3
   installed_apps: ^2.1.1
   background_downloader: ^9.5.7
 
@@ -77,13 +77,13 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   mocktail: ^1.0.5
-  sqflite_common_ffi: ^2.3.3
+  sqflite_common_ffi: ^2.4.2+1
 
   # Code Generation
-  build_runner: ^2.4.12
-  riverpod_generator: ^4.0.3
-  freezed: ^3.2.5
-  json_serializable: ^6.8.0
+  build_runner: ^2.15.1
+  riverpod_generator: ^4.0.8
+  freezed: ^4.0.1
+  json_serializable: ^6.13.2
 
   # Linting
   flutter_lints: ^6.0.0
