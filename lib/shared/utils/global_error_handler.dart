@@ -38,9 +38,9 @@ class GlobalErrorHandler {
   /// independently testable without a live/mocked Sentry Hub.
   ///
   /// This mirrors CHECKUSERACCESS-BUG-01
-  /// (`check_user_access_service.dart`): a device with no connectivity
+  /// (`check_student_app_access_service.dart`): a device with no connectivity
   /// makes *every* Supabase call fail with a DNS/socket-level error. That
-  /// fix only covered the `check_user_access` RPC's own catch block.
+  /// fix only covered the `check_student_app_access` RPC's own catch block.
   /// Supabase's own *internal* background token auto-refresh timer
   /// (`GoTrueClient._callRefreshToken`) throws the same class of error on
   /// its own, uncaught by app code, so it surfaces here via

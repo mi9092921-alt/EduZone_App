@@ -11,7 +11,7 @@ A finding you cannot back with quoted code is a failure on your part.
   The reserved claim `role` MUST remain `authenticated` (app roles live in `primary_role`).
 - Forced logout mechanism: admin bumps `users.token_version` in DB → app detects via
   Realtime (`postgres_changes` on `public.users`, requires REPLICA IDENTITY FULL) or via
-  polling RPC `check_user_access`, then signs the user out (`CheckUserAccessService`).
+  polling RPC `check_student_app_access`, then signs the user out (`CheckStudentAppAccessService`).
 - Auth Hook is fail-closed: users without an active row in `public.users` cannot obtain tokens.
 Audit the Flutter code AGAINST this contract. Any client code that contradicts it is a finding.
 
@@ -23,7 +23,7 @@ Audit the Flutter code AGAINST this contract. Any client code that contradicts i
 2. Read EVERY file end-to-end. If a file is too large, read it in chunks until complete.
 3. Identify and read the auth feature's external touchpoints OUTSIDE the folder:
    DI registrations, router/guards, `main.dart` bootstrap, Supabase client setup,
-   `CheckUserAccessService` wiring, deep-link config. List which of these you actually read.
+   `CheckStudentAppAccessService` wiring, deep-link config. List which of these you actually read.
 4. If you did not read something, you MUST say so explicitly in the report. Never guess file contents.
 
 ## Phase 1 — Flow tracing (evidence, not opinion)

@@ -35,7 +35,7 @@ class AuthRemoteDataSource {
   AuthRemoteDataSource([SupabaseClient? client])
     : _client = client ?? SupabaseService.client;
 
-  // ─── check_student_app_access() (formerly check_user_access()) ────────
+  // ─── check_student_app_access() ────────────────────────────────
 
   /// Calls the `check_student_app_access()` RPC and maps the response
   /// to a [UserAccess] entity with [AccountStatus].
@@ -46,7 +46,7 @@ class AuthRemoteDataSource {
   /// connectivity/timeout failures (never for a real access-denial
   /// business outcome, which must reach the caller immediately). See
   /// Section 13 ("Networking Reliability") of the project instructions.
-  Future<UserAccess> checkUserAccess() async {
+  Future<UserAccess> checkStudentAppAccess() async {
     return NetworkGuard.read(() async {
       try {
         final res = await _client.rpc('check_student_app_access');

@@ -27,7 +27,7 @@ import '../../domain/entities/update_info.dart';
 import '../../domain/entities/user_access.dart';
 import '../../domain/enums/user_role.dart';
 import '../policies/auth_error_policy.dart';
-import '../services/check_user_access_service.dart';
+import '../services/check_student_app_access_service.dart';
 import '../services/logout_orchestrator.dart';
 import 'auth_di_providers.dart';
 
@@ -55,7 +55,7 @@ part 'auth_provider.g.dart';
 class Auth extends _$Auth {
   StreamSubscription? _authSubscription;
   late final AuthRemoteDataSource _remoteDataSource;
-  CheckUserAccessService? _accessService;
+  CheckStudentAppAccessService? _accessService;
 
   // Monotonic generation used to invalidate stale async auth work. Any
   // explicit auth action (login/logout) or passive revocation increments this
@@ -183,7 +183,7 @@ class Auth extends _$Auth {
         return;
       }
 
-      final access = await ref.read(checkUserAccessUseCaseProvider)();
+      final access = await ref.read(checkStudentAppAccessUseCaseProvider)();
       if (!_isCurrentAuthOperation(operationGeneration)) return;
 
       if (access.isAllowed) {
@@ -397,7 +397,7 @@ class Auth extends _$Auth {
       );
       if (!_isCurrentAuthOperation(generation)) return;
 
-      final access = await ref.read(checkUserAccessUseCaseProvider)();
+      final access = await ref.read(checkStudentAppAccessUseCaseProvider)();
       if (!_isCurrentAuthOperation(generation)) return;
 
       if (access.isAllowed) {
@@ -557,7 +557,7 @@ class Auth extends _$Auth {
 
   void _startAccessMonitoring(String userId, String tenantId) {
     _accessService?.stop();
-    _accessService = CheckUserAccessService(
+    _accessService = CheckStudentAppAccessService(
       supabase: ref.read(supabaseClientProvider),
       onAccessDenied: ({required String reason}) =>
           handleAccessDenied(reason: reason),
@@ -572,7 +572,7 @@ class Auth extends _$Auth {
   Future<void> verifyAccess() async {
     final generation = _authOperationGeneration;
     try {
-      final access = await ref.read(checkUserAccessUseCaseProvider)();
+      final access = await ref.read(checkStudentAppAccessUseCaseProvider)();
       if (!_isCurrentAuthOperation(generation)) return;
 
       if (access.isAllowed) {
@@ -632,7 +632,7 @@ class Auth extends _$Auth {
     }
   }
 
-  // ─── Handle Access Denied (called by CheckUserAccessService) ──────────────
+  // ─── Handle Access Denied (called by CheckStudentAppAccessService) ──────────────
 
   void handleAccessDenied({required String reason}) {
     debugPrint('[Auth] Access denied — reason: $reason');

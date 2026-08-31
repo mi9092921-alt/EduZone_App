@@ -11,7 +11,7 @@ import '../../domain/usecases/bind_device.dart';
 /// Extracted from the `Auth` notifier's private `_syncActivityAndSession`
 /// method (`auth_provider.dart`) so it can be constructed with plain
 /// dependencies and unit-tested with mocktail, the same way
-/// `LogoutOrchestrator` and `CheckUserAccessService` already are — instead
+/// `LogoutOrchestrator` and `CheckStudentAppAccessService` already are — instead
 /// of only being reachable through the full Riverpod notifier + Supabase
 /// stack.
 ///

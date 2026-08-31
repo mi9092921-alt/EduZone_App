@@ -3,7 +3,7 @@ import 'package:equatable/equatable.dart';
 import '../enums/account_status.dart';
 import '../enums/user_role.dart';
 
-/// Represents the result of a `check_user_access()` RPC call.
+/// Represents the result of a `check_student_app_access()` RPC call.
 ///
 /// Maps the access status plus optional metadata (suspension
 /// reason, ban message, maintenance end time).

@@ -22,7 +22,7 @@ void main() {
   late AuthRemoteDataSource dataSource;
 
   // Stubs rpc(name) to resolve with [value] when awaited.
-  // checkUserAccess calls .timeout() on the builder, so we stub that too.
+  // checkStudentAppAccess calls .timeout() on the builder, so we stub that too.
   void stubRpc(String name, dynamic value, {bool withParams = false}) {
     final builder = MockRpcBuilder();
     if (withParams) {
@@ -58,11 +58,11 @@ void main() {
     dataSource = AuthRemoteDataSource(mockClient);
   });
 
-  group('checkUserAccess', () {
+  group('checkStudentAppAccess', () {
     test('returns active status when allowed is true', () async {
       stubRpc('check_student_app_access', {'allowed': true});
 
-      final result = await dataSource.checkUserAccess();
+      final result = await dataSource.checkStudentAppAccess();
 
       expect(result.status, AccountStatus.active);
       expect(result.isAllowed, isTrue);
@@ -74,7 +74,7 @@ void main() {
         'reason': 'account_banned',
       });
 
-      final result = await dataSource.checkUserAccess();
+      final result = await dataSource.checkStudentAppAccess();
 
       expect(result.status, AccountStatus.banned);
       expect(result.isAllowed, isFalse);
@@ -84,7 +84,7 @@ void main() {
       stubRpc('check_student_app_access', null);
 
       await expectLater(
-        () => dataSource.checkUserAccess(),
+        () => dataSource.checkStudentAppAccess(),
         throwsA(isA<ServerException>()),
       );
     });
@@ -96,7 +96,7 @@ void main() {
       );
 
       await expectLater(
-        () => dataSource.checkUserAccess(),
+        () => dataSource.checkStudentAppAccess(),
         throwsA(isA<ServerException>()),
       );
     });
@@ -111,7 +111,7 @@ void main() {
       );
 
       await expectLater(
-        () => dataSource.checkUserAccess(),
+        () => dataSource.checkStudentAppAccess(),
         throwsA(
           isA<ServerException>().having(
             (e) => e.code,

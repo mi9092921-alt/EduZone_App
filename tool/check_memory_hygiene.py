@@ -45,7 +45,7 @@ LONG_LIVED_PROVIDER_ALLOWLIST = {
     "authRemoteDataSource",
     "authRepository",
     "loginUserUseCase",
-    "checkUserAccessUseCase",
+    "checkStudentAppAccessUseCase",
     "bindDeviceUseCase",
     "logoutUserUseCase",
     "validateDeviceExistsUseCase",

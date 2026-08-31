@@ -175,7 +175,7 @@ show errors
 validate_user_session()
 get_auth_user_id()
 is_admin_with_session_validation()
-check_user_access()
+check_student_app_access()
 ```
 
 ننشئ طبقة واضحة:
@@ -359,14 +359,14 @@ session + tenant + role + resource
 
 ---
 
-# Phase 5 — إصلاح `check_user_access()`
+# Phase 5 — إصلاح `check_student_app_access()`
 
-يجب أن تتوقف `check_user_access()` عن كونها primitive أمنية مستقلة.
+يجب أن تتوقف `check_student_app_access()` عن كونها primitive أمنية مستقلة.
 
 الترتيب:
 
 ```text
-check_user_access()
+check_student_app_access()
         ↓
 assert_valid_session()
         ↓
@@ -571,7 +571,7 @@ get_constant()
 مثل:
 
 ```text
-check_user_access()
+check_student_app_access()
 logout_current_user()
 ```
 
@@ -1534,7 +1534,7 @@ access functions
 2. Add tests
 3. Deploy staging
 4. Validate
-5. Switch check_user_access
+5. Switch check_student_app_access
 6. Switch admin authorization
 7. Switch resource RPCs
 8. Switch RLS
@@ -1695,7 +1695,7 @@ AUTH-FIX-04
 ```text
 validate_user_session
 assert_valid_session
-check_user_access
+check_student_app_access
 admin session validation
 ```
 

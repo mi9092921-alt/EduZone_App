@@ -155,10 +155,10 @@ Never use `Navigator.push()` directly.
 
 ### Authentication
 
-Every app open must call `check_user_access()` before showing any content:
+Every app open must call `check_student_app_access()` before showing any content:
 
 ```dart
-final access = await supabase.rpc('check_user_access');
+final access = await supabase.rpc('check_student_app_access');
 if (access['allowed'] == false) {
   // Handle based on access['reason']
 }

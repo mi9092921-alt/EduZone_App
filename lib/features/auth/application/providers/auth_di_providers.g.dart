@@ -180,47 +180,56 @@ final class LoginUserUseCaseProvider
 
 String _$loginUserUseCaseHash() => r'c33a90ab71d854e711e52fa9990225e4b1ca5550';
 
-@ProviderFor(checkUserAccessUseCase)
-final checkUserAccessUseCaseProvider = CheckUserAccessUseCaseProvider._();
+@ProviderFor(checkStudentAppAccessUseCase)
+final checkStudentAppAccessUseCaseProvider =
+    CheckStudentAppAccessUseCaseProvider._();
 
-final class CheckUserAccessUseCaseProvider
+final class CheckStudentAppAccessUseCaseProvider
     extends
-        $FunctionalProvider<CheckUserAccess, CheckUserAccess, CheckUserAccess>
-    with $Provider<CheckUserAccess> {
-  CheckUserAccessUseCaseProvider._()
+        $FunctionalProvider<
+          CheckStudentAppAccess,
+          CheckStudentAppAccess,
+          CheckStudentAppAccess
+        >
+    with $Provider<CheckStudentAppAccess> {
+  CheckStudentAppAccessUseCaseProvider._()
     : super(
         from: null,
         argument: null,
         retry: null,
-        name: r'checkUserAccessUseCaseProvider',
+        name: r'checkStudentAppAccessUseCaseProvider',
         isAutoDispose: false,
         dependencies: null,
         $allTransitiveDependencies: null,
       );
 
   @override
-  String debugGetCreateSourceHash() => _$checkUserAccessUseCaseHash();
+  String debugGetCreateSourceHash() => _$checkStudentAppAccessUseCaseHash();
 
   @$internal
   @override
-  $ProviderElement<CheckUserAccess> $createElement($ProviderPointer pointer) =>
-      $ProviderElement(pointer);
+  $ProviderElement<CheckStudentAppAccess> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
 
   @override
-  CheckUserAccess create(Ref ref) {
-    return checkUserAccessUseCase(ref);
+  CheckStudentAppAccess create(Ref ref) {
+    return checkStudentAppAccessUseCase(ref);
   }
 
   /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(CheckUserAccess value) {
+  Override overrideWithValue(CheckStudentAppAccess value) {
     return $ProviderOverride(
       origin: this,
-      providerOverride: $SyncValueProvider<CheckUserAccess>(value),
+      providerOverride: $SyncValueProvider<CheckStudentAppAccess>(value),
     );
   }
 }
 
-String _$checkUserAccessUseCaseHash() =>
+// NOTE: this hash is a placeholder carried over from the old
+// _$checkUserAccessUseCaseHash — regenerate via `dart run build_runner
+// build` so Riverpod's source hash matches the renamed function again.
+String _$checkStudentAppAccessUseCaseHash() =>
     r'81ebf7e8657a3983b588f1c22392066a73f58a8b';
 
 @ProviderFor(bindDeviceUseCase)

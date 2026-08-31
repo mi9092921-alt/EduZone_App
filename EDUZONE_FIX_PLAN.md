@@ -34,7 +34,7 @@
 ### Medium (تسريب/سلوك غير سليم)
 - DL-001 — توحيد تنظيف ملفات الفيديو/الصوت عند الإلغاء والحذف
 - AUTH-001 — معالجة انقطاع الشبكة أثناء `_initializeSession` (لا تجميد بلا مخرج)
-- AUTH-002 — توحيد مالك `CheckUserAccessService` (نسخة واحدة فقط لكل جلسة)
+- AUTH-002 — توحيد مالك `CheckStudentAppAccessService` (نسخة واحدة فقط لكل جلسة)
 
 ### Low (جودة/أدوات لا تحجب الإصدار)
 - QA-001 — إصلاح باگ في `tool/check_a11y.py` نفسه (false positive على الأسماء بدون underscore) — **ليس في الواجهة**
@@ -185,7 +185,7 @@
 **Priority:** Medium | **Difficulty:** Easy | **Est:** 2–3 ساعات
 **Files:** `lib/app/router/main_shell.dart`, `lib/features/auth/presentation/providers/auth_provider.dart`
 
-**Description:** `CheckUserAccessService` يُنشأ ويُشغَّل مرتين لكل جلسة: مرة في `auth_provider.dart:330` ومرة أخرى في `main_shell.dart:22-29` — تأكدت من كلا الموقعين. كل نسخة تفتح قناة Realtime وتنفذ polling كل 5 دقائق بشكل مستقل.
+**Description:** `CheckStudentAppAccessService` يُنشأ ويُشغَّل مرتين لكل جلسة: مرة في `auth_provider.dart:330` ومرة أخرى في `main_shell.dart:22-29` — تأكدت من كلا الموقعين. كل نسخة تفتح قناة Realtime وتنفذ polling كل 5 دقائق بشكل مستقل.
 
 **Solution:** جعل مراقبة الوصول مملوكة لمصدر واحد (Provider مركزي lifecycle-aware)، وإزالة النسخة المكررة من `MainShell`.
 

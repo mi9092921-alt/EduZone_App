@@ -185,7 +185,7 @@ today versus manually verified only.
 ┌─────────────────────────────────────────────────────────────┐
 │                   Supabase Backend                          │
 │                                                             │
-│   .rpc('check_user_access')  ←──── Every app open          │
+│   .rpc('check_student_app_access')  ←──── Every app open          │
 │   .rpc('bind_device_...')    ←──── After login             │
 │   .from('courses').select()  ←──── RLS: enrolled only      │
 │   .from('user_progress')...  ←──── RLS: own records only   │
@@ -434,7 +434,7 @@ void main() {
 
 ```
 1. ✅ Every request carries a valid JWT — no unauthenticated requests
-2. ✅ check_user_access() is called on every app open
+2. ✅ check_student_app_access() is called on every app open
 3. ✅ token_version is checked — immediate sign-out if changed by admin
 4. ✅ Session persisted via `flutter_secure_storage` (hardware-backed Keystore/Keychain) — no tokens in `SharedPreferences`
 5. ✅ bind_device_for_current_user() after every login
@@ -469,7 +469,7 @@ Future<AuthResult> signIn({
   );
 
   // 2. Validate account status immediately
-  final access = await supabase.rpc('check_user_access');
+  final access = await supabase.rpc('check_student_app_access');
   if (access['allowed'] == false) {
     await supabase.auth.signOut();
     return AuthResult.blocked(reason: access['reason']);

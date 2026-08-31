@@ -30,16 +30,16 @@ void main() {
   const tUserAccess = UserAccess(status: AccountStatus.active);
   const tBindResult = BindDeviceResult(status: BindDeviceStatus.bound);
 
-  group('checkUserAccess', () {
+  group('checkStudentAppAccess', () {
     test('should forward call to data source and return result', () async {
       when(
-        () => mockDataSource.checkUserAccess(),
+        () => mockDataSource.checkStudentAppAccess(),
       ).thenAnswer((_) async => tUserAccess);
 
-      final result = await repository.checkUserAccess();
+      final result = await repository.checkStudentAppAccess();
 
       expect(result, equals(tUserAccess));
-      verify(() => mockDataSource.checkUserAccess()).called(1);
+      verify(() => mockDataSource.checkStudentAppAccess()).called(1);
       verifyNoMoreInteractions(mockDataSource);
     });
   });

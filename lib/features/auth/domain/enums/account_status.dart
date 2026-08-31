@@ -1,5 +1,5 @@
 /// Account status enum matching both the `public.users` table schema
-/// and the `check_user_access()` RPC response states.
+/// and the `check_student_app_access()` RPC response states.
 enum AccountStatus {
   active,
   inactive,
@@ -14,7 +14,7 @@ enum AccountStatus {
   /// client doesn't recognize (a new server-side reason it predates, a
   /// typo, malformed data, etc).
   ///
-  /// SECURITY: this must NEVER default to [active]. `checkUserAccess()`
+  /// SECURITY: this must NEVER default to [active]. `checkStudentAppAccess()`
   /// (`auth_remote_ds.dart`) only reaches [fromString] when the server
   /// has already returned `allowed: false` — an explicit denial. Silently
   /// mapping an unrecognized denial reason to [active] would make

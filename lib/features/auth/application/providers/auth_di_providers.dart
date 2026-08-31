@@ -8,7 +8,7 @@ import '../../data/datasources/update_remote_ds.dart';
 import '../../data/repositories/auth_repo_impl.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../domain/usecases/bind_device.dart';
-import '../../domain/usecases/check_user_access.dart';
+import '../../domain/usecases/check_student_app_access.dart';
 import '../../domain/usecases/get_current_user.dart';
 import '../../domain/usecases/login_user.dart';
 import '../../domain/usecases/logout_user.dart';
@@ -48,8 +48,8 @@ LoginUser loginUserUseCase(Ref ref) =>
     LoginUser(ref.watch(authRepositoryProvider));
 
 @Riverpod(keepAlive: true)
-CheckUserAccess checkUserAccessUseCase(Ref ref) =>
-    CheckUserAccess(ref.watch(authRepositoryProvider));
+CheckStudentAppAccess checkStudentAppAccessUseCase(Ref ref) =>
+    CheckStudentAppAccess(ref.watch(authRepositoryProvider));
 
 @Riverpod(keepAlive: true)
 BindDevice bindDeviceUseCase(Ref ref) =>

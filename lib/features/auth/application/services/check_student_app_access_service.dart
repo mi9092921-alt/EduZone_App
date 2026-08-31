@@ -14,7 +14,7 @@ import '../../domain/enums/account_status.dart';
 typedef AccessDeniedCallback = void Function({required String reason});
 typedef AccessRestrictedCallback = void Function({required UserAccess access});
 
-class CheckUserAccessService {
+class CheckStudentAppAccessService {
   final SupabaseClient _supabase;
   final AccessDeniedCallback _onAccessDenied;
   final AccessRestrictedCallback? _onAccessRestricted;
@@ -31,7 +31,7 @@ class CheckUserAccessService {
 
   final Duration pollingInterval;
 
-  CheckUserAccessService({
+  CheckStudentAppAccessService({
     required SupabaseClient supabase,
     required AccessDeniedCallback onAccessDenied,
     AccessRestrictedCallback? onAccessRestricted,

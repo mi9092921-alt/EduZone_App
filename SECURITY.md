@@ -97,7 +97,7 @@ deliberate classification, not an oversight:
 - **Routed to `GlobalErrorHandler.logError()` (→ Sentry) — 10 sites**:
   every unexpected failure in `auth_provider.dart` (device re-bind,
   non-transient session-init/verify-access/refresh-user failures),
-  `check_user_access_service.dart`'s background security-check loop, and
+  `check_student_app_access_service.dart`'s background security-check loop, and
   all 4 steps of `logout_orchestrator.dart` (server revocation, local
   Supabase sign-out, secure-storage wipe, SharedPreferences wipe). These
   share two properties: they're triggered by app/system logic, not

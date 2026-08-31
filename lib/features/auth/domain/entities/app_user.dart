@@ -5,7 +5,7 @@ import '../enums/user_role.dart';
 /// Core user entity for the authenticated user.
 ///
 /// Fields match the `users` table columns returned by
-/// `check_user_access()` and profile queries.
+/// `check_student_app_access()` and profile queries.
 class AppUser extends Equatable {
   final String id;
   final String email;

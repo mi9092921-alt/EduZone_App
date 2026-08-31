@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:app/features/auth/application/services/check_user_access_service.dart';
+import 'package:app/features/auth/application/services/check_student_app_access_service.dart';
 import 'package:app/features/auth/domain/entities/user_access.dart';
 import 'package:app/features/auth/domain/enums/account_status.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -114,8 +114,8 @@ void main() {
     );
   });
 
-  CheckUserAccessService buildService() {
-    return CheckUserAccessService(
+  CheckStudentAppAccessService buildService() {
+    return CheckStudentAppAccessService(
       supabase: supabase,
       onAccessDenied: ({required String reason}) => deniedReasons.add(reason),
       onAccessRestricted: ({required UserAccess access}) =>

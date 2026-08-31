@@ -7,8 +7,8 @@ import '../entities/user_access.dart';
 /// Implementation lives in the data layer (`AuthRepositoryImpl`).
 /// Domain use cases depend only on this interface.
 abstract class AuthRepository {
-  /// Check current user's access status via RPC `check_user_access()`.
-  Future<UserAccess> checkUserAccess();
+  /// Check current user's access status via RPC `check_student_app_access()`.
+  Future<UserAccess> checkStudentAppAccess();
 
   /// Sign in with email + password. Returns the authenticated user.
   Future<AppUser> login(String email, String password);

@@ -86,7 +86,7 @@ void main() {
         .thenAnswer((_) async => _tUser);
     when(() => mockDataSource.bindDevice(any(), any(), any()))
         .thenAnswer((_) async => _tBindResult);
-    when(() => mockDataSource.checkUserAccess())
+    when(() => mockDataSource.checkStudentAppAccess())
         .thenAnswer((_) async => _tActiveAccess);
     when(() => mockDataSource.syncUserActivity(
           userId: any(named: 'userId'),
@@ -169,7 +169,7 @@ void main() {
     when(() => mockSupabase.removeAllChannels())
         .thenAnswer((_) async => <String>[]);
 
-    // CheckUserAccessService._check() (started automatically after a
+    // CheckStudentAppAccessService._check() (started automatically after a
     // successful login/session-restore) calls
     // `await _supabase.rpc('check_student_app_access')` for its background
     // polling/monitoring check. Without this stub, mocktail cannot return
@@ -266,7 +266,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
           .thenAnswer((_) async => _tUser);
       when(() => mockDataSource.bindDevice(any(), any(), any()))
           .thenAnswer((_) async => _tBindResult);
-      when(() => mockDataSource.checkUserAccess())
+      when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tBannedAccess);
       when(() => mockAuth.signOut()).thenAnswer((_) async {});
 
@@ -291,7 +291,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
           .thenAnswer((_) async => _tUser);
       when(() => mockDataSource.bindDevice(any(), any(), any()))
           .thenAnswer((_) async => _tBindResult);
-      when(() => mockDataSource.checkUserAccess())
+      when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tLockedAccess);
       when(() => mockAuth.signOut()).thenThrow(Exception('sign out failed'));
 
@@ -424,7 +424,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       container.read(authProvider);
       await _settleInitialization();
 
-      when(() => mockDataSource.checkUserAccess())
+      when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tActiveAccess);
       when(() => mockDataSource.getCurrentUser())
           .thenAnswer((_) async => _tUser);
@@ -442,7 +442,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       container.read(authProvider);
       await _settleInitialization();
 
-      when(() => mockDataSource.checkUserAccess())
+      when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tBannedAccess);
 
       await container.read(authProvider.notifier).verifyAccess();
@@ -456,7 +456,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       container.read(authProvider);
       await _settleInitialization();
 
-      when(() => mockDataSource.checkUserAccess())
+      when(() => mockDataSource.checkStudentAppAccess())
           .thenThrow(const NoInternetException());
 
       final stateBefore = container.read(authProvider);
@@ -591,7 +591,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
           .thenAnswer((_) async => teacherUser);
       when(() => mockDataSource.bindDevice(any(), any(), any()))
           .thenAnswer((_) async => _tBindResult);
-      when(() => mockDataSource.checkUserAccess())
+      when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tActiveAccess);
 
       await container.read(authProvider.notifier).login(
@@ -744,7 +744,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       stubValidSession();
       when(() => mockDataSource.validateDeviceExists(any(), any()))
           .thenAnswer((_) async => true);
-      when(() => mockDataSource.checkUserAccess())
+      when(() => mockDataSource.checkStudentAppAccess())
           .thenThrow(const NoInternetException());
 
       final degradedContainer = buildDegradedContainer();
@@ -805,7 +805,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       stubValidSession();
       when(() => mockDataSource.validateDeviceExists(any(), any()))
           .thenAnswer((_) async => true);
-      when(() => mockDataSource.checkUserAccess())
+      when(() => mockDataSource.checkStudentAppAccess())
           .thenThrow(const NoInternetException());
 
       final degradedContainer = buildDegradedContainer();
@@ -815,7 +815,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       expect(degradedContainer.read(authProvider), isA<AuthDegraded>());
 
       // Server becomes reachable again.
-      when(() => mockDataSource.checkUserAccess())
+      when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tActiveAccess);
       when(() => mockDataSource.getCurrentUser())
           .thenAnswer((_) async => _tUser);
@@ -886,7 +886,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       });
       when(() => mockDataSource.bindDevice(any(), any(), any()))
           .thenAnswer((_) async => _tBindResult);
-      when(() => mockDataSource.checkUserAccess())
+      when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tActiveAccess);
       when(() => mockDataSource.syncUserActivity(
             userId: any(named: 'userId'),
@@ -990,7 +990,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
 
       when(() => mockDataSource.validateDeviceExists(any(), any()))
           .thenAnswer((_) async => true);
-      when(() => mockDataSource.checkUserAccess())
+      when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tActiveAccess);
       when(() => mockDataSource.getCurrentUser())
           .thenAnswer((_) async => _tUser);
@@ -1058,7 +1058,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
   // screen instead of being classified transient.
   //
   // getCurrentUser() now propagates (mapped to ServerException for
-  // PostgrestException, matching checkUserAccess()'s existing convention
+  // PostgrestException, matching checkStudentAppAccess()'s existing convention
   // in the same file) so AuthErrorPolicy actually gets a chance to run.
   // This test pins the resulting OBSERVABLE contract at the notifier level
   // — AuthUnauthenticated.error must be non-null for a transiently-classified
@@ -1077,7 +1077,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
 
       when(() => mockDataSource.validateDeviceExists(any(), any()))
           .thenAnswer((_) async => true);
-      when(() => mockDataSource.checkUserAccess())
+      when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tActiveAccess);
       // Simulates the network/server failure that getCurrentUser() used to
       // swallow into `null` — see auth_remote_ds.dart getCurrentUser().
@@ -1165,7 +1165,7 @@ class _MockRpcBuilder extends Mock
     implements PostgrestFilterBuilder<dynamic> {}
 
 /// Makes `await supabase.rpc('check_student_app_access')` resolve to a fixed
-/// map, so [CheckUserAccessService._check] (started automatically after
+/// map, so [CheckStudentAppAccessService._check] (started automatically after
 /// login/session-restore) behaves deterministically instead of throwing.
 class _FakeCheckAccessRpcBuilder extends Fake
     implements PostgrestFilterBuilder<dynamic> {

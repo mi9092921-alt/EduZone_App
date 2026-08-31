@@ -16,8 +16,8 @@ class AuthRepositoryImpl implements AuthRepository {
     : _dataSource = dataSource ?? AuthRemoteDataSource();
 
   @override
-  Future<UserAccess> checkUserAccess() {
-    return _dataSource.checkUserAccess();
+  Future<UserAccess> checkStudentAppAccess() {
+    return _dataSource.checkStudentAppAccess();
   }
 
   @override

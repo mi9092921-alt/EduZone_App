@@ -18,7 +18,7 @@ void main() {
     // "Failed host lookup" SocketException -- the exact shape seen in the
     // incident. It must be classified as non-actionable connectivity
     // noise, mirroring the fix already applied to
-    // CheckUserAccessService._check() for the equivalent case.
+    // CheckStudentAppAccessService._check() for the equivalent case.
     test('classifies a raw SocketException (DNS failure) as noise', () {
       expect(
         GlobalErrorHandler.isConnectivityNoise(

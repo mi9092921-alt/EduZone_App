@@ -45,7 +45,7 @@ void main() {
     });
 
     // SECURITY REGRESSION: the default case here used to be
-    // `AccountStatus.active`. Since `checkUserAccess()` only calls
+    // `AccountStatus.active`. Since `checkStudentAppAccess()` only calls
     // `fromString` after the server has already returned
     // `allowed: false`, that default silently converted an explicit
     // denial into "active" the moment the server sent any `reason`

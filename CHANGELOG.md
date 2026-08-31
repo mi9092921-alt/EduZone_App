@@ -119,7 +119,7 @@
     forever with no failure ever reaching the UI. Fixed per-method,
     choosing bound-with-no-retry (`login`, `bindDevice`, `logout`,
     `recordSession`, `_recordCurrentUserActivity`) vs. bound-with-retry
-    (`checkUserAccess`, `getCurrentUser`, `validateDeviceExists`) based
+    (`checkStudentAppAccess`, `getCurrentUser`, `validateDeviceExists`) based
     on whether the call is a pure idempotent read or has server-side
     side effects, per the project's explicit rule against blindly
     retrying auth operations. `login()` specifically uses direct
