@@ -92,6 +92,55 @@ BEGIN
   END LOOP;
 END $$;
 
+-- Check 4b: Dashboard access gate allows staff roles
+-- (replaces the previous check, which inspected check_user_access's
+-- definition text for a hard-coded student-only clause; that function no
+-- longer exists. Staff access now goes through the dedicated
+-- check_dashboard_access() gate, and student-only access is enforced
+-- separately by check_student_app_access(), so the two can no longer
+-- collide.)
+DO $$
+DECLARE
+  v_dashboard_def text;
+  v_student_def text;
+  v_dashboard_allows_staff boolean;
+  v_student_is_student_only boolean;
+BEGIN
+  SELECT pg_get_functiondef(p.oid)
+    INTO v_dashboard_def
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname = 'check_dashboard_access'
+    AND p.pronargs = 0;
+
+  SELECT pg_get_functiondef(p.oid)
+    INTO v_student_def
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname = 'check_student_app_access'
+    AND p.pronargs = 0;
+
+  v_dashboard_allows_staff := v_dashboard_def IS NOT NULL
+    AND position('admin' IN lower(v_dashboard_def)) > 0
+    AND position('teacher' IN lower(v_dashboard_def)) > 0
+    AND position('super_admin' IN lower(v_dashboard_def)) > 0;
+
+  v_student_is_student_only := v_student_def IS NOT NULL
+    AND position('v_role <> ''student''' IN lower(v_student_def)) > 0;
+
+  INSERT INTO validation_results VALUES (
+    'Dashboard Access Gate Allows Staff Roles',
+    CASE WHEN v_dashboard_allows_staff AND v_student_is_student_only
+      THEN 'PASS' ELSE 'FAIL' END,
+    CASE WHEN v_dashboard_allows_staff AND v_student_is_student_only
+      THEN 'check_dashboard_access allows admin/teacher/super_admin while check_student_app_access stays student-only'
+      ELSE 'CRITICAL: dashboard/student access gates are missing or no longer role-scoped as expected'
+    END
+  );
+END $$;
+
 -- Check 5: check_student_app_access / check_dashboard_access Grants
 DO $$
 DECLARE
@@ -1853,7 +1902,7 @@ END $$;
 -- `authenticated` (user_progress) or deny everyone via `TO public
 -- USING (false)` (activity_log_queue). With FORCE in effect neither write
 -- has any matching policy, so both fail 100% of the time -- reproduced
--- with an isolated PostgreSQL 16 instance mirroring this exact
+-- with an isolated PostgreSQL 17 instance mirroring this exact
 -- owner/role/policy shape. This is the confirmed root cause of the
 -- "watched" checkbox in lesson_tile.dart always showing a generic error,
 -- and of lesson-progress activity logging silently never persisting
@@ -1882,7 +1931,7 @@ BEGIN
         || ' -- the SECURITY DEFINER function that writes to this table runs as '
         || 'the table owner, which has no matching policy on this table, so '
         || 'every write from that RPC will fail with a row-level security '
-        || 'violation (reproduced against a live PostgreSQL 16 instance)',
+        || 'violation (reproduced against a live PostgreSQL 17 instance)',
       'Neither user_progress nor activity_log_queue force RLS on the table owner (RLS remains enforced for anon/authenticated either way)'
     )
   );
