@@ -5,6 +5,57 @@
 
 BEGIN;
 
+
+-- ============================================================================
+-- PHASE 0 (pre-bootstrap): Provision the PII encryption key in Supabase Vault
+-- ============================================================================
+-- private.get_kms_key() (07_functions.sql) fails closed: it raises unless a
+-- Vault secret named 'eduzone_kms_key' already exists, and every insert or
+-- update on public.users runs through the email/phone hardening trigger that
+-- calls it. This whole file is one transaction (BEGIN ... COMMIT below), so
+-- without this the very first public.users write in PHASE 4 aborts the
+-- entire seed and silently rolls back everything already inserted above it
+-- (tenants, roles, auth.users, auth.identities, ...) -- which is exactly why
+-- QA logins fail with "Invalid email or password" no matter what the
+-- password hash is: no rows ever survive the COMMIT.
+--
+-- This inserts a fixed, non-secret placeholder key -- fine for throwaway
+-- local/CI databases only. It is intentionally guarded (IF NOT EXISTS) and a
+-- no-op wherever a real key has already been provisioned out-of-band, so it
+-- never overwrites a genuine production secret; production/staging projects
+-- must still provision their own value before their first deploy, exactly
+-- as private.get_kms_key()'s own comment already requires.
+--
+-- Nothing in this repo's own migrations ever runs `CREATE EXTENSION
+-- supabase_vault` (checked: no occurrence anywhere under supabase/schema/).
+-- The block below used to only check `pg_namespace` for a pre-existing
+-- `vault` schema and silently do nothing if it wasn't there yet -- on a
+-- fresh `supabase db reset` (local/CI) that check is false, so the secret
+-- was never created, get_kms_key() then raised on the first PHASE 4 write,
+-- and the whole transaction (including every auth.users/auth.identities
+-- row inserted above) rolled back -- reproducing the exact "Invalid email
+-- or password" QA-login failure this phase was meant to fix. Enabling the
+-- extension explicitly first closes that gap; `IF NOT EXISTS` makes it a
+-- no-op everywhere it's already enabled (including hosted projects, where
+-- Vault must live in a schema literally named `vault` per Supabase's own
+-- docs, so this is safe there too).
+CREATE EXTENSION IF NOT EXISTS supabase_vault WITH SCHEMA vault CASCADE;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM vault.decrypted_secrets WHERE name = 'eduzone_kms_key'
+  )
+  THEN
+    PERFORM vault.create_secret(
+      'qa-ci-local-dev-only-placeholder-key-do-not-use-in-prod-32b',
+      'eduzone_kms_key',
+      'QA/CI/local-dev-only PII key, auto-provisioned by 11_seed_reference.sql'
+    );
+  END IF;
+END;
+$$;
+
 -- ============================================================================
 -- PHASE 0A: System Tenant & Roles (REQUIRED SYSTEM BOOTSTRAP)
 -- ============================================================================
@@ -209,7 +260,13 @@ INSERT INTO public.rate_limit_rules (action, window_seconds, max_hits, block_sec
   -- revalidate is called on every offline playback attempt while online,
   -- so its limit stays generous enough for normal play/seek/retry use.
   ('offline_download_authorize',    3600, 100, 600, true),
-  ('offline_entitlement_revalidate', 300,  60, 120, true)
+  ('offline_entitlement_revalidate', 300,  60, 120, true),
+  -- SECURITY FIX (2026-09-12): /api/bulk-action runs heavy work inline
+  -- (full user-table scans and, for 'export', storage upload + signed-URL
+  -- minting) on every call. This rule backs the check_rate_limit gate the
+  -- route now performs before its count query; 30/hour per user with a
+  -- 10-minute block is well above any legitimate admin workflow.
+  ('bulk_action',    3600,  30,  600, true)
 ON CONFLICT (action) DO NOTHING;
 
 INSERT INTO public.audit_chain_state (id, last_seq, last_hash)
@@ -231,7 +288,7 @@ INSERT INTO auth.users (
   ('aaaaaaaa-0000-0000-0000-000000000001',
    '00000000-0000-0000-0000-000000000000',
    'super_admin@eduzone-test.com',
-   '$2b$10$wTaFvwDLLbjqXHD7oIv7BuJnlBMTm5z.pWzYFPxcYDpudyynCygnC',
+   '$2b$10$p/1N9e/qZaxxvUi6UGUpMO.7EekV0yLQ/4NLdr8ac3D4cfVy7mPJW',
    now(), now(), now(), 'authenticated', 'authenticated',
    '{"provider":"email","providers":["email"]}', '{}',
    false, '','','',''),
@@ -240,7 +297,7 @@ INSERT INTO auth.users (
   ('aaaaaaaa-0000-0000-0000-000000000002',
    '00000000-0000-0000-0000-000000000000',
    'admin@eduzone-test.com',
-   '$2b$10$wi8xDSzZTQDP5QDVEOHRrOnqX5Bj39ODhy9pe3Ie6AMiuvFqj6yCK',
+   '$2b$10$p/1N9e/qZaxxvUi6UGUpMO.7EekV0yLQ/4NLdr8ac3D4cfVy7mPJW',
    now(), now(), now(), 'authenticated', 'authenticated',
    '{"provider":"email","providers":["email"]}', '{}',
    false, '','','',''),
@@ -249,7 +306,7 @@ INSERT INTO auth.users (
   ('aaaaaaaa-0000-0000-0000-000000000003',
    '00000000-0000-0000-0000-000000000000',
    'teacher@eduzone-test.com',
-   '$2b$10$7opT0.uTD98DJbJG4xiT4uom0y7/nv3WeLDLwTeM6.mIQMVbZYlky',
+   '$2b$10$p/1N9e/qZaxxvUi6UGUpMO.7EekV0yLQ/4NLdr8ac3D4cfVy7mPJW',
    now(), now(), now(), 'authenticated', 'authenticated',
    '{"provider":"email","providers":["email"]}', '{}',
    false, '','','',''),
@@ -258,7 +315,7 @@ INSERT INTO auth.users (
   ('aaaaaaaa-0000-0000-0000-000000000004',
    '00000000-0000-0000-0000-000000000000',
    'student@eduzone-test.com',
-   '$2b$10$avfqgi31QRl7CmQ6vSELhOjKVvctuFpiqs7GwI3tOiq1JmRt0A..y',
+   '$2b$10$p/1N9e/qZaxxvUi6UGUpMO.7EekV0yLQ/4NLdr8ac3D4cfVy7mPJW',
    now(), now(), now(), 'authenticated', 'authenticated',
    '{"provider":"email","providers":["email"]}', '{}',
    false, '','','',''),
@@ -267,7 +324,7 @@ INSERT INTO auth.users (
   ('aaaaaaaa-0000-0000-0000-000000000005',
    '00000000-0000-0000-0000-000000000000',
    'student2@eduzone-test.com',
-   '$2b$10$xo6BhE0HiCNyGeYRcVH/nOXBZ4PfyP9dtiSn6GwQlo5I8wcFH5E9y',
+   '$2b$10$p/1N9e/qZaxxvUi6UGUpMO.7EekV0yLQ/4NLdr8ac3D4cfVy7mPJW',
    now(), now(), now(), 'authenticated', 'authenticated',
    '{"provider":"email","providers":["email"]}', '{}',
    false, '','','',''),
@@ -276,7 +333,7 @@ INSERT INTO auth.users (
   ('22222222-2222-2222-2222-222222222222',
    '00000000-0000-0000-0000-000000000000',
    'admin@test.eduzone.local',
-   '$2b$10$wi8xDSzZTQDP5QDVEOHRrOnqX5Bj39ODhy9pe3Ie6AMiuvFqj6yCK',
+   '$2b$10$p/1N9e/qZaxxvUi6UGUpMO.7EekV0yLQ/4NLdr8ac3D4cfVy7mPJW',
    now(), now(), now(), 'authenticated', 'authenticated',
    '{"provider":"email","providers":["email"]}', '{}',
    false, '','','','')
@@ -1177,14 +1234,29 @@ ON CONFLICT (id) DO NOTHING;
 -- PHASE 18: Feature Flags (QA overrides — tenant-specific)
 -- ============================================================================
 
-INSERT INTO public.feature_flags (id, key, description, is_enabled, rollout_pct)
+INSERT INTO public.feature_flags (id, key, description, is_enabled, rollout_pct, metadata)
 VALUES
-  ('ffffffff-0000-0000-0000-000000000001', 'beta_dashboard',     'New dashboard UI',                  true,  100),
-  ('ffffffff-0000-0000-0000-000000000002', 'ai_recommendations', 'AI-powered course recommendations', false,  20),
-  ('ffffffff-0000-0000-0000-000000000003', 'advanced_analytics', 'Advanced analytics for teachers',   true,   50),
-  ('ffffffff-0000-0000-0000-000000000004', 'mobile_app',         'Mobile app features',               false,   0)
+  ('16fc9606-c481-4e29-b86c-86b9ad89a958', 'push_notifications', 'Push notification system',          true, 10000, '{}'::jsonb),
+  ('378750f7-5d66-48e7-a506-b1b41bc1a4dc', 'new_ui',             'New UI experience',                 false,     0, '{}'::jsonb),
+  ('621465e8-36dc-40d8-bb47-fc63fc483d7b', 'ai_tutor',            'AI tutoring assistant',             false,     0, '{}'::jsonb),
+  ('6d2c5b5d-b06e-4ad4-acb4-cf747c03779d', 'dark_mode',           'Dark mode toggle',                  true, 10000, '{}'::jsonb),
+  ('81a8ad40-2284-4011-8999-880badab1bf8', 'chat_enabled',        'In-app chat system',                false,     0, '{}'::jsonb),
+  ('84a6a1a8-b4c6-41ab-a990-c83682bc518c', 'beta_mode',           'Beta feature set',                  false,     0, '{}'::jsonb),
+  ('8a4b7e86-ca9f-4001-8f90-817723328b0c', 'screen_watermark',    'Dynamic watermark overlay',         false,     0, '{}'::jsonb),
+  ('909e2e88-4feb-4270-a944-b65ada0e0b9b', 'geo_restriction',     'Geographic access control',         false,     0, '{}'::jsonb),
+  ('ca2125ce-885f-4ad7-b5e9-5f41706cfd9a', 'player_proxy_api',   'Player Proxy API By Vercel',        false, 10000, '{"label": "Player Proxy API"}'::jsonb),
+  ('d54f36fa-bd44-405e-96d1-f730b9757964', 'hls_streaming',       'HLS encrypted streaming',          false,     0, '{}'::jsonb),
+  ('f284344c-cb1e-41ad-9333-142f4da2be71', 'live_sessions',       'Live class sessions',              false,     0, '{}'::jsonb),
+  ('ffffffff-0000-0000-0000-000000000001', 'beta_dashboard',      'New dashboard UI',                 true, 10000, '{}'::jsonb),
+  ('ffffffff-0000-0000-0000-000000000002', 'ai_recommendations',  'AI-powered course recommendations', false, 5500, '{}'::jsonb),
+  ('ffffffff-0000-0000-0000-000000000003', 'advanced_analytics',  'Advanced analytics for teachers',  true,  6000, '{}'::jsonb),
+  ('ffffffff-0000-0000-0000-000000000004', 'mobile_app',          'Mobile app features',              false,    0, '{}'::jsonb)
 
-ON CONFLICT (key) DO NOTHING;
+ON CONFLICT (key) DO UPDATE SET
+  description = EXCLUDED.description,
+  is_enabled = EXCLUDED.is_enabled,
+  rollout_pct = EXCLUDED.rollout_pct,
+  metadata = EXCLUDED.metadata;
 
 INSERT INTO public.tenant_feature_flags (tenant_id, flag_id, is_enabled)
 VALUES
@@ -1407,5 +1479,79 @@ VALUES
    'v13 QA Consolidated seed — 6 users, 3 tenants, 13 courses, 25 sections, 53 lessons, 48 lesson_contents, 8 enrollments, 3 warnings, 5 tenant_settings, 3 notifications, 4 feature_flags, 3 video_views, 8 user_access_cache, 5 course_prerequisites, 24 course_learning_objectives, 2 user_location_logs, 2 user_last_location, 2 access_rules, 2 user_access_rules, 3 todos, 2 rate_limits, 2 devices, 3 activity_logs')
 
 ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================================
+-- PHASE 30: Tenant B (Test Tenant) role parity for cross-tenant RLS matrix
+-- testing (security-hardening task). Test Tenant previously had only a
+-- single admin user, which is not enough to exercise the same
+-- admin/teacher/student cross-tenant matrix already covered for the
+-- EduZone QA Tenant. super_admin is intentionally NOT duplicated per
+-- tenant: is_current_user_super_admin() / the RLS policies in
+-- 09_rls.sql treat super_admin as a single platform-wide role, not a
+-- per-tenant one, so a second super_admin account would not exercise
+-- any additional isolation boundary. Flagging this reading explicitly
+-- rather than assuming it.
+-- ============================================================================
+
+INSERT INTO auth.users (
+  id, instance_id, email, encrypted_password,
+  email_confirmed_at, created_at, updated_at,
+  role, aud, raw_app_meta_data, raw_user_meta_data,
+  is_super_admin, confirmation_token, recovery_token,
+  email_change_token_new, email_change
+) VALUES
+  ('bbbbbbbb-1111-1111-1111-111111111111',
+   '00000000-0000-0000-0000-000000000000',
+   'teacher@test.eduzone.local',
+   '$2b$10$p/1N9e/qZaxxvUi6UGUpMO.7EekV0yLQ/4NLdr8ac3D4cfVy7mPJW',
+   now(), now(), now(), 'authenticated', 'authenticated',
+   '{"provider":"email","providers":["email"]}', '{}',
+   false, '','','',''),
+
+  ('bbbbbbbb-2222-2222-2222-222222222222',
+   '00000000-0000-0000-0000-000000000000',
+   'student@test.eduzone.local',
+   '$2b$10$p/1N9e/qZaxxvUi6UGUpMO.7EekV0yLQ/4NLdr8ac3D4cfVy7mPJW',
+   now(), now(), now(), 'authenticated', 'authenticated',
+   '{"provider":"email","providers":["email"]}', '{}',
+   false, '','','','')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth.identities
+  (id, user_id, provider, identity_data, created_at, updated_at, provider_id, last_sign_in_at)
+VALUES
+  ('bbbbbbbb-1111-1111-1111-111111111111',
+   'bbbbbbbb-1111-1111-1111-111111111111', 'email',
+   '{"sub":"bbbbbbbb-1111-1111-1111-111111111111","email":"teacher@test.eduzone.local"}',
+   now(), now(), 'teacher@test.eduzone.local', NULL),
+
+  ('bbbbbbbb-2222-2222-2222-222222222222',
+   'bbbbbbbb-2222-2222-2222-222222222222', 'email',
+   '{"sub":"bbbbbbbb-2222-2222-2222-222222222222","email":"student@test.eduzone.local"}',
+   now(), now(), 'student@test.eduzone.local', NULL)
+ON CONFLICT (provider, provider_id) DO NOTHING;
+
+INSERT INTO public.users (id, email, first_name, last_name, primary_role, tenant_id, account_status, token_version, region_id)
+VALUES
+  ('bbbbbbbb-1111-1111-1111-111111111111',
+   'teacher@test.eduzone.local', 'Test', 'Teacher', 'teacher',
+   '11111111-1111-1111-1111-111111111111', 'active', 1, 'me-south-1'),
+
+  ('bbbbbbbb-2222-2222-2222-222222222222',
+   'student@test.eduzone.local', 'Test', 'Student', 'student',
+   '11111111-1111-1111-1111-111111111111', 'active', 1, 'me-south-1')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.user_roles (user_id, role_id, tenant_id)
+SELECT u.id, r.id, u.tenant_id
+FROM public.users u
+JOIN public.roles r
+  ON r.name = u.primary_role
+  AND r.tenant_id = public.system_tenant_id()
+WHERE u.id IN (
+  'bbbbbbbb-1111-1111-1111-111111111111',
+  'bbbbbbbb-2222-2222-2222-222222222222'
+)
+ON CONFLICT DO NOTHING;
 
 COMMIT;

@@ -2,35 +2,78 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // --- Inlined from _shared/cors.ts ---
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+// FIX (release blocker — applied 2026-09-12): wildcard CORS on authenticated
+// endpoints allowed any origin to invoke this function. We now reflect only
+// the request Origin if it appears in the explicit allow-list (Supabase
+// project URL + dashboard origin(s)).
+const ALLOWED_ORIGINS: string[] = (() => {
+  const list = (Deno.env.get('ALLOWED_ORIGINS') || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+  if (supabaseUrl) {
+    try {
+      const u = new URL(supabaseUrl);
+      if (!list.includes(u.origin)) list.push(u.origin);
+    } catch {
+      /* ignore malformed SUPABASE_URL at module load */
+    }
+  }
+  return list;
+})();
+
+function corsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get('Origin') || '';
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : '';
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    Vary: 'Origin',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
+
 function handleCors(req: Request): Response | null {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
   return null;
 }
-function jsonResponse(body: unknown, status = 200): Response {
+function jsonResponse(req: Request, body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
   });
 }
 function errorResponse(
+  req: Request,
   code: string,
   message: string,
   status = 400,
   extra?: Record<string, unknown>,
 ): Response {
-  return jsonResponse({ error: code, message, ...extra }, status);
+  return jsonResponse(req, { error: code, message, ...extra }, status);
+}
+
+// FIX (2026-09-12): Timing-unsafe `===` comparison of the service role key
+// allowed a timing-attack vector against a long-lived secret. Use a
+// constant-time comparison helper (Deno crypto.subtle is not available for
+// short string compares, so emulate timingSafeEqual with a manual loop).
+function timingSafeEqualString(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
 }
 
 function requireServiceRole(req: Request): Response | null {
   const expected = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const authorization = req.headers.get('Authorization');
-  if (!expected || !authorization || authorization !== `Bearer ${expected}`) {
-    return errorResponse('UNAUTHORIZED', 'Unauthorized', 401);
+  const presented = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length) : '';
+  if (!expected || !presented || !timingSafeEqualString(expected, presented)) {
+    return errorResponse(req, 'UNAUTHORIZED', 'Unauthorized', 401);
   }
   return null;
 }
@@ -52,6 +95,8 @@ function getSupabaseAdmin() {
 
 const BATCH_SIZE = 50;
 const LOCK_TTL_SECONDS = 1800; // 30 minutes
+/** Hard ceiling per job — mirrors MAX_BULK_SIZE in bulk-action (PERF-04). */
+const MAX_USERS_PER_JOB = 500;
 
 const BULK_JOB_TYPES = [
   'bulk_lock',
@@ -95,6 +140,10 @@ async function updateBulkJob(
     errorMessage?: string;
     finishedAt?: string;
     releaseLock?: boolean;
+    /** PERF-02 FIX: structured progress/outcome → job_queue.result */
+    result?: unknown;
+    /** PERF-02 FIX: clear error_message when writing progress/outcome */
+    clearErrorMessage?: boolean;
   },
 ): Promise<void> {
   const { error } = await admin.rpc('worker_update_bulk_job', {
@@ -103,6 +152,8 @@ async function updateBulkJob(
     p_error_message: opts.errorMessage ?? null,
     p_finished_at: opts.finishedAt ?? null,
     p_release_lock: opts.releaseLock ?? false,
+    p_result: opts.result ?? null,
+    p_clear_error_message: opts.clearErrorMessage ?? false,
   });
   if (error) throw new Error(`worker_update_bulk_job: ${error.message}`);
 }
@@ -127,11 +178,11 @@ Deno.serve(async (req: Request) => {
 
     if (dequeueErr) {
       console.error('dequeue_job error:', dequeueErr);
-      return errorResponse('DEQUEUE_ERROR', 'Unable to dequeue bulk job', 500);
+      return errorResponse(req, 'DEQUEUE_ERROR', 'Unable to dequeue bulk job', 500);
     }
 
     if (!jobs || jobs.length === 0) {
-      return jsonResponse({ message: 'No jobs to process' });
+      return jsonResponse(req, { message: 'No jobs to process' });
     }
 
     const job = jobs[0];
@@ -179,36 +230,85 @@ Deno.serve(async (req: Request) => {
         throw new Error(`Export delegation failed: ${errText}`);
       }
 
-      return jsonResponse({ processed: job.id, type: 'export_delegated' });
+      return jsonResponse(req, { processed: job.id, type: 'export_delegated' });
     }
 
     // ── Fetch user IDs matching filters ──────────────────────
+    // PERF-04 FIX (T4): re-verify the real filter size right before
+    // processing. payload.estimated_count was snapshotted at submit time;
+    // if the filter grew past MAX_USERS_PER_JOB between submit and run,
+    // process the first MAX_USERS_PER_JOB and record `truncated` + the
+    // remaining count in result instead of silently dropping users.
+    let countQuery = admin
+      .from('users')
+      .select('id', { count: 'exact', head: true })
+      .is('deleted_at', null);
+    countQuery = applyUserFilters(countQuery, payload.filters);
+    const { count: actualCount, error: countErr } = await countQuery;
+    if (countErr) throw countErr;
+
+    const totalMatching = actualCount ?? 0;
+    const truncated = totalMatching > MAX_USERS_PER_JOB;
+    const remaining = truncated ? totalMatching - MAX_USERS_PER_JOB : 0;
+    if (truncated) {
+      console.warn(
+        `Job ${job.id}: filter matched ${totalMatching} users (> ${MAX_USERS_PER_JOB}); ` +
+        `processing the first ${MAX_USERS_PER_JOB}, ${remaining} remain (truncated).`,
+      );
+    }
+
     let userQuery = admin.from('users').select('id').is('deleted_at', null);
 
     userQuery = applyUserFilters(userQuery, payload.filters);
 
-    const { data: userRows, error: usersErr } = await userQuery.limit(500);
+    const { data: userRows, error: usersErr } = await userQuery.limit(MAX_USERS_PER_JOB);
     if (usersErr) throw usersErr;
 
-    const userIds: string[] = (userRows ?? []).map((u: { id: string }) => u.id);
+    // PERF-02 FIX (T2): resume from the checkpoint. On a retry the job row
+    // carries result.succeeded_ids from the previous (crashed) run — skip
+    // those users so actions like `warn` are never double-applied (F-02).
+    // admin_retry_job / release_stale_job_locks deliberately preserve
+    // `result`, which is what makes this checkpoint survive retries.
+    const previousResult = (job.result ?? null) as { succeeded_ids?: unknown } | null;
+    const alreadySucceeded = new Set<string>(
+      Array.isArray(previousResult?.succeeded_ids)
+        ? (previousResult.succeeded_ids as string[])
+        : [],
+    );
+
+    const userIds: string[] = ((userRows ?? []) as Array<{ id: string }>)
+      .map((u: { id: string }) => u.id)
+      .filter((id: string) => !alreadySucceeded.has(id));
+
     const total = userIds.length;
     let processed = 0;
+    const succeededIds: string[] = [...alreadySucceeded];
     const failedIds: string[] = [];
 
-    // ── Process in batches ───────────────────────────────────
+    // ── Process in batches (parallel within each batch) ──────
     for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
       const batch = userIds.slice(i, i + BATCH_SIZE);
 
-      for (const userId of batch) {
-        try {
-          await processAction(admin, payload.action, userId, payload.params, payload.initiator_id);
-          processed++;
-        } catch (err) {
-          console.error(`Failed for user ${userId}:`, err);
+      // PERF-07 FIX: Promise.allSettled instead of a serial for..of — a
+      // 50-user batch costs ≈ one RPC round trip instead of 50, directly
+      // reducing the odds of hitting the Edge Function wall clock (F-01).
+      // A per-user failure stays isolated inside its own settled result.
+      const settled = await Promise.allSettled(
+        batch.map((userId) =>
+          processAction(admin, payload.action, userId, payload.params, payload.initiator_id),
+        ),
+      );
+
+      settled.forEach((outcome, idx) => {
+        const userId = batch[idx]!;
+        processed++;
+        if (outcome.status === 'fulfilled') {
+          succeededIds.push(userId);
+        } else {
+          console.error(`Failed for user ${userId}:`, outcome.reason);
           failedIds.push(userId);
-          processed++;
         }
-      }
+      });
 
       // ── Broadcast progress via pg_notify ─────────────────
       await admin.rpc('log_activity_async', {
@@ -223,32 +323,43 @@ Deno.serve(async (req: Request) => {
         p_risk_level: 'low',
       });
 
-      // Update job payload with progress
+      // PERF-02 FIX: progress + checkpoint go to the dedicated `result`
+      // column (error_message stays reserved for fatal errors), and
+      // succeeded_ids lands incrementally so a crash between batches resumes
+      // cleanly after release_stale_job_locks / retry.
       await updateBulkJob(admin, job.id as string, {
-        errorMessage: JSON.stringify({
+        result: {
           processed,
           total,
+          succeeded: succeededIds.length,
           failed: failedIds.length,
-          succeeded: processed - failedIds.length,
+          succeeded_ids: succeededIds,
           failed_ids: failedIds,
           in_progress: true,
-        }),
+          truncated,
+          ...(truncated ? { remaining } : {}),
+        },
+        clearErrorMessage: true,
       });
     }
 
     // ── Mark job as done ─────────────────────────────────────
     const result = {
       processed,
-      succeeded: processed - failedIds.length,
+      succeeded: succeededIds.length,
       failed: failedIds.length,
       total,
+      succeeded_ids: succeededIds,
       failed_ids: failedIds,
+      truncated,
+      ...(truncated ? { remaining } : {}),
     };
 
     await updateBulkJob(admin, job.id as string, {
       status: 'done',
       finishedAt: new Date().toISOString(),
-      errorMessage: JSON.stringify(result),
+      result,
+      clearErrorMessage: true,
       releaseLock: true,
     });
 
@@ -264,7 +375,7 @@ Deno.serve(async (req: Request) => {
       p_risk_level: failedIds.length > 0 ? 'medium' : 'low',
     });
 
-    return jsonResponse({
+    return jsonResponse(req, {
       job_id: job.id,
       ...result,
     });
@@ -283,7 +394,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    return errorResponse('WORKER_ERROR', 'Bulk worker failed', 500);
+    return errorResponse(req, 'WORKER_ERROR', 'Bulk worker failed', 500);
   }
 });
 

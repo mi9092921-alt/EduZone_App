@@ -1235,6 +1235,34 @@ DECLARE
   v_role text;
   v_old_role text;
 BEGIN
+  -- SECURITY FIX (2026-09-12): body guard — only service_role may invoke.
+  -- Even with the explicit REVOKE in 10_permissions.sql, defense-in-depth
+  -- requires this guard so any future accidental re-GRANT cannot reopen the
+  -- privilege-escalation / demotion-DoS path. See launch-blocker DB-3 in the
+  -- security audit report.
+  --
+  -- CORRECTNESS FIX (found by actually running 11_seed_reference.sql /
+  -- any INSERT|UPDATE|DELETE on public.user_roles against this guard):
+  -- public.trg_sync_user_roles() -- a SECURITY DEFINER AFTER trigger on
+  -- user_roles that fires for every ordinary, RLS-permitted role
+  -- assignment an authenticated tenant admin makes through the app --
+  -- PERFORMs this function internally. SECURITY DEFINER only elevates the
+  -- Postgres ACL check (so the REVOKE above doesn't block that internal
+  -- call), it does NOT change auth.role(), which still reports the real
+  -- caller's JWT role ('authenticated'). Without this exemption, EVERY
+  -- ordinary role assignment in the product breaks with PERMISSION_DENIED
+  -- the moment this guard ships -- confirmed by running the seed file,
+  -- not by reading the diff. pg_trigger_depth() > 0 means "invoked from
+  -- inside another trigger", which is exactly (and only) this trusted,
+  -- already-RLS-gated call path; a direct PostgREST RPC call always has
+  -- pg_trigger_depth() = 0 and still hits the guard below.
+  IF pg_trigger_depth() = 0
+     AND pg_catalog.current_setting('role', true) IS DISTINCT FROM 'service_role'
+     AND auth.role() IS DISTINCT FROM 'service_role'
+     AND NOT public.is_current_user_super_admin() THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED' USING ERRCODE = '42501';
+  END IF;
+
   -- 1. Optimization: Get current primary_role to avoid redundant updates
   SELECT primary_role INTO v_old_role FROM public.users WHERE id = p_user_id;
 
@@ -1511,7 +1539,19 @@ BEGIN
     v_row.is_preview
     OR public.has_course_access(v_uid, v_row.course_id)
     OR v_row.teacher_id = v_uid
-    OR public.is_admin_with_session_validation();
+    OR public.is_current_user_super_admin()
+    -- SEC-FIX (RLS-hardening review): is_admin_with_session_validation()
+    -- only proves the caller holds an admin/super_admin role SOMEWHERE —
+    -- it does not check which tenant. Used alone here, any tenant's admin
+    -- could call get_lesson_content() for another tenant's paid lesson and
+    -- receive a playable videoPath, confirmed live in a local RLS-matrix
+    -- test (Tenant B admin retrieved Tenant A's non-preview lesson
+    -- content). The tenant match below is the same AND pattern already
+    -- used correctly for this same function everywhere else in
+    -- 09_rls.sql (e.g. "is_admin_with_session_validation() AND tenant_id
+    -- = get_current_tenant_id()"); this call site was missing it.
+    OR (public.is_admin_with_session_validation()
+        AND v_row.tenant_id = public.get_current_tenant_id());
 
   INSERT INTO audit.lesson_access_log (
     lesson_id, course_id, user_id, tenant_id, device_id,
@@ -1979,14 +2019,37 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.get_user_role_by_id(p_user_id uuid)
 RETURNS text
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
-  SELECT primary_role
+DECLARE
+  v_role text;
+BEGIN
+  -- SECURITY FIX (2026-09-12): body guard — only service_role (or a caller
+  -- scoped to the same tenant as p_user_id) may read primary_role.
+  -- Previously this was LANGUAGE sql with no guard at all, so any caller
+  -- could enumerate every user's role across every tenant (launch-blocker
+  -- DB-4). Even with the explicit REVOKE in 10_permissions.sql, defense-
+  -- in-depth requires the guard.
+  IF pg_catalog.current_setting('role', true) IS DISTINCT FROM 'service_role'
+     AND auth.role() IS DISTINCT FROM 'service_role'
+     AND NOT public.is_current_user_super_admin()
+     AND NOT EXISTS (
+       SELECT 1 FROM public.users u
+       WHERE u.id = p_user_id
+         AND u.tenant_id = public.get_current_tenant_id()
+     ) THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT primary_role INTO v_role
   FROM public.users
   WHERE id = p_user_id
     AND deleted_at IS NULL;
+
+  RETURN v_role;
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.is_enrolled_in_course(p_course_id uuid)
@@ -2024,21 +2087,43 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.increment_warning_count(p_user_id uuid)
+CREATE OR REPLACE FUNCTION public.increment_warning_count(
+  p_user_id uuid,
+  p_actor_id uuid DEFAULT NULL
+)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 BEGIN
-  IF NOT public.user_has_permission(auth.uid(), 'warnings.write', public.get_current_tenant_id()) THEN
+  -- F-02 FIX (bulk path): the caller may pass the acting user explicitly.
+  -- The bulk worker path (worker_issue_warning via the service-role client)
+  -- has NO user JWT, so auth.uid() is always NULL there and the previous
+  -- auth.uid()-only check denied every bulk warn unconditionally (the
+  -- warnings INSERT was then rolled back with the whole RPC). The actor is
+  -- resolved through the exact same user_has_permission() path, scoped to
+  -- the TARGET user's tenant (get_current_tenant_id() is NULL for JWT-less
+  -- service-role calls, which would otherwise fall back to the system
+  -- tenant and never match a per-tenant cache/role row). The interactive
+  -- path (issue_warning) keeps passing one argument and resolves the actor
+  -- exactly as before (actor = auth.uid()); it warns users inside its own
+  -- tenant, so the target-user tenant scoping is equivalent there and
+  -- strictly safer for any cross-context caller.
+  IF NOT public.user_has_permission(
+       coalesce(p_actor_id, auth.uid()),
+       'warnings.write',
+       (SELECT u.tenant_id FROM public.users u WHERE u.id = p_user_id)
+     ) THEN
     RAISE EXCEPTION 'PERMISSION_DENIED';
   END IF;
 
   UPDATE public.users
   SET warning_count = warning_count + 1,
       updated_at = pg_catalog.now()
-  WHERE id = p_user_id
-    AND tenant_id = public.get_current_tenant_id();
+  WHERE id = p_user_id;
+  -- (The tenant guard lives in the permission check above; the previous
+  -- `tenant_id = get_current_tenant_id()` clause silently no-op'd on the
+  -- JWT-less bulk path where get_current_tenant_id() is NULL.)
 END;
 $$;
 
@@ -2361,7 +2446,15 @@ AS $$
 DECLARE
   v_count integer;
 BEGIN
-  IF auth.role() <> 'service_role' AND NOT public.is_admin_with_session_validation() THEN
+  -- Cron-safe guard (PERF-01 FIX): pg_cron executes this function as the
+  -- `postgres` role with NO JWT context, so auth.role() yields NULL/'anon'
+  -- and the previous admin-only guard would raise PERMISSION_DENIED every
+  -- minute. coalesce(auth.role(), current_user) lets the cron role through
+  -- while still accepting service_role API callers and session-validated
+  -- admins — the exact pattern already used by
+  -- internal.process_notification_fanout_jobs() in this file.
+  IF coalesce(auth.role(), current_user) NOT IN ('service_role', 'postgres', 'supabase_admin')
+     AND NOT public.is_admin_with_session_validation() THEN
     RAISE EXCEPTION 'PERMISSION_DENIED';
   END IF;
 
@@ -2379,9 +2472,47 @@ BEGIN
 END;
 $$;
 
+-- ============================================================================
+-- PERF-01 FIX: pg_cron scheduling registration for
+-- public.release_stale_job_locks(). The function existed but was never
+-- invoked automatically (jobs crashed mid-processing stayed `processing`
+-- forever until an admin noticed) — the same gap class as the
+-- manage_partitions schedule below. Runs every minute so a stalled job is
+-- back to `pending` within ≤ TTL + one cron cycle (LOCK_TTL_SECONDS = 1800).
+-- Defensive structure mirrors the manage_partitions registration verbatim:
+-- schedule only when pg_cron is installed and cron.job exists, and
+-- unschedule any previous registration first so re-running this file stays
+-- idempotent. pg_cron is not available in the local-test-harness embedded
+-- cluster (needs shared_preload_libraries); verify on staging via
+-- `SELECT * FROM cron.job WHERE jobname = 'release-stale-job-locks'` and
+-- cron.job_run_details.
+-- ============================================================================
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
+  ) THEN
+    IF EXISTS (
+      SELECT 1 FROM pg_tables WHERE schemaname = 'cron' AND tablename = 'job'
+    ) THEN
+      PERFORM cron.unschedule(jobid)
+      FROM cron.job
+      WHERE jobname = 'release-stale-job-locks';
+    END IF;
+
+    PERFORM cron.schedule(
+      'release-stale-job-locks',
+      '* * * * *',
+      'SELECT public.release_stale_job_locks();'
+    );
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.terminate_user_sessions(
   p_user_id uuid,
-  p_reason text DEFAULT 'admin_force'
+  p_reason text DEFAULT 'admin_force',
+  p_actor_id uuid DEFAULT NULL
 )
 RETURNS integer
 LANGUAGE plpgsql
@@ -2389,10 +2520,46 @@ SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_count integer;
+  v_actor_tenant_id uuid;
 BEGIN
+  -- SECURITY FIX (2026-09-05): this RPC's PUBLIC EXECUTE was revoked in
+  -- v13 and it is now only ever called via the service-role admin client
+  -- (infrastructure/repos/user-admin.repository.ts), which carries no
+  -- user JWT -- auth.uid() is always NULL on that connection, so the
+  -- previous `p_user_id = auth.uid() OR user_has_permission(auth.uid(),
+  -- ...)` check denied every call unconditionally (an E2E Playwright run
+  -- caught the same bug in the sibling control_user_account below, which
+  -- shares this exact pattern). The caller-side requirePermission(...)
+  -- check in the Server Action (adapters/actions/user.actions.ts) was
+  -- and is correct -- this was purely the redundant internal check being
+  -- broken. Fixed by having the trusted server layer pass the
+  -- already-authorized acting user's id explicitly as p_actor_id.
+  --
+  -- Also tightens the actual UPDATE below to the actor's own tenant
+  -- (previously bypassed entirely for any service_role call via
+  -- `auth.role() = 'service_role' OR is_current_user_super_admin() OR
+  -- tenant_id = get_current_tenant_id()`, i.e. unscoped once this RPC
+  -- moved behind service_role). If cross-tenant session termination by
+  -- super_admin is actually required, that needs a deliberate, reviewed
+  -- exemption here (mirroring assertSameTenant's ctx.permissions
+  -- includes '*' check) rather than the blanket bypass this replaces.
+  IF p_actor_id IS NULL THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED';
+  END IF;
+
+  SELECT tenant_id INTO v_actor_tenant_id
+    FROM public.users
+   WHERE id = p_actor_id
+     AND deleted_at IS NULL
+     AND account_status = 'active';
+
+  IF v_actor_tenant_id IS NULL THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED';
+  END IF;
+
   IF NOT (
-    p_user_id = auth.uid()
-    OR public.user_has_permission(auth.uid(), 'sessions.manage'::text, public.get_current_tenant_id())
+    p_user_id = p_actor_id
+    OR public.user_has_permission(p_actor_id, 'sessions.manage'::text, v_actor_tenant_id)
   ) THEN
     RAISE EXCEPTION 'PERMISSION_DENIED';
   END IF;
@@ -2404,12 +2571,7 @@ BEGIN
       updated_at = pg_catalog.now()
   WHERE user_id = p_user_id
     AND is_active
-    AND (
-      auth.role() = 'service_role'
-      OR
-      public.is_current_user_super_admin()
-      OR tenant_id = public.get_current_tenant_id()
-    );
+    AND tenant_id = v_actor_tenant_id;
 
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN v_count;
@@ -2446,7 +2608,8 @@ CREATE OR REPLACE FUNCTION public.control_user_account(
   p_user_id uuid,
   p_action text,
   p_reason text DEFAULT NULL,
-  p_suspend_hours integer DEFAULT NULL
+  p_suspend_hours integer DEFAULT NULL,
+  p_actor_id uuid DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -2455,8 +2618,41 @@ AS $$
 DECLARE
   v_status text;
   v_until timestamptz;
+  v_actor_tenant_id uuid;
 BEGIN
-  IF NOT public.user_has_permission(auth.uid(), 'users.lock', public.get_current_tenant_id()) THEN
+  -- SECURITY FIX (2026-09-05): this RPC's PUBLIC EXECUTE was revoked in
+  -- v13 and it is now only ever called via the service-role admin client
+  -- (infrastructure/repos/user-admin.repository.ts), which carries no
+  -- user JWT -- auth.uid() is always NULL on that connection, so the
+  -- previous `user_has_permission(auth.uid(), ...)` check denied every
+  -- call unconditionally (auth.uid() = NULL never matches a row in
+  -- user_roles/user_permission_cache). E2E (Playwright) run #23 caught
+  -- this live: every Lock/Unlock/Suspend/Ban attempt failed with
+  -- PERMISSION_DENIED, masked client-side behind a generic error by an
+  -- unrelated parseRpcError bug. The caller-side
+  -- requirePermission('users.lock') check in the Server Action
+  -- (adapters/actions/user.actions.ts) was and is correct -- this was
+  -- purely the redundant internal check being broken. Fixed by having
+  -- the trusted server layer pass the already-authorized acting user's
+  -- id explicitly as p_actor_id, used for the permission check, the
+  -- tenant scope below (get_current_tenant_id() was equally NULL here,
+  -- which would otherwise have made the UPDATE silently match zero rows
+  -- even once the permission check itself was fixed), and locked_by
+  -- (previously auth.uid(), so every lock/suspend/ban recorded no actor
+  -- at all).
+  IF p_actor_id IS NULL THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED';
+  END IF;
+
+  SELECT tenant_id INTO v_actor_tenant_id
+    FROM public.users
+   WHERE id = p_actor_id
+     AND deleted_at IS NULL
+     AND account_status = 'active';
+
+  IF v_actor_tenant_id IS NULL
+     OR NOT public.user_has_permission(p_actor_id, 'users.lock', v_actor_tenant_id)
+  THEN
     RAISE EXCEPTION 'PERMISSION_DENIED';
   END IF;
 
@@ -2479,16 +2675,24 @@ BEGIN
   SET account_status = v_status,
       lock_reason = CASE WHEN p_action = 'unlock' THEN NULL ELSE p_reason END,
       locked_at = CASE WHEN p_action = 'unlock' THEN NULL ELSE now() END,
-      locked_by = CASE WHEN p_action = 'unlock' THEN NULL ELSE auth.uid() END,
+      locked_by = CASE WHEN p_action = 'unlock' THEN NULL ELSE p_actor_id END,
       suspension_until = v_until,
       token_version = CASE WHEN p_action = 'unlock' THEN token_version ELSE token_version + 1 END,
       updated_at = now()
   WHERE id = p_user_id
-    AND tenant_id = public.get_current_tenant_id();
+    AND tenant_id = v_actor_tenant_id;
+
+  -- Was a silent no-op on a tenant mismatch before (get_current_tenant_id()
+  -- was NULL, so the WHERE clause above never matched anything even for a
+  -- legitimate same-tenant target); fail loud instead now that the tenant
+  -- filter is actually meaningful.
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_FOUND';
+  END IF;
 
   IF p_action <> 'unlock' THEN
     PERFORM private.revoke_auth_sessions(p_user_id);
-    PERFORM public.terminate_user_sessions(p_user_id, 'account_' || p_action);
+    PERFORM public.terminate_user_sessions(p_user_id, 'account_' || p_action, p_actor_id);
   END IF;
 
   RETURN jsonb_build_object('status', v_status, 'until', v_until);
@@ -2638,6 +2842,137 @@ BEGIN
   WHERE user_id = p_user_id
     AND course_id = p_course_id
     AND tenant_id = public.get_current_tenant_id();
+END;
+$$;
+
+-- ── Extend / Renew enrollment ──────────────────────────────────────────────
+-- Business contract:
+--   ACTIVE   → update expires_at only (status stays active)
+--   EXPIRED  → set status = 'active', update expires_at
+--   REVOKED  → set status = 'active', update expires_at (audit trail preserved)
+--   COMPLETED → REJECTED (do not silently erase completion semantics)
+--   p_new_expires_at <= now() → REJECTED
+--
+-- Security contract:
+--   Tenant derived from get_current_tenant_id() — never from caller body.
+--   auth.uid() must hold courses.manage in the current tenant.
+--   Course, user, and enrollment must all belong to the same tenant.
+--   Audit logged best-effort (same pattern as update_lesson_progress).
+--
+-- Cross-repository impact: UNVERIFIED — shared DB with EduZone_App.
+-- EduZone_App's student-facing enrollment path uses enroll_in_course() and
+-- update_lesson_progress(), not this admin-only RPC. No student-app call site
+-- was found during dashboard inspection, but the student repository could not
+-- be confirmed exhaustively.
+CREATE OR REPLACE FUNCTION public.extend_enrollment(
+  p_user_id     uuid,
+  p_course_id   uuid,
+  p_new_expires_at timestamptz
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor_id    uuid := auth.uid();
+  v_tenant_id   uuid := public.get_current_tenant_id();
+  v_enrollment  record;
+BEGIN
+  -- 1. Caller must be authenticated
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED: not authenticated';
+  END IF;
+
+  -- 2. Caller must hold courses.manage in current tenant
+  IF NOT public.user_has_permission(v_actor_id, 'courses.manage', v_tenant_id) THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED';
+  END IF;
+
+  -- 3. New expiry must be strictly in the future
+  IF p_new_expires_at IS NULL OR p_new_expires_at <= pg_catalog.now() THEN
+    RAISE EXCEPTION 'INVALID_EXPIRY: new expiry must be a future timestamp';
+  END IF;
+
+  -- 4. Load the enrollment — must exist and belong to the current tenant
+  SELECT e.*
+    INTO v_enrollment
+    FROM public.enrollments e
+   WHERE e.user_id    = p_user_id
+     AND e.course_id  = p_course_id
+     AND e.tenant_id  = v_tenant_id
+     AND e.deleted_at IS NULL;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ENROLLMENT_NOT_FOUND';
+  END IF;
+
+  -- 5. Verify course belongs to same tenant (defense-in-depth, BOLA guard)
+  IF NOT EXISTS (
+    SELECT 1 FROM public.courses
+     WHERE id = p_course_id
+       AND tenant_id = v_tenant_id
+       AND deleted_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'COURSE_NOT_FOUND';
+  END IF;
+
+  -- 6. Verify student belongs to same tenant
+  IF NOT EXISTS (
+    SELECT 1 FROM public.users
+     WHERE id = p_user_id
+       AND tenant_id = v_tenant_id
+       AND deleted_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'USER_NOT_IN_TENANT';
+  END IF;
+
+  -- 7. Status transition rules
+  IF v_enrollment.status = 'completed' THEN
+    RAISE EXCEPTION 'INVALID_STATUS: cannot extend a completed enrollment';
+  END IF;
+
+  -- 8. Apply update — active stays active; expired/revoked reactivated
+  UPDATE public.enrollments
+     SET expires_at    = p_new_expires_at,
+         status        = CASE
+                           WHEN status IN ('expired', 'revoked') THEN 'active'
+                           ELSE status
+                         END,
+         -- Clear revoke fields when reactivating
+         revoked_at    = CASE WHEN status = 'revoked' THEN NULL ELSE revoked_at END,
+         revoked_by    = CASE WHEN status = 'revoked' THEN NULL ELSE revoked_by END,
+         revoke_reason = CASE WHEN status = 'revoked' THEN NULL ELSE revoke_reason END,
+         updated_at    = pg_catalog.now()
+   WHERE user_id  = p_user_id
+     AND course_id = p_course_id
+     AND tenant_id = v_tenant_id;
+
+  -- 9. Best-effort audit log (same pattern as update_lesson_progress)
+  BEGIN
+    PERFORM internal.log_activity_internal(
+      v_actor_id,
+      'enrollment_extended',
+      jsonb_build_object(
+        'course_id',        p_course_id,
+        'student_id',       p_user_id,
+        'enrollment_id',    v_enrollment.id,
+        'prev_status',      v_enrollment.status,
+        'prev_expires_at',  v_enrollment.expires_at,
+        'new_expires_at',   p_new_expires_at,
+        'action',           CASE
+                              WHEN v_enrollment.status IN ('expired', 'revoked')
+                              THEN 'reactivated'
+                              ELSE 'extended'
+                            END
+      ),
+      NULL,
+      NULL,
+      'medium',
+      v_tenant_id
+    );
+  EXCEPTION WHEN OTHERS THEN
+    NULL;
+  END;
 END;
 $$;
 
@@ -3475,10 +3810,25 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.check_gdpr_compliance(p_user_id uuid)
 RETURNS jsonb
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
+DECLARE
+  v_result jsonb;
+BEGIN
+  -- SECURITY FIX (2026-09-12): body guard — only service_role or a super
+  -- admin may invoke. Previously this was LANGUAGE sql with no guard at
+  -- all, so any caller could enumerate orphaned-enrollments/sessions/
+  -- roles counts for ANY user_id across every tenant (launch-blocker
+  -- DB-5, cross-tenant PII leak). Even with the explicit REVOKE in
+  -- 10_permissions.sql, defense-in-depth requires the guard.
+  IF pg_catalog.current_setting('role', true) IS DISTINCT FROM 'service_role'
+     AND auth.role() IS DISTINCT FROM 'service_role'
+     AND NOT public.is_current_user_super_admin() THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED' USING ERRCODE = '42501';
+  END IF;
+
   SELECT pg_catalog.jsonb_build_object(
     'user_deleted', (SELECT deleted_at IS NOT NULL FROM public.users WHERE id = p_user_id),
     'orphaned_enrollments', (SELECT count(*) FROM public.enrollments WHERE user_id = p_user_id AND deleted_at IS NULL),
@@ -3492,7 +3842,10 @@ AS $$
       AND
       (SELECT count(*) FROM public.user_progress WHERE user_id = p_user_id AND deleted_at IS NULL) = 0
     )
-  );
+  ) INTO v_result;
+
+  RETURN v_result;
+END;
 $$;
 
 -- LOW-02: Enrollment tenant match validation
@@ -3653,6 +4006,82 @@ BEGIN
 END;
 $$;
 
+-- ============================================================================
+-- PERF-05 FIX: Batched tenant usage counts.
+-- Replaces the N+1 pattern in tenants.service.ts where every tenant row on
+-- the list page fired 2 separate head-count queries (users + courses) --
+-- ~100 network round trips for a 50-tenant page. One call to this function
+-- returns user + course counts for ALL requested tenants in a single round
+-- trip. Tenants with zero usage still get a row (0 counts), so the client
+-- merge never produces missing entries.
+-- Security: SECURITY DEFINER + admin-session guard, mirroring the sibling
+-- admin read functions in this file. The function body rejects non-admins via
+-- is_admin_with_session_validation(). An explicit GRANT EXECUTE to
+-- authenticated + service_role IS required in 10_permissions.sql because the
+-- ALTER DEFAULT PRIVILEGES REVOKE there strips the implicit PUBLIC grant.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.get_tenants_usage(p_tenant_ids uuid[])
+RETURNS TABLE (tenant_id uuid, user_count bigint, course_count bigint)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_admin_with_session_validation() THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    t.id,
+    (
+      SELECT count(*)
+      FROM public.users u
+      WHERE u.tenant_id = t.id
+        AND u.deleted_at IS NULL
+    ),
+    (
+      SELECT count(*)
+      FROM public.courses c
+      WHERE c.tenant_id = t.id
+        AND c.deleted_at IS NULL
+    )
+  FROM public.tenants t
+  WHERE t.id = ANY(p_tenant_ids)
+    AND t.deleted_at IS NULL;
+END;
+$$;
+
+-- ============================================================================
+-- IDOR FIX (P1-SEC-005 follow-up, audit pass on the 12 remaining
+-- service-role-only domains): admin_get_jobs / admin_get_job_counts /
+-- admin_retry_job / admin_cancel_job previously checked ONLY the caller's
+-- role (admin/super_admin) via is_admin_with_session_validation(), never
+-- tenant_id — unlike the sibling terminate_user_sessions/control_user_account
+-- functions elsewhere in this file, which already do
+-- "tenant_id = get_current_tenant_id() OR is_current_user_super_admin()".
+-- Verified with a real Postgres instance (helper functions + job_queue
+-- loaded verbatim from this file): a tenant-scoped 'admin' could list,
+-- retry, or cancel every OTHER tenant's background jobs (including their
+-- payloads, which can carry another tenant's user data).
+--
+-- Fix: tenant-scoped admins now only see/act on jobs where
+-- tenant_id = get_current_tenant_id() OR tenant_id IS NULL (platform-wide
+-- system/maintenance jobs stay visible/actionable by every admin — not
+-- "another tenant's data"). super_admin and the service_role worker
+-- remain unrestricted, matching every other admin RPC in this file.
+--
+-- DEPLOYMENT NOTE: admin_get_jobs now also returns `tenant_id` (it was
+-- silently never populated before, despite jobs.service.ts's TS row type
+-- already expecting it) and — PERF-02 FIX — a `result jsonb` column carrying
+-- the worker's structured progress/outcome separately from `error_msg`.
+-- These change the function's return row type, so
+-- on an EXISTING database `CREATE OR REPLACE` will fail with "cannot
+-- change return type of existing function". Run this first:
+--   DROP FUNCTION IF EXISTS public.admin_get_jobs(int, int, text, text, timestamptz);
+-- before re-running this file. Not needed on a fresh bootstrap.
+-- ============================================================================
+
 CREATE OR REPLACE FUNCTION public.admin_get_jobs(
   p_page      int DEFAULT 1,
   p_page_size int DEFAULT 10,
@@ -3662,6 +4091,7 @@ CREATE OR REPLACE FUNCTION public.admin_get_jobs(
 )
 RETURNS TABLE (
   id              uuid,
+  tenant_id       uuid,
   job_type        text,
   payload         jsonb,
   status          text,
@@ -3675,6 +4105,7 @@ RETURNS TABLE (
   started_at      timestamptz,
   completed_at    timestamptz,
   error_msg       text,
+  result          jsonb,
   created_at      timestamptz,
   full_count      bigint
 )
@@ -3684,10 +4115,15 @@ SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_offset int;
+  v_is_unrestricted boolean;
+  v_tenant_id uuid;
 BEGIN
   IF auth.role() <> 'service_role' AND NOT public.is_admin_with_session_validation() THEN
     RAISE EXCEPTION 'PERMISSION_DENIED';
   END IF;
+
+  v_is_unrestricted := (auth.role() = 'service_role') OR public.is_current_user_super_admin();
+  v_tenant_id := public.get_current_tenant_id();
 
   v_offset := (p_page - 1) * p_page_size;
 
@@ -3697,17 +4133,23 @@ BEGIN
     WHERE (p_status    IS NULL OR internal.job_queue.status   = p_status)
       AND (p_job_type  IS NULL OR internal.job_queue.job_type = p_job_type)
       AND (p_date_from IS NULL OR internal.job_queue.created_at >= p_date_from)
+      AND (
+        v_is_unrestricted
+        OR internal.job_queue.tenant_id IS NULL
+        OR internal.job_queue.tenant_id = v_tenant_id
+      )
   ),
   total_count AS (
     SELECT count(*) AS cnt FROM filtered_jobs
   )
   SELECT
-    fj.id, fj.job_type, fj.payload, fj.status, fj.priority,
+    fj.id, fj.tenant_id, fj.job_type, fj.payload, fj.status, fj.priority,
     fj.attempts, fj.max_attempts, fj.run_at, 
     fj.locked_by_worker_id::text AS locked_by,
     fj.locked_at, fj.lock_expires_at, fj.started_at,
     fj.finished_at AS completed_at, 
     fj.error_message AS error_msg, 
+    fj.result,
     fj.created_at,
     tc.cnt
   FROM filtered_jobs fj, total_count tc
@@ -3723,19 +4165,83 @@ LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
+DECLARE
+  v_is_unrestricted boolean;
+  v_tenant_id uuid;
 BEGIN
   IF auth.role() <> 'service_role' AND NOT public.is_admin_with_session_validation() THEN
     RAISE EXCEPTION 'PERMISSION_DENIED';
   END IF;
 
+  -- IDOR guard (added): same tenant scoping as admin_get_jobs, so the
+  -- dashboard counts stay consistent with the list view.
+  v_is_unrestricted := (auth.role() = 'service_role') OR public.is_current_user_super_admin();
+  v_tenant_id := public.get_current_tenant_id();
+
   RETURN (
     SELECT jsonb_build_object(
-      'pending',    (SELECT count(*) FROM internal.job_queue WHERE status = 'pending'),
-      'processing', (SELECT count(*) FROM internal.job_queue WHERE status = 'processing'),
-      'done',       (SELECT count(*) FROM internal.job_queue WHERE status = 'done'),
-      'failed',     (SELECT count(*) FROM internal.job_queue WHERE status = 'failed'),
-      'dead',       (SELECT count(*) FROM internal.job_queue WHERE status = 'dead')
+      'pending',    count(*) FILTER (WHERE status = 'pending'),
+      'processing', count(*) FILTER (WHERE status = 'processing'),
+      'done',       count(*) FILTER (WHERE status = 'done'),
+      'failed',     count(*) FILTER (WHERE status = 'failed'),
+      'dead',       count(*) FILTER (WHERE status = 'dead')
     )
+    FROM internal.job_queue
+    WHERE v_is_unrestricted OR tenant_id IS NULL OR tenant_id = v_tenant_id
+  );
+END;
+$$;
+
+-- SECURITY FIX (2026-09-12) — launch-blocker APP-2 follow-up:
+-- Tenant-scoped variant of admin_get_job_counts. The action boundary
+-- (apps/admin/src/adapters/actions/admin.actions.ts) uses this when the
+-- caller is a tenant-scoped admin (non-super_admin); super_admin falls
+-- back to the unrestricted admin_get_job_counts above.
+--
+-- Why a separate RPC instead of an optional p_tenant_id parameter on
+-- admin_get_job_counts? The existing RPC is already in production with
+-- its current signature (zero args) and jobs.service.ts calls it via
+-- `admin.rpc('admin_get_job_counts').single()` — adding an optional
+-- parameter would silently make the super_admin path pass NULL, which
+-- is fine semantically but breaks the function's `RETURNS jsonb` shape
+-- on a `CREATE OR REPLACE` if the parameter list changes (Postgres
+-- raises "cannot change whether a parameter has a default"). A new RPC
+-- is the lower-risk path and matches the file's existing pattern of
+-- dedicated RPCs per use case (admin_get_job vs admin_get_jobs).
+CREATE OR REPLACE FUNCTION public.admin_get_job_counts_tenant(p_tenant_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_admin_with_session_validation() THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED';
+  END IF;
+
+  -- IDOR guard: even though the action boundary already passes
+  -- ctx.tenantId (the caller's own tenant, never client-supplied), an
+  -- authenticated non-super_admin caller cannot ask for another
+  -- tenant's counts. service_role bypasses (used by the action
+  -- boundary via createAdminClient, which always carries the server's
+  -- service role — not the caller's JWT).
+  IF auth.role() <> 'service_role'
+     AND NOT public.is_current_user_super_admin()
+     AND p_tenant_id IS DISTINCT FROM public.get_current_tenant_id() THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED' USING ERRCODE = '42501';
+  END IF;
+
+  RETURN (
+    SELECT jsonb_build_object(
+      'pending',    count(*) FILTER (WHERE status = 'pending'),
+      'processing', count(*) FILTER (WHERE status = 'processing'),
+      'done',       count(*) FILTER (WHERE status = 'done'),
+      'failed',     count(*) FILTER (WHERE status = 'failed'),
+      'dead',       count(*) FILTER (WHERE status = 'dead')
+    )
+    FROM internal.job_queue
+    WHERE tenant_id = p_tenant_id
+       OR tenant_id IS NULL
   );
 END;
 $$;
@@ -3756,7 +4262,21 @@ BEGIN
       attempts = 0,
       error_message = NULL,
       updated_at = pg_catalog.now()
-  WHERE id = p_id;
+      -- PERF-02 FIX: `result` is deliberately NOT reset here. It carries the
+      -- checkpoint (succeeded_ids/failed_ids) the bulk worker uses to skip
+      -- already-processed users on retry — zero double-impact (F-02). The
+      -- fatal-error column above is cleared because a retry means the old
+      -- error no longer applies; progress data lives in `result` now.
+  WHERE id = p_id
+    -- IDOR guard (added): tenant-scoped admins may only retry their own
+    -- tenant's jobs (or platform-wide ones). Cross-tenant calls silently
+    -- affect 0 rows rather than raising, matching terminate_user_sessions.
+    AND (
+      auth.role() = 'service_role'
+      OR public.is_current_user_super_admin()
+      OR tenant_id IS NULL
+      OR tenant_id = public.get_current_tenant_id()
+    );
 END;
 $$;
 
@@ -3774,7 +4294,14 @@ BEGIN
   SET status = 'dead',
       finished_at = pg_catalog.now(),
       updated_at = pg_catalog.now()
-  WHERE id = p_id;
+  WHERE id = p_id
+    -- IDOR guard (added): same as admin_retry_job.
+    AND (
+      auth.role() = 'service_role'
+      OR public.is_current_user_super_admin()
+      OR tenant_id IS NULL
+      OR tenant_id = public.get_current_tenant_id()
+    );
 END;
 $$;
 
@@ -3784,6 +4311,7 @@ RETURNS TABLE (
   job_type        text,
   status          text,
   error_msg       text,
+  result          jsonb,
   created_at      timestamptz,
   completed_at    timestamptz
 )
@@ -3802,10 +4330,47 @@ BEGIN
     jq.job_type,
     jq.status,
     jq.error_message AS error_msg,
+    jq.result,
     jq.created_at,
     jq.finished_at AS completed_at
   FROM internal.job_queue jq
   WHERE jq.id = p_id;
+END;
+$$;
+
+-- SECURITY FIX (2026-09-12) — launch-blocker APP-2 follow-up:
+-- `admin_retry_job` / `admin_cancel_job` already include an IDOR guard
+-- inside their UPDATE … WHERE clause (tenant_id = get_current_tenant_id()
+-- OR is_current_user_super_admin() OR tenant_id IS NULL), so when called
+-- via a JWT-bearing authenticated client they correctly fail closed.
+--
+-- The gap: jobs.service.ts uses the service-role admin client, so
+-- `auth.role() = 'service_role'` short-circuits `v_is_unrestricted` to
+-- TRUE and the tenant guard is bypassed — a tenant-scoped admin calling
+-- retryJobAction(id) could retry ANY tenant's job. The action boundary
+-- now calls assertSameTenant(ctx, await getJobTenantId(id)) BEFORE the
+-- mutation; this RPC is the read-side helper that makes that possible.
+-- It returns the tenant_id of the job, or NULL if the job doesn't exist
+-- (the boundary's assertSameTenant treats NULL as a mismatch and fails
+-- closed, matching the documented contract in boundary.ts).
+CREATE OR REPLACE FUNCTION public.admin_get_job_tenant_id(p_id uuid)
+RETURNS uuid
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_tenant_id uuid;
+BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_admin_with_session_validation() THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED';
+  END IF;
+
+  SELECT jq.tenant_id INTO v_tenant_id
+  FROM internal.job_queue jq
+  WHERE jq.id = p_id;
+
+  RETURN v_tenant_id;
 END;
 $$;
 
@@ -3836,9 +4401,14 @@ BEGIN
     RAISE EXCEPTION 'INITIATOR_NOT_FOUND';
   END IF;
 
+  -- PERF-03 FIX: per-tenant fairness cap. The previous global count let one
+  -- tenant fill the shared queue (10 slots) and starve every other tenant
+  -- until its jobs drained. Counting only THIS initiator's tenant keeps the
+  -- same ceiling (max_pending_jobs = 10) but scoped per tenant.
   SELECT count(*) INTO v_pending_count
   FROM internal.job_queue
-  WHERE status = 'pending';
+  WHERE status = 'pending'
+    AND tenant_id = v_tenant_id;
 
   IF v_pending_count >= max_pending_jobs THEN
     RAISE EXCEPTION 'JOB_QUEUE_FULL: Too many pending operations';
@@ -3857,7 +4427,9 @@ CREATE OR REPLACE FUNCTION public.worker_update_bulk_job(
   p_status text DEFAULT NULL,
   p_error_message text DEFAULT NULL,
   p_finished_at timestamptz DEFAULT NULL,
-  p_release_lock boolean DEFAULT false
+  p_release_lock boolean DEFAULT false,
+  p_result jsonb DEFAULT NULL,
+  p_clear_error_message boolean DEFAULT false
 )
 RETURNS void
 LANGUAGE plpgsql
@@ -3871,7 +4443,16 @@ BEGIN
   UPDATE internal.job_queue
   SET
     status = coalesce(p_status, status),
-    error_message = coalesce(p_error_message, error_message),
+    error_message = CASE
+      WHEN p_clear_error_message THEN NULL
+      ELSE coalesce(p_error_message, error_message)
+    END,
+    -- PERF-02 FIX: structured progress/outcome {processed, total,
+    -- succeeded_ids, failed_ids, truncated} now lives in `result` instead of
+    -- being smuggled through error_message (which made the admin UI show
+    -- non-error data in an error column). Coalesce keeps last-write-wins
+    -- progress semantics.
+    result = coalesce(p_result, result),
     finished_at = coalesce(p_finished_at, finished_at),
     locked_by_worker_id = CASE WHEN p_release_lock THEN NULL ELSE locked_by_worker_id END,
     locked_at = CASE WHEN p_release_lock THEN NULL ELSE locked_at END,
@@ -4051,7 +4632,11 @@ BEGIN
   )
   RETURNING id INTO v_id;
 
-  PERFORM public.increment_warning_count(p_user_id);
+  -- F-02 FIX: pass the already-verified initiator as the acting user —
+  -- increment_warning_count's permission check runs against p_initiator_id
+  -- (this function re-verified warnings.write for it above), not against
+  -- the JWT-less service-role context where auth.uid() is always NULL.
+  PERFORM public.increment_warning_count(p_user_id, p_initiator_id);
   RETURN v_id;
 END;
 $$;
@@ -4881,6 +5466,11 @@ END;
 $$;
 
 -- LOW-03 FIX: Dynamic test data seeding with slug-based lookup.
+-- SECURITY FIX (2026-09-12): body guard — only service_role may invoke.
+-- This function has no production caller (verified via grep across apps/
+-- and supabase/functions/), but it is retained for dev/CI use and is
+-- explicitly locked to service_role only in 10_permissions.sql. The
+-- body guard is defense-in-depth against any future accidental GRANT.
 CREATE OR REPLACE FUNCTION public.seed_test_data()
 RETURNS void
 LANGUAGE plpgsql
@@ -4891,6 +5481,11 @@ DECLARE
   v_test_admin_id uuid;
   v_test_course_id uuid;
 BEGIN
+  IF pg_catalog.current_setting('role', true) IS DISTINCT FROM 'service_role'
+     AND auth.role() IS DISTINCT FROM 'service_role' THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED' USING ERRCODE = '42501';
+  END IF;
+
   -- Lookup or create test tenant
   v_test_tenant_id := (SELECT id FROM public.tenants WHERE slug = 'test-tenant-001' LIMIT 1);
   IF v_test_tenant_id IS NULL THEN
@@ -4933,6 +5528,11 @@ END;
 $$;
 
 -- LOW-03 FIX: Cleanup test data using slug-based lookup
+-- SECURITY FIX (2026-09-12): body guard — only service_role may invoke.
+-- Same rationale as seed_test_data above: this function DELETEs production
+-- data (enrollments, user_progress, lessons, courses, user_roles, users,
+-- tenants) and must never be reachable from PostgREST. Locked to
+-- service_role in 10_permissions.sql; body guard is defense-in-depth.
 CREATE OR REPLACE FUNCTION public.cleanup_test_data()
 RETURNS void
 LANGUAGE plpgsql
@@ -4941,6 +5541,11 @@ AS $$
 DECLARE
   v_test_tenant_id uuid;
 BEGIN
+  IF pg_catalog.current_setting('role', true) IS DISTINCT FROM 'service_role'
+     AND auth.role() IS DISTINCT FROM 'service_role' THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED' USING ERRCODE = '42501';
+  END IF;
+
   SELECT id INTO v_test_tenant_id FROM public.tenants WHERE slug = 'test-tenant-001';
   
   IF v_test_tenant_id IS NOT NULL THEN
@@ -5351,7 +5956,37 @@ SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 BEGIN
   IF NEW.account_status IN ('locked', 'suspended', 'banned') AND OLD.account_status = 'active' THEN
-    PERFORM public.terminate_user_sessions(NEW.id, 'account_' || NEW.account_status);
+    -- SECURITY FIX (2026-09-08): this used to PERFORM
+    -- public.terminate_user_sessions(NEW.id, reason) -- but that RPC now
+    -- requires an explicit, non-NULL p_actor_id (see its definition
+    -- above) and raises PERMISSION_DENIED otherwise. A trigger has no
+    -- actor to supply: account_status was already changed by an
+    -- upstream, already-authorized caller (e.g. worker_control_user_account /
+    -- control_user_account, which check
+    -- user_has_permission(p_initiator_id, 'users.lock', ...) BEFORE
+    -- performing the UPDATE that fires this trigger), so re-authorizing
+    -- here is both impossible (no actor in trigger context — NEW/OLD are
+    -- just row data) and redundant (authorization already happened one
+    -- level up). This was firing unconditionally and rolling back every
+    -- lock/suspend/ban -- confirmed via CI run #29
+    -- ([WebServer] worker_control_user_account failed: PERMISSION_DENIED,
+    -- with none of that function's own _DEBUG-tagged exceptions
+    -- triggering, meaning the failure was happening downstream of its
+    -- own checks — in this trigger).
+    --
+    -- Terminate the sessions directly instead of routing through the
+    -- actor-gated RPC, matching how worker_control_user_account /
+    -- control_user_account already do this same UPDATE inline rather
+    -- than calling terminate_user_sessions from a SECURITY DEFINER
+    -- context with no real actor.
+    UPDATE public.sessions
+    SET is_active = false,
+        ended_at = coalesce(ended_at, pg_catalog.now()),
+        end_reason = 'account_' || NEW.account_status,
+        updated_at = pg_catalog.now()
+    WHERE user_id = NEW.id
+      AND is_active
+      AND tenant_id = NEW.tenant_id;
   END IF;
   RETURN NEW;
 END;
@@ -6092,7 +6727,17 @@ BEGIN
      AND deleted_at IS NULL;
 
   PERFORM private.revoke_auth_sessions(auth.uid());
-  PERFORM public.terminate_user_sessions(auth.uid(), 'self_logout');
+  -- SECURITY FIX (2026-09-08): terminate_user_sessions now requires an
+  -- explicit, non-NULL p_actor_id (see its definition above) -- calling it
+  -- with only 2 args left p_actor_id NULL, which now raises
+  -- PERMISSION_DENIED unconditionally and rolled back this entire
+  -- function (including the token_version bump and revoke_auth_sessions
+  -- above), breaking every real logout. Unlike the service-role admin
+  -- paths, this function genuinely IS the authenticated user acting on
+  -- themselves -- auth.uid() is valid here, so pass it as both the target
+  -- and the actor (satisfies terminate_user_sessions' `p_user_id =
+  -- p_actor_id` self-service check).
+  PERFORM public.terminate_user_sessions(auth.uid(), 'self_logout', auth.uid());
 END;
 $$;
 
@@ -6458,7 +7103,7 @@ DECLARE
   v_session jsonb := public._session_status();
   v_role text := v_session ->> 'role';
   v_tenant_id text := v_session ->> 'tenant_id';
-  v_token_version text := v_session ->> 'token_version';
+  v_token_version integer := (v_session ->> 'token_version')::integer;
   v_maintenance_excluded_roles text[] := ARRAY[]::text[];
   v_maintenance_excluded_users uuid[] := ARRAY[]::uuid[];
 BEGIN

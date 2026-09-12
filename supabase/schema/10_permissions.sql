@@ -329,6 +329,14 @@ GRANT EXECUTE ON FUNCTION public.is_teacher_of_course(uuid, uuid) TO authenticat
 REVOKE EXECUTE ON FUNCTION public.enroll_in_course(uuid) FROM anon;
 GRANT EXECUTE ON FUNCTION public.enroll_in_course(uuid) TO authenticated, service_role;
 
+-- extend_enrollment(uuid, uuid, timestamptz): admin/teacher operation to extend
+-- or renew a student's enrollment. The function body enforces courses.manage
+-- permission, tenant isolation, and status-transition rules internally.
+-- Same least-privilege pattern as enroll_in_course above.
+REVOKE ALL ON FUNCTION public.extend_enrollment(uuid, uuid, timestamptz) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.extend_enrollment(uuid, uuid, timestamptz) FROM anon;
+GRANT EXECUTE ON FUNCTION public.extend_enrollment(uuid, uuid, timestamptz) TO authenticated, service_role;
+
 -- courses-subsystem-production-hardening-plan.md Phase 2/3: server-side
 -- lesson-progress write RPC, replacing the client-resolved-tenant direct
 -- upsert. Same authenticated-only exposure as the other user-callable
@@ -449,6 +457,19 @@ GRANT EXECUTE ON FUNCTION public.check_rate_limit(text, uuid, inet, uuid) TO aut
 -- revoked from every role, including authenticated, so it is unreachable via PostgREST.
 REVOKE ALL ON FUNCTION public.check_rate_limit(text, integer, integer) FROM PUBLIC, anon, authenticated;
 
+-- PERF-05 FIX (get_tenants_usage): This SECURITY DEFINER function carries an
+-- internal is_admin_with_session_validation() guard that rejects non-admins at
+-- runtime. However, because 10_permissions.sql's ALTER DEFAULT PRIVILEGES REVOKE
+-- (line 279) strips the implicit PUBLIC EXECUTE grant that Postgres assigns at
+-- CREATE FUNCTION time, PostgREST's schema cache never learned about the function
+-- at all — every call from tenants.service.ts landed as a 404
+-- ("function public.get_tenants_usage(p_tenant_ids) not found in schema cache").
+-- Same root cause and same fix pattern as bind_device_for_current_user /
+-- get_lesson_content / api_update_profile above: explicit REVOKE + GRANT makes
+-- the function visible to PostgREST; the body still rejects non-admins.
+REVOKE ALL ON FUNCTION public.get_tenants_usage(uuid[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_tenants_usage(uuid[]) TO authenticated, service_role;
+
 -- 3. ADMIN ONLY - Revoked from anon AND authenticated; granted to service_role only
 REVOKE EXECUTE ON FUNCTION public.is_current_user_super_admin() FROM anon;
 REVOKE EXECUTE ON FUNCTION public.is_current_user_super_admin() FROM authenticated;
@@ -495,9 +516,18 @@ REVOKE EXECUTE ON FUNCTION public.sync_settings_cache() FROM anon;
 REVOKE EXECUTE ON FUNCTION public.sync_settings_cache() FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.sync_settings_cache() TO service_role;
 
-REVOKE EXECUTE ON FUNCTION public.terminate_user_sessions(uuid, text) FROM anon;
-REVOKE EXECUTE ON FUNCTION public.terminate_user_sessions(uuid, text) FROM authenticated;
-GRANT EXECUTE ON FUNCTION public.terminate_user_sessions(uuid, text) TO service_role;
+-- P0 LOCK/UNLOCK FIX follow-up: terminate_user_sessions gained a mandatory
+-- p_actor_id third parameter (SECURITY FIX 2026-09-05 in 07_functions.sql —
+-- the service-role admin client carries no user JWT, so auth.uid() was always
+-- NULL and the old guard denied every call). These signature-pinned
+-- REVOKE/GRANT lines still referenced the old 2-arg signature, which made a
+-- fresh canonical deploy fail right here with "function
+-- public.terminate_user_sessions(uuid, text) does not exist" (the same
+-- cross-file consistency break the go-no-go checklist recorded for the first
+-- fix attempt). Updated to the current 3-arg signature.
+REVOKE EXECUTE ON FUNCTION public.terminate_user_sessions(uuid, text, uuid) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.terminate_user_sessions(uuid, text, uuid) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.terminate_user_sessions(uuid, text, uuid) TO service_role;
 REVOKE EXECUTE ON FUNCTION public.trg_refresh_user_validity() FROM anon;
 REVOKE EXECUTE ON FUNCTION public.trg_refresh_user_validity() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION public.trg_schedule_mv_refresh() FROM anon;
@@ -517,10 +547,37 @@ REVOKE EXECUTE ON FUNCTION public.worker_control_user_account(uuid, uuid, text, 
 REVOKE EXECUTE ON FUNCTION public.worker_terminate_user_sessions(uuid, uuid, text) FROM anon;
 REVOKE EXECUTE ON FUNCTION public.worker_terminate_user_sessions(uuid, uuid, text) FROM authenticated;
 
+-- SECURITY FIX (2026-09-08): control_user_account(uuid, text, text,
+-- integer, uuid) still had NO REVOKE/GRANT anywhere in this file even
+-- after the p_actor_id fix above -- it carried Postgres's default
+-- EXECUTE-to-PUBLIC grant. infrastructure/repos/user-admin.repository.ts
+-- now calls worker_control_user_account exclusively (this function is
+-- unreferenced in apps/ and supabase/functions/ — confirmed by grep), but
+-- it was still live and callable: any authenticated user holding
+-- 'users.lock' (any admin) could call it directly with their own id as
+-- p_actor_id -- correctly passing its permission check -- and bypass both
+-- the Server Action's Zod validation and the M13 audit-log entry
+-- account-control.use-case.ts writes after the (now-unused) RPC path.
+-- Locking it down rather than dropping it outright, since
+-- VALIDATION.sql's Check 12B still expects it to exist and call
+-- private.revoke_auth_sessions.
+--
+-- NOTE: p_actor_id was appended as a 5th, trailing parameter here
+-- (p_user_id, p_action, p_reason, p_suspend_hours, p_actor_id) rather than
+-- inserted first the way worker_control_user_account does it -- the
+-- signature is (uuid, text, text, integer, uuid), NOT
+-- (uuid, uuid, text, text, integer). Run #30 failed with "function
+-- public.control_user_account(uuid, uuid, text, text, integer) does not
+-- exist" because the first version of this fix assumed the two functions
+-- shared the same parameter order; they don't.
+REVOKE EXECUTE ON FUNCTION public.control_user_account(uuid, text, text, integer, uuid) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.control_user_account(uuid, text, text, integer, uuid) FROM authenticated;
+
 -- decrypt_pii/dequeue_job/encrypt_pii are already granted to service_role above
 -- (see "4. INTERNAL ONLY"); only the two worker_* grants below are new here.
 GRANT EXECUTE ON FUNCTION public.worker_control_user_account(uuid, uuid, text, text, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.worker_terminate_user_sessions(uuid, uuid, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.control_user_account(uuid, text, text, integer, uuid) TO service_role;
 
 -- 5. SUPABASE AUTH HOOK
 -- Supabase Auth needs schema USAGE plus EXECUTE to invoke Postgres hooks.
@@ -621,3 +678,146 @@ GRANT EXECUTE ON FUNCTION public.is_feature_enabled_for_user(text, uuid)
 TO authenticated, service_role;
 
 GRANT SELECT ON public.feature_flags_admin TO authenticated;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SECURITY FIX (2026-09-12): Launch-blocking RPC permission gaps.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Five SECURITY DEFINER functions were defined in 07_functions.sql without an
+-- explicit REVOKE/GRANT pair in this file, AND without a body-level guard.
+-- The ALTER DEFAULT PRIVILEGES REVOKE at line 279 only affects functions
+-- created *after* that statement runs, so every function defined earlier in
+-- 07_functions.sql retains PostgreSQL's default `EXECUTE TO PUBLIC` grant.
+--
+-- That combination (`grant=no` AND `body_guard=no`) made each of these five
+-- functions callable by any anonymous or authenticated user via
+-- POST /rest/v1/rpc/<fn>, bypassing RLS entirely (SECURITY DEFINER runs as
+-- the function owner, which is the postgres superuser).
+--
+-- The five functions:
+--   DB-1: cleanup_test_data()        — deletes production data (CRITICAL)
+--   DB-2: seed_test_data()           — creates tenants/users/courses (CRITICAL)
+--   DB-3: sync_primary_role_for_user(uuid) — mutates users.primary_role (CRITICAL)
+--   DB-4: get_user_role_by_id(uuid)  — cross-tenant role disclosure (HIGH)
+--   DB-5: check_gdpr_compliance(uuid) — cross-tenant PII leak (HIGH)
+--
+-- `seed_test_data` and `cleanup_test_data` have no callers anywhere in
+-- apps/admin/ or supabase/functions/ (verified via grep). They are
+-- explicitly locked to service_role only — they should never be callable
+-- from PostgREST. `sync_primary_role_for_user`, `get_user_role_by_id`,
+-- and `check_gdpr_compliance` also gained a body guard inside
+-- 07_functions.sql as defense-in-depth (see that file).
+REVOKE ALL ON FUNCTION public.cleanup_test_data()
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.cleanup_test_data()
+  TO service_role;
+
+REVOKE ALL ON FUNCTION public.seed_test_data()
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.seed_test_data()
+  TO service_role;
+
+REVOKE ALL ON FUNCTION public.sync_primary_role_for_user(uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sync_primary_role_for_user(uuid)
+  TO service_role;
+
+REVOKE ALL ON FUNCTION public.get_user_role_by_id(uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_user_role_by_id(uuid)
+  TO service_role;
+
+REVOKE ALL ON FUNCTION public.check_gdpr_compliance(uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.check_gdpr_compliance(uuid)
+  TO service_role;
+
+-- SECURITY FIX (2026-09-12) — launch-blocker APP-2 follow-up:
+-- `admin_get_job_tenant_id(uuid)` is the read-side helper used by
+-- jobs.service.ts's getJobTenantId(), which the action boundary calls
+-- via assertSameTenant before retryJobAction/cancelJobAction mutate the
+-- job. Locked to service_role only — the body guard inside 07_functions.sql
+-- also permits is_admin_with_session_validation() as defense-in-depth,
+-- but PostgREST exposure is service_role-only because the action boundary
+-- already authenticates the caller.
+REVOKE ALL ON FUNCTION public.admin_get_job_tenant_id(uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_get_job_tenant_id(uuid)
+  TO service_role;
+
+-- SECURITY FIX (2026-09-12) — launch-blocker APP-2 follow-up:
+-- `admin_get_job_counts_tenant(uuid)` is the tenant-scoped variant of
+-- admin_get_job_counts used by jobs.service.ts's getJobStatusCounts when
+-- the caller is a tenant-scoped admin. Same least-privilege exposure as
+-- admin_get_job_tenant_id above.
+REVOKE ALL ON FUNCTION public.admin_get_job_counts_tenant(uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_get_job_counts_tenant(uuid)
+  TO service_role;
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- SECURITY FIX (2026-09-12) — launch-readiness sweep, residual PUBLIC EXECUTE
+-- ═════════════════════════════════════════════════════════════════════════════
+-- Final sweep for public-schema SECURITY DEFINER functions that still carried
+-- Postgres's default EXECUTE TO PUBLIC (no explicit REVOKE/GRANT anywhere in
+-- this file). None of the four functions below has any caller in apps/admin/
+-- or supabase/functions/ (verified via grep), and none has a body guard, so
+-- each was anonymously invocable via POST /rest/v1/rpc/<name>:
+--
+--   1. refresh_all_materialized_views() — SECURITY DEFINER, no guard, no
+--      REVOKE: an anonymous caller could force three concurrent REFRESH
+--      MATERIALIZED VIEW CONCURRENTLY runs per request (private.mv_course_stats,
+--      public.vw_student_progress_timeline, public.vw_daily_revenue) — a cheap
+--      resource-exhaustion DoS. Locked to service_role only (the cron/worker
+--      path uses private.refresh_all_materialized_views, already locked).
+--
+--   2. check_and_increment_rate_limit(...) — SECURITY DEFINER, no guard: any
+--      caller could insert into public.rate_limits with an ARBITRARY
+--      p_tenant_id/p_user_id/p_ip_address and increment hit counts for a
+--      chosen key until blocked_until is set — i.e. force rate-limit lockouts
+--      for chosen victims and pollute rate-limit telemetry. No caller in the
+--      app (the app-facing RPC is check_rate_limit(text,uuid,inet,uuid),
+--      already locked at "Rate-Limit RPC Least Privilege" above). Locked to
+--      service_role only.
+--
+--   3. log_security_alert(text,text,text) — SECURITY DEFINER, no guard: anon
+--      could write unbounded attacker-controlled rows into audit.alert_log
+--      (audit spam / storage fill / misleading alerts). Locked to service_role.
+--
+--   4. find_user_by_email(text) — SECURITY DEFINER, no guard. Body scopes to
+--      get_current_tenant_id() (NULL for anon, so it returned nothing), but it
+--      still gave any authenticated in-tenant caller an email→uuid enumeration
+--      oracle. No caller anywhere; granted to authenticated + service_role to
+--      preserve potential legitimate in-tenant admin use, anon excluded.
+REVOKE ALL ON FUNCTION public.refresh_all_materialized_views()
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.refresh_all_materialized_views()
+  TO service_role;
+
+REVOKE ALL ON FUNCTION public.check_and_increment_rate_limit(text, uuid, uuid, inet, uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.check_and_increment_rate_limit(text, uuid, uuid, inet, uuid)
+  TO service_role;
+
+REVOKE ALL ON FUNCTION public.log_security_alert(text, text, text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.log_security_alert(text, text, text)
+  TO service_role;
+
+REVOKE ALL ON FUNCTION public.find_user_by_email(text)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.find_user_by_email(text)
+  TO authenticated, service_role;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SECURITY FIX (2026-09-12) — audit_chain_state grant narrowing (LOW, hardening)
+-- ─────────────────────────────────────────────────────────────────────────────
+-- The table grant above ("GRANT SELECT, INSERT, UPDATE, DELETE ON
+-- public.activity_logs, public.audit_chain_state TO authenticated") gave
+-- authenticated DML on audit_chain_state, a table whose only legitimate
+-- client-visible operation is SELECT (its own RLS policies are SELECT-only
+-- and prevent_audit_mutation blocks writes at the trigger layer anyway).
+-- RLS made the extra grants unreachable today, but they widened the blast
+-- radius of any future RLS policy mistake — the exact pattern this file
+-- removes everywhere else. Narrow to SELECT-only.
+REVOKE INSERT, UPDATE, DELETE ON public.audit_chain_state FROM authenticated;
+GRANT SELECT ON public.audit_chain_state TO authenticated;
