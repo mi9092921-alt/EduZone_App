@@ -78,7 +78,11 @@ Every feature follows this exact layout:
 ```
 features/<name>/
 ├── data/
-│   └── <name>_repository.dart     ← All Supabase calls live here
+│   ├── datasources/               ← All Supabase calls live here
+│   └── repositories/              ← Repository implementations
+├── domain/
+│   ├── entities/                  ← Freezed models
+│   └── repositories/              ← Repository interfaces
 ├── application/
 │   └── providers/                 ← Riverpod providers
 │       └── <name>_provider.dart
@@ -94,7 +98,7 @@ Never put Supabase calls directly in a widget or provider.
 
 ## State Management — Riverpod
 
-The app uses **Flutter Riverpod 2.x** exclusively. Do not introduce any other state solution.
+The app uses **Flutter Riverpod 3.x with codegen** (`flutter_riverpod`, `riverpod_annotation`, `riverpod_generator`) exclusively. Do not introduce any other state solution.
 
 - Use `AsyncNotifierProvider` for data that loads asynchronously
 - Use `NotifierProvider` for synchronous state
@@ -124,26 +128,28 @@ class CoursesNotifier extends _$CoursesNotifier {
 
 ## Navigation — go_router
 
-All routes are defined in `core/navigation/app_router.dart`. Do not define routes elsewhere.
+All routes are defined in `lib/app/router/app_router.dart` (route name constants in `lib/core/constants/app_constants.dart` `AppRoutes`). Do not define routes elsewhere.
 
 Route hierarchy:
 
 ```
-/splash         → session check, redirects to /auth/login or /home
-/auth/login
-/auth/forgot-password
-/maintenance    → no sign-out, shows ends_at
-/app-locked     → no sign-out, shows custom message
-/onboarding
-/home           → ShellRoute with bottom nav
-  /courses
-  /courses/:id
-  /courses/:id/lesson/:lessonId
-  /notifications
-  /warnings
+/                  → session check, redirects to /login or /home
+/login
+/legal/:type
+/locked            → security kill-switch screen
+/app-locked        → no sign-out, shows custom message
+/suspended
+/banned
+/maintenance       → no sign-out, shows ends_at
+/force-update      → blocks all until update
+
+StatefulShellRoute (bottom-nav shell):
+  /home            → children: notifications
+  /discover        → children: saved, course-preview/:courseId
+  /courses         → children: downloads (→ offline-player/:downloadId),
+                     :courseId (→ lesson/:lessonId, lesson3/:lessonId, lesson4/:lessonId)
+  /todo
   /profile
-  /profile/sessions
-  /profile/devices
 ```
 
 Use `context.go()` for top-level navigation and `context.push()` for drill-down.
@@ -175,7 +181,15 @@ await supabase.rpc('bind_device_for_current_user', params: {
 
 ### Token Handling
 
-- **JWT lives in memory only.** Never write tokens to `SharedPreferences`, `flutter_secure_storage`, or disk.
+### Token Handling
+
+- **The JWT/session token is persisted ONLY through the app's custom `SecureLocalStorage`**
+  (`lib/core/network/supabase_client.dart`) backed by `flutter_secure_storage` with
+  hardware-backed Android Keystore / iOS Keychain (`first_unlock_this_device`). This is the
+  one audited deviation from the earlier "memory only" policy — session restore and the
+  offline `AuthDegraded` flow depend on it. It is wiped on logout by `LogoutOrchestrator`.
+  Never write tokens to `SharedPreferences`, plain files, or any storage other than that
+  implementation.
 - `token_version` mismatches must trigger immediate sign-out. Catch `ACCOUNT_LOCKED` / `TOKEN_VERSION_MISMATCH` errors from every RPC call.
 - Never use the `service_role` key anywhere in this app. All sensitive operations go through Edge Functions.
 - The `anon` key is the only Supabase key that belongs in this app.
@@ -184,9 +198,9 @@ await supabase.rpc('bind_device_for_current_user', params: {
 
 | Reason | Behavior |
 |---|---|
-| `account_locked` | Sign out → `/auth/login` with error message |
-| `account_banned` | Sign out → `/auth/login` with error message |
-| `account_suspended` | Sign out → `/auth/login`, show `suspension_until` |
+| `account_locked` | Sign out → `/login` with error message |
+| `account_banned` | Sign out → `/login` with error message |
+| `account_suspended` | Sign out → `/login`, show `suspension_until` |
 | `maintenance_mode` | **No sign-out** → `/maintenance` with `ends_at` |
 | `app_locked` | **No sign-out** → `/app-locked` with custom message |
 | `JWT expired` | Silent refresh → if failed: sign out |
@@ -223,12 +237,14 @@ AppRadius.md
 
 | File | What It Defines |
 |---|---|
-| `core/theme/app_colors.dart` | All color constants |
-| `core/theme/app_text_styles.dart` | All `TextStyle` values |
-| `core/theme/app_spacing.dart` | `xs`, `sm`, `md`, `lg`, `xl`, `2xl`... |
-| `core/theme/app_radius.dart` | `sm`, `md`, `lg`, `full` |
-| `core/theme/app_elevation.dart` | Shadow levels |
-| `core/theme/app_duration.dart` | Animation durations |
+| `design_system/tokens/app_colors.dart` | All color constants |
+| `design_system/tokens/app_text_styles.dart` | All `TextStyle` values |
+| `design_system/tokens/app_spacing.dart` | `xs`, `sm`, `md`, `lg`, `xl`, `2xl`... |
+| `design_system/tokens/app_radius.dart` | `sm`, `md`, `lg`, `full` |
+| `design_system/tokens/app_elevation.dart` | Shadow levels |
+| `design_system/tokens/app_motion.dart` | Animation durations & curves |
+
+The design system lives in `lib/design_system/` (components/, tokens/, rules/, `design_system.dart` barrel). Import it via `package:app/design_system/design_system.dart`.
 
 ### Widget Rules
 
@@ -243,7 +259,7 @@ AppRadius.md
 
 The app supports Arabic (`ar-EG`, RTL) and English (`en-US`, LTR).
 
-- All user-facing strings go in `lib/l10n/app_ar.arb` and `lib/l10n/app_en.arb`
+- All user-facing strings go in `lib/core/l10n/arb/app_ar.arb` and `lib/core/l10n/arb/app_en.arb` (both files must keep identical key sets — 355 keys as of the last audit)
 - Never hardcode a user-visible string in Dart. Use `context.l10n.someKey`
 - After adding a key to both ARB files, run `flutter gen-l10n` (or `flutter pub get` triggers it via `l10n.yaml`)
 - Test every new screen in both locales. RTL layout must be verified manually
@@ -401,11 +417,19 @@ Example: `feat(courses): add lesson completion badge with animation`
 
 | File | What to find there |
 |---|---|
-| `core/navigation/app_router.dart` | All route definitions |
-| `core/theme/app_colors.dart` | Color tokens |
-| `core/services/supabase_service.dart` | Supabase singleton |
-| `features/auth/data/auth_repository.dart` | Login, sign-out, token_version handling |
+| `lib/app/router/app_router.dart` | All route definitions (+ `lib/core/constants/app_constants.dart` `AppRoutes`) |
+| `design_system/tokens/app_colors.dart` | Color tokens |
+| `core/network/supabase_client.dart` | Supabase singleton + cert pinning wiring + secure session storage |
+| `features/auth/data/datasources/auth_remote_ds.dart` | Login, sign-out, device binding, token_version handling |
+| `features/auth/application/providers/auth_provider.dart` | Auth state machine, forced sign-out scenarios |
 | `docs/EduZone_App_Design_System_v1.md` | Full design system reference |
 | `docs/EduZone_API_Design_v1.md` | All RPC and Edge Function contracts |
 | `docs/SECURITY_DESIGN.md` | Auth flows and security model |
 | `RFC_DECISION_LOG.md` | Architectural decisions and their rationale |
+
+### Shared Supabase Schema
+
+The nested `supabase/` tree in this repo is a **synced mirror** of the canonical schema
+owned by the `EduZone_dashboard` repository (`supabase/schema/` + `config.toml`).
+Never edit the schema here and expect it to reach production — the dashboard repo is the
+source of truth and deployment (`supabase/deploy.js`) runs from there.

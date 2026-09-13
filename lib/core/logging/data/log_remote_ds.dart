@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../network/network_config.dart';
 import '../../network/supabase_client.dart';
+import '../domain/app_event.dart';
 import '../domain/event_metadata.dart';
 
 /// Remote data source for submitting log entries to Supabase.
@@ -22,6 +23,36 @@ class LogRemoteDataSource {
 
   LogRemoteDataSource([SupabaseClient? client])
       : _client = client ?? SupabaseService.client;
+
+  /// Submit a `lesson_started` analytics ping for a video-player session.
+  ///
+  /// Convenience for the player wrappers so presentation code never calls
+  /// Supabase directly: same `log_activity_async` RPC, same fire-and-forget
+  /// semantics (never throws — returns whether the ping was accepted), same
+  /// telemetry timeout as [syncBatch].
+  Future<bool> logLessonStarted({
+    required String userId,
+    required String courseId,
+    required String lessonId,
+    required String player,
+    required String devicePlatform,
+  }) {
+    return syncBatch([
+      LogEntry(
+        idempotencyKey: 'lesson_started:$userId:$lessonId:$player',
+        eventType: 'lesson_started',
+        category: EventCategory.video.name,
+        userId: userId,
+        details: {
+          'course_id': courseId,
+          'lesson_id': lessonId,
+          'device_platform': devicePlatform,
+          'player': player,
+        },
+        createdAt: DateTime.now(),
+      ),
+    ]);
+  }
 
   /// Submit a list of [LogEntry] via `public.log_activity_async`.
   ///

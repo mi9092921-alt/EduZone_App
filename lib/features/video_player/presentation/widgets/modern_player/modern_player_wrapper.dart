@@ -7,7 +7,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../../core/network/network_config.dart';
+import '../../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../../core/network/supabase_client.dart';
 import '../../../../../core/utils/device_info_helper.dart';
 import '../../../../../design_system/design_system.dart';
@@ -61,6 +61,7 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
   final GlobalKey _webViewKey = GlobalKey();
 
   InAppWebViewController? _webViewController;
+  final _activityLogger = LogRemoteDataSource();
   bool _isLoading = true;
   bool _hasError = false;
   int _errorCode = 0;
@@ -153,32 +154,23 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
   // ─── Activity Logging ────────────────────────────────────────────────────────
 
   /// Best-effort analytics ping: failure here must never block or
-  /// interrupt playback (see catch block below). Previously had no
-  /// timeout, so a stalled connection could leave this hanging
-  /// indefinitely despite being written as fire-and-forget. See Section
-  /// 13 ("Networking Reliability") of the project instructions.
+  /// interrupt playback. Routing through [LogRemoteDataSource] keeps the
+  /// Supabase call out of the presentation layer; the datasource already
+  /// applies the telemetry timeout and swallows failures. [_logged] flips
+  /// only on an accepted ping so a dropped call is retried on the next
+  /// attempt, matching the previous retry semantics.
   Future<void> _logLessonStarted() async {
     if (_logged) return;
     final userId = SupabaseService.client.auth.currentUser?.id;
     if (userId == null) return;
-    try {
-      await SupabaseService.client.rpc('log_activity_async', params: {
-        'p_user_id': userId,
-        'p_type': 'lesson_started',
-        'p_details': {
-          'course_id': widget.courseId,
-          'lesson_id': widget.lessonId,
-          'player': 'modern_v2',
-          'device_platform': DeviceInfoHelper.platform,
-        },
-      }).timeout(NetworkConfig.telemetryTimeout);
-      _logged = true;
-    } catch (_) {
-      // Best-effort analytics ping: failure here must never block or
-      // interrupt playback, and there is nothing actionable for the user
-      // to do about a dropped activity-log call, so it is intentionally
-      // swallowed rather than surfaced.
-    }
+    final accepted = await _activityLogger.logLessonStarted(
+      userId: userId,
+      courseId: widget.courseId,
+      lessonId: widget.lessonId,
+      player: 'modern_v2',
+      devicePlatform: DeviceInfoHelper.platform,
+    );
+    if (accepted) _logged = true;
   }
 
   // ─── Switch video without reloading WebView ──────────────────────────────────

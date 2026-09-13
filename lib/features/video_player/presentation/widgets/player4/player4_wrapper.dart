@@ -6,7 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../../core/network/network_config.dart';
+import '../../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../../core/network/supabase_client.dart';
 import '../../../../../core/utils/device_info_helper.dart';
 import '../../../../../design_system/design_system.dart';
@@ -67,6 +67,7 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
   bool _showControls = true;
   double _playbackSpeed = 1.0;
   bool _loggedStarted = false;
+  final _activityLogger = LogRemoteDataSource();
 
   List<StreamingFormat> _availableFormats = [];
   StreamingFormat? _selectedFormat;
@@ -403,35 +404,22 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
   }
 
   /// Best-effort analytics ping: failure here must never block or
-  /// interrupt playback (see catch block below). Previously had no
-  /// timeout, so a stalled connection could leave this hanging
-  /// indefinitely despite being written as fire-and-forget. See Section
-  /// 13 ("Networking Reliability") of the project instructions.
+  /// interrupt playback. Routing through [LogRemoteDataSource] keeps the
+  /// Supabase call out of the presentation layer; the datasource already
+  /// applies the telemetry timeout and swallows failures. Fire-once per
+  /// lesson load, matching the previous semantics.
   void _logLessonStartedOnce() async {
     if (_loggedStarted) return;
     _loggedStarted = true;
     final userId = SupabaseService.client.auth.currentUser?.id;
     if (userId == null) return;
-    try {
-      await SupabaseService.client.rpc(
-        'log_activity_async',
-        params: {
-          'p_user_id': userId,
-          'p_type': 'lesson_started',
-          'p_details': {
-            'course_id': widget.courseId,
-            'lesson_id': widget.lessonId,
-            'device_platform': DeviceInfoHelper.platform,
-            'player': 'player4',
-          },
-        },
-      ).timeout(NetworkConfig.telemetryTimeout);
-    } catch (_) {
-      // Best-effort analytics ping: failure here must never block or
-      // interrupt playback, and there is nothing actionable for the user
-      // to do about a dropped activity-log call, so it is intentionally
-      // swallowed rather than surfaced.
-    }
+    await _activityLogger.logLessonStarted(
+      userId: userId,
+      courseId: widget.courseId,
+      lessonId: widget.lessonId,
+      player: 'player4',
+      devicePlatform: DeviceInfoHelper.platform,
+    );
   }
 
   Widget _buildControlsOverlay(DesignSystemColors ds) {

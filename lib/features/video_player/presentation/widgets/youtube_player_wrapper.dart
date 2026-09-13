@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
-import '../../../../core/network/network_config.dart';
+import '../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../../../shared/cross_feature/courses_shared.dart';
@@ -33,6 +33,7 @@ class YoutubePlayerWrapper extends ConsumerStatefulWidget {
 
 class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
   YoutubePlayerController? _controller;
+  final _activityLogger = LogRemoteDataSource();
   bool _isPlayerReady = false;
   String? _lastVideoId;
   // Guards against scheduling more than one pending post-frame
@@ -126,33 +127,19 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
   }
 
   /// Best-effort analytics ping: failure here must never block or
-  /// interrupt playback (see catch block below). Previously had no
-  /// timeout, so a stalled connection could leave this hanging
-  /// indefinitely despite being written as fire-and-forget. See Section
-  /// 13 ("Networking Reliability") of the project instructions.
+  /// interrupt playback. Routing through [LogRemoteDataSource] keeps the
+  /// Supabase call out of the presentation layer; the datasource already
+  /// applies the telemetry timeout and swallows failures.
   Future<void> _logLessonStarted() async {
     final userId = SupabaseService.client.auth.currentUser?.id;
     if (userId == null) return;
-    try {
-      await SupabaseService.client.rpc(
-        'log_activity_async',
-        params: {
-          'p_user_id': userId,
-          'p_type': 'lesson_started',
-          'p_details': {
-            'course_id': widget.courseId,
-            'lesson_id': widget.lessonId,
-            'device_platform': DeviceInfoHelper.platform,
-            'player': 'youtube',
-          },
-        },
-      ).timeout(NetworkConfig.telemetryTimeout);
-    } catch (_) {
-      // Best-effort analytics ping: failure here must never block or
-      // interrupt playback, and there is nothing actionable for the user
-      // to do about a dropped activity-log call, so it is intentionally
-      // swallowed rather than surfaced.
-    }
+    await _activityLogger.logLessonStarted(
+      userId: userId,
+      courseId: widget.courseId,
+      lessonId: widget.lessonId,
+      player: 'youtube',
+      devicePlatform: DeviceInfoHelper.platform,
+    );
   }
 
   @override
