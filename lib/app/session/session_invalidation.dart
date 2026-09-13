@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app/core/feature_flags/feature_flags_provider.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:app/features/home/application/providers/home_provider.dart';
@@ -42,6 +43,12 @@ void invalidateAllUserScopedProviders(Ref ref) {
   invalidateNotificationsProviders(ref);
   invalidateDownloadsProviders(ref);
   invalidateVideoProgressProviders(ref);
+  // Feature-flag snapshots are user-scoped too: the evaluator targets by
+  // JWT (rollout/user/tenant overrides), so the keep-alive snapshot of the
+  // outgoing account must not be served to the next one. Invalidation
+  // rebuilds from safe defaults (no session → no cache to load); the next
+  // authenticated session re-fetches via the auth flow's refresh hook.
+  ref.invalidate(featureFlagsProvider);
 }
 
 /// Closes the shared lesson-progress queue at a logout boundary. Manual

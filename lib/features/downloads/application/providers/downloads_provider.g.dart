@@ -624,7 +624,7 @@ final class DownloadsNotifierProvider
   DownloadsNotifier create() => DownloadsNotifier();
 }
 
-String _$downloadsNotifierHash() => r'26cae9f6a396b01534e496e0752b838947e22c06';
+String _$downloadsNotifierHash() => r'8203cb55979aad04b139dcb22d668776dc791078';
 
 /// Notifier for managing the list of downloaded lessons.
 

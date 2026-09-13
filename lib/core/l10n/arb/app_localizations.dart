@@ -104,6 +104,42 @@ abstract class AppLocalizations {
   /// **'EduZone'**
   String get appTitle;
 
+  /// No description provided for @downloadsSettingsHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloads'**
+  String get downloadsSettingsHeader;
+
+  /// No description provided for @wifiOnlyDownloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Download over Wi-Fi only'**
+  String get wifiOnlyDownloads;
+
+  /// No description provided for @wifiOnlyDownloadsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Save mobile data — downloads run on Wi-Fi only'**
+  String get wifiOnlyDownloadsSubtitle;
+
+  /// No description provided for @wifiOnlyBlockedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Wi-Fi required'**
+  String get wifiOnlyBlockedTitle;
+
+  /// No description provided for @wifiOnlyBlockedMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re on mobile data and “Wi-Fi only” downloads is on.'**
+  String get wifiOnlyBlockedMessage;
+
+  /// No description provided for @wifiOnlyDownloadAnyway.
+  ///
+  /// In en, this message translates to:
+  /// **'Download once anyway'**
+  String get wifiOnlyDownloadAnyway;
+
   /// No description provided for @welcome.
   ///
   /// In en, this message translates to:
@@ -169,13 +205,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Downloads'**
   String get downloads;
-
-  String get downloadsSettingsHeader;
-  String get wifiOnlyDownloads;
-  String get wifiOnlyDownloadsSubtitle;
-  String get wifiOnlyBlockedTitle;
-  String get wifiOnlyBlockedMessage;
-  String get wifiOnlyDownloadAnyway;
 
   /// No description provided for @sectionsLabel.
   ///

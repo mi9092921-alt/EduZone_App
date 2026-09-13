@@ -6,6 +6,11 @@ import 'package:app/app/router/app_router.dart';
 import 'package:app/app/router/main_shell.dart';
 import 'package:app/core/constants/app_constants.dart';
 import 'package:app/core/error/failures.dart';
+import 'package:app/core/feature_flags/feature_flag_cache.dart';
+import 'package:app/core/feature_flags/feature_flag_keys.dart';
+import 'package:app/core/feature_flags/feature_flag_repository.dart';
+import 'package:app/core/feature_flags/feature_flag_snapshot.dart';
+import 'package:app/core/feature_flags/feature_flags_provider.dart';
 import 'package:app/core/l10n/arb/app_localizations_ar.dart';
 import 'package:app/core/l10n/arb/app_localizations_en.dart';
 import 'package:app/core/logging/infrastructure/event_dispatcher.dart' as logging;
@@ -26,6 +31,9 @@ import 'package:app/features/auth/presentation/screens/suspended_screen.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/courses/domain/entities/course.dart';
 import 'package:app/features/courses/domain/entities/course_enrollment.dart';
+import 'package:app/features/courses/domain/entities/lesson.dart';
+import 'package:app/features/courses/domain/entities/section.dart';
+import 'package:app/features/courses/domain/repositories/courses_repository.dart';
 import 'package:app/features/courses/presentation/screens/course_details_screen.dart';
 import 'package:app/features/courses/presentation/screens/my_courses_screen.dart';
 import 'package:app/features/home/application/providers/home_provider.dart';
@@ -44,6 +52,7 @@ import 'package:go_router/go_router.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _user = AppUser(
   id: 'integration-user',
@@ -77,9 +86,73 @@ final _enrollment = CourseEnrollment(
   id: 'enrollment-1',
   userId: _user.id,
   courseId: _course.id,
-  tenantId: 'tenant-1',
+  tenantId: _course.tenantId,
   course: _course,
 );
+
+/// Course fixture carrying a real section + preview lesson so the
+/// feature-flag scenarios can drive the actual lesson-tap →
+/// player-choice-sheet flow through the real SectionsAccordion widget.
+const _courseWithLesson = Course(
+  id: 'course-1',
+  tenantId: 'tenant-1',
+  title: 'Flutter Mastery',
+  status: 'published',
+  sections: [
+    Section(
+      id: 'section-1',
+      courseId: 'course-1',
+      tenantId: 'tenant-1',
+      title: 'Getting Started',
+      lessons: [
+        // Preview lessons are tappable without enrollment, so the
+        // scenario does not depend on the enrollment fixture.
+        Lesson(
+          id: 'lesson-1',
+          sectionId: 'section-1',
+          courseId: 'course-1',
+          tenantId: 'tenant-1',
+          title: 'Intro Lesson',
+          isPreview: true,
+        ),
+      ],
+    ),
+  ],
+);
+
+/// Stand-in for [FeatureFlagRepository] at the external backend boundary:
+/// returns configurable evaluator verdicts without touching Supabase.
+class _FakeFeatureFlagRepository implements FeatureFlagRepository {
+  List<FeatureFlagEvaluation> verdicts = const [];
+
+  @override
+  String? get currentUserId => _user.id;
+
+  @override
+  Future<List<FeatureFlagEvaluation>> evaluate(
+    List<FeatureFlagKey> keys,
+  ) async =>
+      verdicts;
+}
+
+/// Stand-in for [CoursesRepository] at the external backend boundary. Only
+/// [updateLessonProgress] is reachable from the lesson-tap flow under test
+/// (the tap marks the lesson watched before opening the sheet); the failure
+/// it returns is swallowed by the UI exactly like a network error would be.
+class _FakeCoursesRepository implements CoursesRepository {
+  @override
+  Future<Either<Failure, void>> updateLessonProgress({
+    required String courseId,
+    required String lessonId,
+    required bool completed,
+    required double progressPct,
+    int? watchTimeSec,
+  }) async =>
+      const Left(ServerFailure('offline in test'));
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 AppNotification _notification({required bool isRead}) => AppNotification(
       id: 'notification-1',
@@ -546,6 +619,193 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(repository.lastMarkedAllAsReadUserId, _user.id);
+    });
+
+    group('feature flags (core/feature_flags)', () {
+      Future<ProviderContainer> pumpFlaggedApp(
+        WidgetTester tester, {
+        required _FakeFeatureFlagRepository flagRepository,
+        bool refreshAfterPump = true,
+        bool disableCache = false,
+      }) async {
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
+
+        final container = _containerFor(
+          const AuthAuthenticated(user: _user, access: _activeAccess),
+          extraOverrides: [
+            featureFlagPrefsProvider.overrideWithValue(prefs),
+            featureFlagRepositoryProvider.overrideWithValue(flagRepository),
+            if (disableCache)
+              featureFlagCacheProvider.overrideWithValue(
+                FeatureFlagCache(prefs: null),
+              ),
+            myCoursesProvider.overrideWith((ref) async => [_enrollment]),
+            courseDetailsProvider(_courseWithLesson.id).overrideWith(
+              (ref) async => _courseWithLesson,
+            ),
+            myCourseEnrollmentProvider(_courseWithLesson.id).overrideWith(
+              (ref) async => null,
+            ),
+            coursesRepositoryProvider.overrideWithValue(
+              _FakeCoursesRepository(),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        await _pumpApp(tester, container);
+        await _pumpUntil(tester, find.byType(MainShell));
+
+        // Mirror the real Auth notifier's post-authentication hook: the
+        // scenario replaces Auth with _ScenarioAuth, so the refresh that
+        // production fires on AuthAuthenticated must be triggered explicitly
+        // here — otherwise the provider serves cache/defaults and the
+        // repository's configured verdicts never reach the UI. Scenarios
+        // that assert the PRE-refresh state pass refreshAfterPump: false.
+        if (refreshAfterPump) {
+          await container.read(featureFlagsProvider.notifier).refresh();
+        }
+        return container;
+      }
+
+      Future<void> openPlayerChoiceSheet(
+        WidgetTester tester,
+        GoRouter router,
+      ) async {
+        router.go('${AppRoutes.courses}/${_courseWithLesson.id}');
+        await tester.pumpAndSettle();
+        expect(find.byType(CourseDetailsScreen), findsOneWidget);
+
+        // Expand the section to reveal the lesson tile, then tap it — the
+        // real SectionsAccordion._handleLessonTap flow. Tapping the section
+        // header TOGGLES the ExpansionTile, so a second open in the same
+        // test (sheet dismissed, section already expanded) must not tap it
+        // again or the lesson tile disappears.
+        if (find.text('Intro Lesson').evaluate().isEmpty) {
+          await tester.tap(find.text('Getting Started'));
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.text('Intro Lesson'));
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> dismissSheet(WidgetTester tester) async {
+        await tester.tapAt(const Offset(30, 30));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets(
+          'unregistered flag preserves production behavior in the real '
+          'player-choice sheet', (tester) async {
+        // No verdicts at all — exactly what the canonical evaluator returns
+        // when `player.direct_player` has no row registered yet. The app
+        // must behave as it did before feature flags existed.
+        final flagRepository = _FakeFeatureFlagRepository()
+          ..verdicts = const [];
+        final container = await pumpFlaggedApp(
+          tester,
+          flagRepository: flagRepository,
+        );
+        final router = container.read(routerProvider);
+
+        final l10n = AppLocalizationsEn();
+        await openPlayerChoiceSheet(tester, router);
+
+        expect(find.text(l10n.directPlayer), findsOneWidget);
+        expect(find.text(l10n.youtubePlayer), findsOneWidget);
+        expect(find.text(l10n.modernPlayer), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets(
+          'server kill switch (enabled=false) removes the direct-player '
+          'option from the real sheet, and a refresh restores it',
+          (tester) async {
+        final flagRepository = _FakeFeatureFlagRepository()
+          ..verdicts = const [
+            FeatureFlagEvaluation(
+              key: FeatureFlagKey.playerDirectPlayer,
+              enabled: false,
+              version: 2,
+            ),
+          ];
+        final container = await pumpFlaggedApp(
+          tester,
+          flagRepository: flagRepository,
+        );
+        final router = container.read(routerProvider);
+        final l10n = AppLocalizationsEn();
+
+        await openPlayerChoiceSheet(tester, router);
+
+        // Kill switch active: only the direct player disappears.
+        expect(find.text(l10n.directPlayer), findsNothing);
+        expect(find.text(l10n.youtubePlayer), findsOneWidget);
+        expect(find.text(l10n.modernPlayer), findsOneWidget);
+
+        await dismissSheet(tester);
+
+        // Rollback path: the operator re-enables server-side; the next
+        // evaluation restores the option without any app update.
+        flagRepository.verdicts = const [
+          FeatureFlagEvaluation(
+            key: FeatureFlagKey.playerDirectPlayer,
+            enabled: true,
+            version: 3,
+          ),
+        ];
+        await container.read(featureFlagsProvider.notifier).refresh();
+        await tester.pump();
+
+        await openPlayerChoiceSheet(tester, router);
+        expect(find.text(l10n.directPlayer), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets(
+          'flags provider in the real app tree starts from safe defaults '
+          'synchronously and reflects the server verdict after refresh',
+          (tester) async {
+        final flagRepository = _FakeFeatureFlagRepository()
+          ..verdicts = const [
+            FeatureFlagEvaluation(
+              key: FeatureFlagKey.playerDirectPlayer,
+              enabled: false,
+              version: 1,
+            ),
+          ];
+        final container = await pumpFlaggedApp(
+          tester,
+          flagRepository: flagRepository,
+          // Assert the PRE-refresh state: the disk cache is deliberately
+          // DISABLED here (a supported configuration — see
+          // FeatureFlagCache's nullable-prefs contract) so the scenario is
+          // deterministic even though integration tests share one process
+          // and a previous test may have persisted a user-keyed snapshot.
+          refreshAfterPump: false,
+          disableCache: true,
+        );
+
+        // First read (no fetch triggered by the auth hook here because the
+        // scenario replaces the real Auth notifier): safe defaults, no
+        // network, no throw.
+        final initial = container.read(featureFlagsProvider);
+        expect(initial.source, FeatureFlagSource.defaults);
+        expect(
+          initial.isEnabled(FeatureFlagKey.playerDirectPlayer),
+          isTrue, // client default mirrors current production behavior
+        );
+        expect(initial.evaluatedAt, isNull);
+
+        await container.read(featureFlagsProvider.notifier).refresh();
+
+        final after = container.read(featureFlagsProvider);
+        expect(after.source, FeatureFlagSource.server);
+        expect(after.isEnabled(FeatureFlagKey.playerDirectPlayer), isFalse);
+        expect(after.versionOf(FeatureFlagKey.playerDirectPlayer), 1);
+        expect(tester.takeException(), isNull);
+      });
     });
   });
 }

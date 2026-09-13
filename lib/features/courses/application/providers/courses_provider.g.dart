@@ -1062,7 +1062,7 @@ final class PublicCoursesProvider
   PublicCourses create() => PublicCourses();
 }
 
-String _$publicCoursesHash() => r'2165ec1d1389f43e93f0a973090ed699cf634ecd';
+String _$publicCoursesHash() => r'f80dd2776a5f412fd13e803634eeffd57eb2ca6b';
 
 abstract class _$PublicCourses extends $AsyncNotifier<PaginatedCoursesState> {
   FutureOr<PaginatedCoursesState> build();

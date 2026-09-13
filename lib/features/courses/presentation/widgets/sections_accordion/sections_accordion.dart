@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../../core/constants/app_constants.dart';
+import '../../../../../core/feature_flags/feature_flag_keys.dart';
+import '../../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../shared/cross_feature/downloads_shared.dart';
 import '../../../../../shared/providers/download_network_policy_provider.dart';
@@ -157,6 +159,13 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
       context,
       onPlayerSelected: (playerType) =>
           _handlePlayerChoice(context, lesson, playerType),
+      // Remote kill switch for the direct (player4) backend — pure UI
+      // affordance gating; playback permission itself is enforced
+      // server-side regardless of this value. Defaults to true, so an
+      // unregistered flag preserves today's behavior exactly.
+      showDirectPlayer: ref
+          .read(featureFlagsProvider)
+          .isEnabled(FeatureFlagKey.playerDirectPlayer),
     );
   }
 

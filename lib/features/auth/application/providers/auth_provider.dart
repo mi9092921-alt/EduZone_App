@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/error/exceptions.dart';
+import '../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../core/logging/domain/app_event.dart';
 import '../../../../core/logging/logging_providers.dart';
 import '../../../../core/network/request_cancellation_manager.dart';
@@ -127,6 +128,24 @@ class Auth extends _$Auth {
 
   bool _isStudentUser(AppUser user) => user.primaryRole == UserRole.student;
 
+  /// Fire-and-forget feature-flag refresh at an auth-established boundary.
+  ///
+  /// Flags are cosmetic UI configuration: this must never delay, fail, or
+  /// otherwise influence the auth flow. The try/catch is not paranoia — the
+  /// provider can legitimately be in an error state (e.g. unit-test
+  /// containers without Supabase initialized), and a synchronous
+  /// ProviderException from `ref.read` would otherwise escape into
+  /// login()/session-restore error handling and change auth outcomes
+  /// (regression covered by auth_notifier_test's auth flows, which run
+  /// without any flag overrides).
+  void _refreshFeatureFlags() {
+    try {
+      unawaited(ref.read(featureFlagsProvider.notifier).refresh());
+    } catch (e) {
+      debugPrint('[Auth] Feature flag refresh unavailable: ${e.runtimeType}');
+    }
+  }
+
   // ─── Session Initialization (App Start) ──────────────────────────────────
 
   /// Checks for existing Supabase session on cold start.
@@ -208,6 +227,10 @@ class Auth extends _$Auth {
                   : null,
             ),
           );
+          // Re-evaluate feature flags under this session — the evaluator
+          // targets by the JWT server-side, so this is the first moment a
+          // meaningful verdict exists on a cold-start restore.
+          _refreshFeatureFlags();
           // Register only after access and student-role checks have passed.
           // The operation is best-effort and retried by the core service.
           unawaited(PushTokenRegistrationService.registerCurrentUserToken());
@@ -427,6 +450,10 @@ class Auth extends _$Auth {
         _safeSetState(AuthAuthenticated(user: appUser, access: access));
         if (!_isCurrentAuthOperation(generation)) return;
 
+        // Same contract as _initializeSession's refresh hook: server-side
+        // evaluation becomes possible the moment this session is live.
+        _refreshFeatureFlags();
+
         unawaited(PushTokenRegistrationService.registerCurrentUserToken());
 
         // Section 15 ("user identification policy"): attach the opaque
@@ -603,6 +630,10 @@ class Auth extends _$Auth {
           }
 
           _safeSetState(AuthAuthenticated(user: appUser, access: access));
+          // Access re-verified (e.g. from a restricted screen) — refresh
+          // flags too so a verdict that changed while the user was on that
+          // screen applies immediately.
+          _refreshFeatureFlags();
         } else {
           _safeSetState(const AuthUnauthenticated());
         }

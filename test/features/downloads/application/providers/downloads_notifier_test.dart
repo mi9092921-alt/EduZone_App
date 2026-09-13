@@ -6,6 +6,7 @@ import 'package:app/features/downloads/domain/entities/download_enums.dart';
 import 'package:app/features/downloads/domain/entities/download_progress.dart';
 import 'package:app/features/downloads/domain/entities/downloaded_lesson.dart';
 import 'package:app/features/downloads/domain/repositories/download_repository.dart';
+import 'package:app/shared/providers/download_network_policy_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
@@ -48,6 +49,14 @@ Future<void> _settle() async {
   }
 }
 
+/// Offline stub for the Wi-Fi-only download policy: serves the default
+/// state without touching connectivity_plus / SharedPreferences platform
+/// channels (see the main() doc comment above).
+class _StubNetworkPolicyNotifier extends DownloadNetworkPolicyNotifier {
+  @override
+  DownloadNetworkPolicyState build() => const DownloadNetworkPolicyState();
+}
+
 void main() {
   late MockDownloadRepository repository;
   late StreamController<void> changeStreamController;
@@ -61,7 +70,17 @@ void main() {
     ).thenAnswer((_) => changeStreamController.stream);
 
     container = ProviderContainer(
-      overrides: [downloadRepositoryProvider.overrideWithValue(repository)],
+      overrides: [
+        downloadRepositoryProvider.overrideWithValue(repository),
+        // The startDownload/resumeDownload paths read
+        // downloadNetworkPolicyProvider, whose real build() touches
+        // connectivity_plus and SharedPreferences platform channels —
+        // external boundaries that must not run in a unit test. The stub
+        // serves the default state without any platform I/O.
+        downloadNetworkPolicyProvider.overrideWith(
+          _StubNetworkPolicyNotifier.new,
+        ),
+      ],
     );
   });
 

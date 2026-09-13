@@ -12,6 +12,26 @@ class AppLocalizationsAr extends AppLocalizations {
   String get appTitle => 'EduZone';
 
   @override
+  String get downloadsSettingsHeader => 'التنزيلات';
+
+  @override
+  String get wifiOnlyDownloads => 'التنزيل عبر الواي فاي فقط';
+
+  @override
+  String get wifiOnlyDownloadsSubtitle =>
+      'توفير باقة الجوال — التنزيل عند اتصال الواي فاي فقط';
+
+  @override
+  String get wifiOnlyBlockedTitle => 'الواي فاي مطلوب';
+
+  @override
+  String get wifiOnlyBlockedMessage =>
+      'أنت متصل ببيانات الجوال وخيار «التنزيل عبر الواي فاي فقط» مفعّل.';
+
+  @override
+  String get wifiOnlyDownloadAnyway => 'تنزيل مرة واحدة على أي حال';
+
+  @override
   String get welcome => 'أهلاً بك';
 
   @override
@@ -43,26 +63,6 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get downloads => 'التنزيلات';
-
-  @override
-  String get downloadsSettingsHeader => 'التنزيلات';
-
-  @override
-  String get wifiOnlyDownloads => 'التنزيل عبر الواي فاي فقط';
-
-  @override
-  String get wifiOnlyDownloadsSubtitle =>
-      'توفير باقة الجوال — التنزيل عند اتصال الواي فاي فقط';
-
-  @override
-  String get wifiOnlyBlockedTitle => 'الواي فاي مطلوب';
-
-  @override
-  String get wifiOnlyBlockedMessage =>
-      'أنت متصل ببيانات الجوال وخيار «التنزيل عبر الواي فاي فقط» مفعّل.';
-
-  @override
-  String get wifiOnlyDownloadAnyway => 'تنزيل مرة واحدة على أي حال';
 
   @override
   String get sectionsLabel => 'أقسام';

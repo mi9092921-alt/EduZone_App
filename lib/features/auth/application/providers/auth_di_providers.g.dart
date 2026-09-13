@@ -226,11 +226,8 @@ final class CheckStudentAppAccessUseCaseProvider
   }
 }
 
-// NOTE: this hash is a placeholder carried over from the old
-// _$checkUserAccessUseCaseHash — regenerate via `dart run build_runner
-// build` so Riverpod's source hash matches the renamed function again.
 String _$checkStudentAppAccessUseCaseHash() =>
-    r'81ebf7e8657a3983b588f1c22392066a73f58a8b';
+    r'71c11f0e930020fbccc686bcdd601c34282e0436';
 
 @ProviderFor(bindDeviceUseCase)
 final bindDeviceUseCaseProvider = BindDeviceUseCaseProvider._();

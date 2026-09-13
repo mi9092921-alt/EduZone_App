@@ -315,11 +315,13 @@ final class NotificationsChangesProvider
       $StreamProviderElement(pointer);
 
   @override
-  Stream<void> create(Ref ref) => notificationsChanges(ref);
+  Stream<void> create(Ref ref) {
+    return notificationsChanges(ref);
+  }
 }
 
 String _$notificationsChangesHash() =>
-    r'1f9b9a8d5a03c3b4ab4db6a8f9ce2e1a4c6d7e8f';
+    r'779b427ae4cd0aa251c4defd51c16e64a17a1165';
 
 @ProviderFor(unreadCount)
 final unreadCountProvider = UnreadCountProvider._();

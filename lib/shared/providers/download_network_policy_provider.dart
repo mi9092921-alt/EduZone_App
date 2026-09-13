@@ -89,7 +89,13 @@ class DownloadNetworkPolicyNotifier
   }
 }
 
-final downloadNetworkPolicyProvider = NotifierProvider<
+// Deliberate keep-alive singleton (check-ignore): this notifier owns the
+// connectivity_plus subscription that drives the Wi-Fi-only download policy.
+// DownloadManager and the long-running download flows read it via ref.read
+// mid-download; an auto-dispose variant would tear the connectivity
+// subscription down whenever no widget is actively watching, leaving
+// in-flight downloads making policy decisions on a dead state stream.
+final downloadNetworkPolicyProvider = NotifierProvider< // check-ignore
     DownloadNetworkPolicyNotifier, DownloadNetworkPolicyState>(
   DownloadNetworkPolicyNotifier.new,
 );

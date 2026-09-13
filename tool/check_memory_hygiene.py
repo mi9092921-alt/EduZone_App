@@ -69,6 +69,15 @@ LONG_LIVED_PROVIDER_ALLOWLIST = {
     # One app-wide queue shared by every video-progress family instance;
     # the provider registers ref.onDispose(engine.dispose).
     "lessonProgressSyncEngine",
+    # Feature-flag module (lib/core/feature_flags/): app-wide configuration
+    # state. The repository/cache are stateless infra singletons; the
+    # FeatureFlags notifier holds the session-wide snapshot and is
+    # invalidated by invalidateAllUserScopedProviders on every sign-out
+    # path (lib/app/session/session_invalidation.dart), so a stale
+    # per-account snapshot cannot survive a session boundary.
+    "featureFlagRepository",
+    "featureFlagCache",
+    "FeatureFlags",
 }
 
 MANUAL_PROVIDER_RE = re.compile(

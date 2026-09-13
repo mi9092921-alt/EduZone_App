@@ -137,47 +137,6 @@ final class ResumeLessonProvider
 
 String _$resumeLessonHash() => r'67718fb574c0b1f727040ef5bebbde34b3efcd9b';
 
-@ProviderFor(resumeLessons)
-final resumeLessonsProvider = ResumeLessonsProvider._();
-
-final class ResumeLessonsProvider
-    extends
-        $FunctionalProvider<
-          AsyncValue<List<ResumeLesson>>,
-          List<ResumeLesson>,
-          FutureOr<List<ResumeLesson>>
-        >
-    with
-        $FutureModifier<List<ResumeLesson>>,
-        $FutureProvider<List<ResumeLesson>> {
-  ResumeLessonsProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'resumeLessonsProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$resumeLessonsHash();
-
-  @$internal
-  @override
-  $FutureProviderElement<List<ResumeLesson>> $createElement(
-    $ProviderPointer pointer,
-  ) => $FutureProviderElement(pointer);
-
-  @override
-  FutureOr<List<ResumeLesson>> create(Ref ref) {
-    return resumeLessons(ref);
-  }
-}
-
-String _$resumeLessonsHash() => r'7f7e8f9f2a6d4d9a8c2c9f0f0f4f8a7b';
-
 @ProviderFor(recentCourses)
 final recentCoursesProvider = RecentCoursesProvider._();
 
@@ -259,3 +218,44 @@ final class RecentTodosProvider
 }
 
 String _$recentTodosHash() => r'093d27d3b2d87f147f379115c5b788656566dffa';
+
+@ProviderFor(resumeLessons)
+final resumeLessonsProvider = ResumeLessonsProvider._();
+
+final class ResumeLessonsProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<ResumeLesson>>,
+          List<ResumeLesson>,
+          FutureOr<List<ResumeLesson>>
+        >
+    with
+        $FutureModifier<List<ResumeLesson>>,
+        $FutureProvider<List<ResumeLesson>> {
+  ResumeLessonsProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'resumeLessonsProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$resumeLessonsHash();
+
+  @$internal
+  @override
+  $FutureProviderElement<List<ResumeLesson>> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<List<ResumeLesson>> create(Ref ref) {
+    return resumeLessons(ref);
+  }
+}
+
+String _$resumeLessonsHash() => r'182db29ff45cfb8ce83ea91cb7ecb97b3055200b';

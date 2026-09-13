@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app_initializer.dart';
 import 'app/main_app.dart';
+import 'core/feature_flags/feature_flags_provider.dart';
 import 'core/services/sentry_service.dart';
 import 'shared/utils/global_error_handler.dart';
 
@@ -24,7 +25,18 @@ Future<void> main() async {
       // Bootstrap Core Services
       await AppInitializer.init();
 
-      runApp(const ProviderScope(child: EduZoneApp()));
+      runApp(
+        ProviderScope(
+          // Composition-root wiring for the feature-flag cache: core/ cannot
+          // import lib/app/ to reach AppInitializer.prefs directly (see the
+          // provider's doc comment), so the bootstrapped instance is handed
+          // in here — safe because AppInitializer.init() has already run.
+          overrides: [
+            featureFlagPrefsProvider.overrideWithValue(AppInitializer.prefs),
+          ],
+          child: const EduZoneApp(),
+        ),
+      );
     },
   );
 }
