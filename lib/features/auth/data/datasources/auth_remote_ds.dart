@@ -88,8 +88,11 @@ class AuthRemoteDataSource {
 
   // ─── Login ────────────────────────────────────────────────────
 
-  /// Signs in with email + password.
-  /// On success, fetches the user row from the `users` table.
+  /// Signs in with email + password against Supabase Auth only.
+  ///
+  /// The profile is intentionally fetched separately, after the app access
+  /// RPC has classified the account. A client-side `users` read is RLS-gated
+  /// and can return no row for locked, suspended, or banned accounts.
   ///
   /// Previously neither the sign-in call nor the profile fetch had a
   /// client-side timeout -- a stalled connection left `login()` (and the
@@ -107,7 +110,7 @@ class AuthRemoteDataSource {
   /// that timed out client-side may already have succeeded server-side.
   /// See Section 13 ("Networking Reliability") of the project
   /// instructions.
-  Future<AppUser> login(String email, String password) async {
+  Future<void> login(String email, String password) async {
     try {
       final response = await _client.auth
           .signInWithPassword(email: email, password: password)
@@ -120,31 +123,12 @@ class AuthRemoteDataSource {
         throw const EmailNotConfirmedException();
       }
 
-      // Fetch full user profile from users table
-      final userData = await _client
-          .from('users')
-          .select()
-          .eq('id', response.user!.id)
-          .maybeSingle()
-          .timeout(NetworkConfig.readTimeout);
-
-      if (userData == null) {
-        // Sign out to prevent an orphaned Supabase Auth session: the user has
-        // a valid JWT but no matching row in public.users, so every subsequent
-        // getCurrentUser() call would return null while currentSession is
-        // non-null, putting the app in an unrecoverable state.
-        await _client.auth.signOut().timeout(NetworkConfig.writeTimeout);
-        throw const ServerException('User profile not found'); // check-ignore
-      }
-
       // Best-effort telemetry. Authenticated clients intentionally do not
       // have direct UPDATE on public.users, so this goes through a narrowly
       // scoped SECURITY DEFINER RPC. Independently bounded and
       // exception-swallowed inside _recordCurrentUserActivity itself -- see
       // its doc comment.
       await _recordCurrentUserActivity(recordLogin: true);
-
-      return _mapUserData(userData);
     } on TimeoutException {
       throw const RequestTimeoutException();
     } on AuthException catch (e) {
@@ -154,14 +138,6 @@ class AuthRemoteDataSource {
       // source of truth for auth-error mapping, and the diagnostic
       // debugPrint below always fires for it.
       throw _mapAuthException(e);
-    } on PostgrestException catch (e) {
-      // Thrown when fetching the user profile row from the `users` table
-      // fails after a successful Supabase Auth sign-in (e.g. RLS rejection,
-      // network hiccup on the DB query, or a missing profile row). Without
-      // this catch, a raw PostgrestException escapes to auth_provider's
-      // generic catch block, which maps it to 'errorGeneric' ("An error
-      // occurred") because AuthErrorPolicy doesn't handle PostgrestException.
-      throw _mapRpcException(e);
     }
   }
 

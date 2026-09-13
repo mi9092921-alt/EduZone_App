@@ -384,7 +384,7 @@ class Auth extends _$Auth {
     _safeSetState(const AuthAuthenticating());
 
     try {
-      final appUser = await ref.read(loginUserUseCaseProvider)(email, password);
+      await ref.read(loginUserUseCaseProvider)(email, password);
       if (!_isCurrentAuthOperation(generation)) return;
 
       // Bind device synchronously first to check limits
@@ -401,6 +401,22 @@ class Auth extends _$Auth {
       if (!_isCurrentAuthOperation(generation)) return;
 
       if (access.isAllowed) {
+        final appUser = await ref.read(getCurrentUserUseCaseProvider)();
+        if (!_isCurrentAuthOperation(generation)) return;
+
+        if (appUser == null) {
+          debugPrint(
+            '[Auth] Login succeeded and access was allowed, but no user profile was found.',
+          );
+          GlobalErrorHandler.logError(
+            const ServerException('User profile not found'), // check-ignore
+            StackTrace.current,
+          );
+          await _forceLocalSignOutOnly(ref.read(supabaseClientProvider));
+          _safeSetState(const AuthUnauthenticated(error: 'errorGeneric'));
+          return;
+        }
+
         if (!_isStudentUser(appUser)) {
           debugPrint('[Auth] Non-student login blocked from student app.');
           await _forceLocalSignOutOnly(ref.read(supabaseClientProvider));

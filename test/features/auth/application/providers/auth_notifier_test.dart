@@ -83,11 +83,13 @@ void main() {
   /// Stubs the minimum set of calls that every login() invocation makes.
   void stubSuccessfulLogin() {
     when(() => mockDataSource.login(any(), any()))
-        .thenAnswer((_) async => _tUser);
+        .thenAnswer((_) async {});
     when(() => mockDataSource.bindDevice(any(), any(), any()))
         .thenAnswer((_) async => _tBindResult);
     when(() => mockDataSource.checkStudentAppAccess())
         .thenAnswer((_) async => _tActiveAccess);
+    when(() => mockDataSource.getCurrentUser())
+        .thenAnswer((_) async => _tUser);
     when(() => mockDataSource.syncUserActivity(
           userId: any(named: 'userId'),
           tenantId: any(named: 'tenantId'),
@@ -263,7 +265,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       await _settleInitialization();
 
       when(() => mockDataSource.login(any(), any()))
-          .thenAnswer((_) async => _tUser);
+          .thenAnswer((_) async {});
       when(() => mockDataSource.bindDevice(any(), any(), any()))
           .thenAnswer((_) async => _tBindResult);
       when(() => mockDataSource.checkStudentAppAccess())
@@ -288,7 +290,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       await _settleInitialization();
 
       when(() => mockDataSource.login(any(), any()))
-          .thenAnswer((_) async => _tUser);
+          .thenAnswer((_) async {});
       when(() => mockDataSource.bindDevice(any(), any(), any()))
           .thenAnswer((_) async => _tBindResult);
       when(() => mockDataSource.checkStudentAppAccess())
@@ -328,7 +330,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       await _settleInitialization();
 
       when(() => mockDataSource.login(any(), any()))
-          .thenAnswer((_) async => _tUser);
+          .thenAnswer((_) async {});
       when(() => mockDataSource.bindDevice(any(), any(), any()))
           .thenThrow(const MaxDevicesReachedException());
       when(() => mockAuth.currentSession).thenReturn(null);
@@ -588,11 +590,13 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       );
 
       when(() => mockDataSource.login(any(), any()))
-          .thenAnswer((_) async => teacherUser);
+          .thenAnswer((_) async {});
       when(() => mockDataSource.bindDevice(any(), any(), any()))
           .thenAnswer((_) async => _tBindResult);
       when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tActiveAccess);
+      when(() => mockDataSource.getCurrentUser())
+          .thenAnswer((_) async => teacherUser);
 
       await container.read(authProvider.notifier).login(
             'teacher@example.com',
@@ -865,13 +869,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       container.read(authProvider);
       await _settleInitialization();
 
-      final firstLoginGate = Completer<AppUser>();
-      const firstUser = AppUser(
-        id: 'user-first',
-        email: 'first@example.com',
-        firstName: 'First',
-        tenantId: 'tenant-1',
-      );
+      final firstLoginGate = Completer<void>();
       const secondUser = AppUser(
         id: 'user-second',
         email: 'second@example.com',
@@ -882,12 +880,13 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       when(() => mockDataSource.login(any(), any())).thenAnswer((invocation) async {
         final email = invocation.positionalArguments.first as String;
         if (email == 'first@example.com') return firstLoginGate.future;
-        return secondUser;
       });
       when(() => mockDataSource.bindDevice(any(), any(), any()))
           .thenAnswer((_) async => _tBindResult);
       when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tActiveAccess);
+      when(() => mockDataSource.getCurrentUser())
+          .thenAnswer((_) async => secondUser);
       when(() => mockDataSource.syncUserActivity(
             userId: any(named: 'userId'),
             tenantId: any(named: 'tenantId'),
@@ -913,7 +912,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
         'user-second',
       );
 
-      firstLoginGate.complete(firstUser);
+      firstLoginGate.complete();
       await first;
 
       final finalState = container.read(authProvider);

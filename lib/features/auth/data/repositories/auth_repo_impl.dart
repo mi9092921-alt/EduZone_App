@@ -21,7 +21,7 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<AppUser> login(String email, String password) {
+  Future<void> login(String email, String password) {
     return _dataSource.login(email, password);
   }
 

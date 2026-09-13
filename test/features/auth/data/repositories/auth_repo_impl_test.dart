@@ -45,14 +45,13 @@ void main() {
   });
 
   group('login', () {
-    test('should forward call to data source and return user', () async {
+    test('should forward call to data source', () async {
       when(
         () => mockDataSource.login(tEmail, tPassword),
-      ).thenAnswer((_) async => tUser);
+      ).thenAnswer((_) async {});
 
-      final result = await repository.login(tEmail, tPassword);
+      await repository.login(tEmail, tPassword);
 
-      expect(result, equals(tUser));
       verify(() => mockDataSource.login(tEmail, tPassword)).called(1);
       verifyNoMoreInteractions(mockDataSource);
     });

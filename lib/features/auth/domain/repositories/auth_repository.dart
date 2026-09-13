@@ -10,8 +10,9 @@ abstract class AuthRepository {
   /// Check current user's access status via RPC `check_student_app_access()`.
   Future<UserAccess> checkStudentAppAccess();
 
-  /// Sign in with email + password. Returns the authenticated user.
-  Future<AppUser> login(String email, String password);
+  /// Sign in with email + password against Supabase Auth only.
+  /// The profile must be fetched after the app access check.
+  Future<void> login(String email, String password);
 
   /// Bind the current device to the authenticated user.
   Future<BindDeviceResult> bindDevice(

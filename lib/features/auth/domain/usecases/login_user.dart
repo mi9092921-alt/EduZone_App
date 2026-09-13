@@ -1,4 +1,3 @@
-import '../entities/app_user.dart';
 import '../repositories/auth_repository.dart';
 
 class LoginUser {
@@ -6,7 +5,7 @@ class LoginUser {
 
   LoginUser(this.repository);
 
-  Future<AppUser> call(String email, String password) {
+  Future<void> call(String email, String password) {
     return repository.login(email, password);
   }
 }
