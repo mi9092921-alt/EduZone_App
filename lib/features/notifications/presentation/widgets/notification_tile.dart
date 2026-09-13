@@ -12,17 +12,25 @@ class NotificationTile extends ConsumerWidget {
 
   const NotificationTile({super.key, required this.notification});
 
-  void _markAsRead(WidgetRef ref) {
+  Future<void> _markAsRead(WidgetRef ref) async {
     if (!notification.isRead) {
-      ref.read(markAsReadProvider).call(notification.id, notification.userId);
+      final result = await ref
+          .read(markAsReadProvider)
+          .call(notification.id, notification.userId);
+
+      result.fold(
+        (_) {},
+        (_) => ref.invalidate(notificationsProvider),
+      );
     }
   }
 
-  void _showDetails(BuildContext context, WidgetRef ref) {
-    _markAsRead(ref);
+  Future<void> _showDetails(BuildContext context, WidgetRef ref) async {
+    await _markAsRead(ref);
+    if (!context.mounted) return;
 
     final ds = AppColors.of(context);
-    showModalBottomSheet(
+    await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,

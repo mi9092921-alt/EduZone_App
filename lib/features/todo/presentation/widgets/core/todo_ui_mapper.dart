@@ -13,13 +13,15 @@ class TodoUiMapper {
     
     final l10n = AppLocalizations.of(context)!;
     final locale = Localizations.localeOf(context).languageCode;
-    final isOverdue = todo.isOverdue(DateTime.now());
+    final now = DateTime.now();
+    final isOverdue = todo.isOverdue(now);
 
     return TodoDateFormatter.format(
       date: todo.dueAt!,
       isOverdue: isOverdue,
       l10n: l10n,
       locale: locale,
+      now: now,
     );
   }
 }

@@ -345,6 +345,15 @@ class AppLocalizationsAr extends AppLocalizations {
   }
 
   @override
+  String get dueToday => '\u0627\u0644\u064a\u0648\u0645';
+
+  @override
+  String get dueYesterday => '\u0623\u0645\u0633';
+
+  @override
+  String get dueTomorrow => '\u0627\u0644\u063a\u062f';
+
+  @override
   String minCount(int count) {
     return '$count دقيقة';
   }

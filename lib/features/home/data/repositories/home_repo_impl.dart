@@ -23,6 +23,15 @@ class HomeRepositoryImpl implements HomeRepository {
   }
 
   @override
+  Future<Either<Failure, List<ResumeLesson>>> getResumeLessons() async {
+    try {
+      return Right(await remoteDataSource.getResumeLessons());
+    } catch (e) {
+      return Left(failureFromError(e));
+    }
+  }
+
+  @override
   Future<Either<Failure, List<HomeCourseSummary>>> getRecentCourses() async {
     try {
       // `remoteDataSource` still returns the `courses` feature's `Course`

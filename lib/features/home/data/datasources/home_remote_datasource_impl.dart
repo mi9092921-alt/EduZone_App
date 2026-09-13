@@ -18,6 +18,69 @@ class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
     : _client = client ?? SupabaseService.client;
 
   @override
+  Future<List<ResumeLesson>> getResumeLessons() async {
+    return NetworkGuard.read(() async {
+      final userId = _client.auth.currentUser?.id;
+      if (userId == null) return <ResumeLesson>[];
+
+      final enrollmentResponse = await _client
+          .from('enrollments')
+          .select('course_id')
+          .eq('user_id', userId)
+          .eq('status', 'active');
+      final enrolledCourseIds = (enrollmentResponse as List)
+          .map((row) => (row as Map)['course_id'] as String)
+          .toSet()
+          .toList();
+      if (enrolledCourseIds.isEmpty) return <ResumeLesson>[];
+
+      final response = await _client
+          .from('user_progress')
+          .select('''
+            lesson_id,
+            completed,
+            progress_pct,
+            last_watched,
+            course:courses!user_progress_course_id_fkey(id, title, thumbnail_url),
+            lesson:lessons(id, title, section_id, section:sections(title))
+          ''')
+          .eq('user_id', userId)
+          .eq('completed', false)
+          .inFilter('course_id', enrolledCourseIds)
+          .order('last_watched', ascending: false)
+          .limit(30);
+
+      final lessons = <ResumeLesson>[];
+      final seenCourseIds = <String>{};
+      for (final row in response as List) {
+        final data = Map<String, dynamic>.from(row as Map);
+        final course = data['course'] as Map?;
+        final lesson = data['lesson'] as Map?;
+        final section = lesson?['section'] as Map?;
+        if (course == null || lesson == null) continue;
+
+        final courseId = course['id'] as String;
+        if (!seenCourseIds.add(courseId)) continue;
+        lessons.add(
+          ResumeLesson.fromJson({
+            'course_id': courseId,
+            'course_title': course['title'] as String? ?? '',
+            'thumbnail_url': course['thumbnail_url'] as String?,
+            'lesson_id': lesson['id'] as String,
+            'lesson_title': lesson['title'] as String? ?? '',
+            'section_title': section?['title'] as String? ?? '',
+            'last_watched': data['last_watched'] as String? ??
+                DateTime.now().toIso8601String(),
+            'progress_pct': (data['progress_pct'] as num?)?.toDouble() ?? 0.0,
+          }),
+        );
+        if (lessons.length == 3) break;
+      }
+      return lessons;
+    });
+  }
+
+  @override
   Future<ResumeLesson?> getResumeLesson() async {
     // Deliberately degrades to `null` (home just hides the resume card)
     // instead of throwing on ANY failure -- including now-classified

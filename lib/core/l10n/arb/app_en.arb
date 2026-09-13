@@ -192,6 +192,9 @@
       }
     }
   },
+  "dueToday": "Today",
+  "dueYesterday": "Yesterday",
+  "dueTomorrow": "Tomorrow",
   "minCount": "{count} min",
   "@minCount": {
     "placeholders": {

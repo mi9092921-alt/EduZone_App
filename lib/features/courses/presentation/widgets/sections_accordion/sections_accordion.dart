@@ -159,9 +159,6 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
   }
 
   Future<void> _handleToggleWatched(String lessonId, bool isWatched) async {
-    // Update local preferences
-    await WatchedLessonsService.toggleWatchedStatus(lessonId, isWatched);
-
     // Update local UI state optimistically
     if (mounted) {
       setState(() {
@@ -173,7 +170,12 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
       });
     }
 
-    // Update progress on the backend
+    // Start local persistence and the backend write together. SharedPreferences
+    // must not delay the user-visible update or the database request.
+    final localPersistence = WatchedLessonsService.toggleWatchedStatus(
+      lessonId,
+      isWatched,
+    );
     final repo = ref.read(coursesRepositoryProvider);
     final result = await repo.updateLessonProgress(
       courseId: widget.courseId,
@@ -181,6 +183,7 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
       completed: isWatched,
       progressPct: isWatched ? 100.0 : 0.0,
     );
+    await localPersistence;
 
     result.fold(
       (failure) {

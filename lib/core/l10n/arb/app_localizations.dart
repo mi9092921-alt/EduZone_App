@@ -704,6 +704,12 @@ abstract class AppLocalizations {
   /// **'Due: {time}'**
   String dueLabel(String time);
 
+  String get dueToday;
+
+  String get dueYesterday;
+
+  String get dueTomorrow;
+
   /// No description provided for @minCount.
   ///
   /// In en, this message translates to:

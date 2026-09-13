@@ -26,7 +26,7 @@ class NotificationsScreen extends ConsumerWidget {
       backgroundColor: ds.background,
       actions: [
         TextButton(
-          onPressed: () {
+          onPressed: () async {
             // Source the current user id from the app's own auth state
             // (Section 6/8: no direct backend-singleton access from a
             // widget's business logic) rather than reaching into
@@ -38,7 +38,14 @@ class NotificationsScreen extends ConsumerWidget {
                 ? authState.user.id
                 : null;
             if (userId != null) {
-              ref.read(markAsReadProvider).call(null, userId);
+              final result = await ref
+                  .read(markAsReadProvider)
+                  .call(null, userId);
+
+              result.fold(
+                (_) {},
+                (_) => ref.invalidate(notificationsProvider),
+              );
             }
           },
           child: Text(

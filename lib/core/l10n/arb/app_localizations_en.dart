@@ -346,6 +346,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get dueToday => 'Today';
+
+  @override
+  String get dueYesterday => 'Yesterday';
+
+  @override
+  String get dueTomorrow => 'Tomorrow';
+
+  @override
   String minCount(int count) {
     return '$count min';
   }

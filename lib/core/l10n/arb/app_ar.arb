@@ -192,6 +192,9 @@
       }
     }
   },
+  "dueToday": "اليوم",
+  "dueYesterday": "أمس",
+  "dueTomorrow": "الغد",
   "minCount": "{count} دقيقة",
   "@minCount": {
     "placeholders": {

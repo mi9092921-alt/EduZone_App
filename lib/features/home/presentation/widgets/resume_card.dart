@@ -38,35 +38,38 @@ class ResumeCard extends StatelessWidget {
         horizontal: AppSpacing.lg,
         vertical: AppSpacing.sm,
       ),
-      child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        onTap: isLoading
-            ? null
-            : () {
-                context.push(
-                  '${AppRoutes.courses}/${lesson.courseId}/lesson/${lesson.lessonId}',
-                );
-              },
-        gradient: LinearGradient(
-          colors: [ds.surface2, ds.surface],
-          begin: AlignmentDirectional.topStart,
-          end: AlignmentDirectional.bottomEnd,
-        ),
-        borderColor: ds.border.withValues(alpha: 0.5),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    l10n!.continue_learning,
-                    style: AppTextStyles.overline.copyWith(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n!.continue_learning,
+            style: AppTextStyles.overline.copyWith(
+              color: AppColors.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          AppCard(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            onTap: isLoading
+                ? null
+                : () {
+                    context.push(
+                      '${AppRoutes.courses}/${lesson.courseId}/lesson/${lesson.lessonId}',
+                    );
+                  },
+            gradient: LinearGradient(
+              colors: [ds.surface2, ds.surface],
+              begin: AlignmentDirectional.topStart,
+              end: AlignmentDirectional.bottomEnd,
+            ),
+            borderColor: ds.border.withValues(alpha: 0.5),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                   Text(
                     lesson.lessonTitle,
                     style: AppTextStyles.h3.copyWith(
@@ -111,19 +114,21 @@ class ResumeCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                ],
-              ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.lg),
+                AppIconContainer(
+                  icon: Icons.play_arrow_rounded,
+                  size: 28,
+                  backgroundColor: AppColors.primary,
+                  iconColor: ds.surface,
+                  padding: AppSpacing.md,
+                ),
+              ],
             ),
-            const SizedBox(width: AppSpacing.lg),
-            AppIconContainer(
-              icon: Icons.play_arrow_rounded,
-              size: 28,
-              backgroundColor: AppColors.primary,
-              iconColor: ds.surface,
-              padding: AppSpacing.md,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

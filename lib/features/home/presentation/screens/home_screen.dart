@@ -17,6 +17,7 @@ import '../../../todo/domain/entities/todo_item.dart';
 import '../../application/providers/home_provider.dart';
 import '../../domain/entities/home_course_summary.dart';
 import '../../domain/entities/home_todo_summary.dart';
+import '../../domain/entities/resume_lesson.dart';
 import '../widgets/discovery_banner.dart';
 import '../widgets/notifications_preview.dart';
 import '../widgets/resume_card.dart';
@@ -55,7 +56,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final l10n = AppLocalizations.of(context)!;
 
     // Watch relevant data streams
-    final resumeLessonAsync = ref.watch(resumeLessonProvider);
+    final resumeLessonsAsync = ref.watch(resumeLessonsProvider);
     final recentCoursesAsync = ref.watch(recentCoursesProvider);
     final recentTodosAsync = ref.watch(recentTodosProvider);
 
@@ -64,6 +65,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onRefresh: () async {
         // Parallel invalidation for performance
         ref.invalidate(resumeLessonProvider);
+        ref.invalidate(resumeLessonsProvider);
         ref.invalidate(recentCoursesProvider);
         ref.invalidate(recentTodosProvider);
         ref.invalidate(notificationsProvider);
@@ -82,20 +84,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           const NotificationsPreview(),
 
           // 4. Primary Action: Resume Learning (Contextual)
-          resumeLessonAsync.when(
-            data: (lesson) => lesson == null
-                ? const SizedBox.shrink()
-                : Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppSpacing.sm,
-                    ),
-                    child: ResumeCard(resumeLesson: lesson),
-                  ),
-            loading: () => const ResumeCard(isLoading: true),
-            error: (err, stack) {
-              debugPrint('[HomeScreen] Error loading resume lesson: ${err.runtimeType}');
-              return const SizedBox.shrink();
-            },
+          _RecentLessonsSection(
+            lessonsAsync: resumeLessonsAsync,
+            l10n: l10n,
           ),
 
           const SizedBox(height: AppSpacing.md),
@@ -111,6 +102,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           const SizedBox(height: AppSpacing.md),
         ],
       ),
+    );
+  }
+}
+
+class _RecentLessonsSection extends ConsumerWidget {
+  final AsyncValue<List<ResumeLesson>> lessonsAsync;
+  final AppLocalizations l10n;
+
+  const _RecentLessonsSection({required this.lessonsAsync, required this.l10n});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return lessonsAsync.when(
+      data: (lessons) {
+        if (lessons.isEmpty) return const SizedBox.shrink();
+        final visibleLessons = lessons.take(3).toList();
+        return Column(
+          children: [
+            SectionHeader(
+              title: l10n.continue_learning,
+              onTrailingTapped: () => context.go(AppRoutes.courses),
+              trailing: Text(
+                l10n.see_all,
+                style: AppTextStyles.label.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 208,
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                scrollDirection: Axis.horizontal,
+                itemCount: visibleLessons.length,
+                separatorBuilder: (_, _) =>
+                    const SizedBox(width: AppSpacing.md),
+                itemBuilder: (context, index) {
+                  final lesson = visibleLessons[index];
+                  return SizedBox(
+                    width: 300,
+                    child: ResumeCard(
+                      key: ValueKey(lesson.courseId),
+                      resumeLesson: lesson,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+        child: ResumeCard(isLoading: true),
+      ),
+      error: (err, _) {
+        if (kDebugMode) {
+          debugPrint('[HomeScreen] Error loading resume lessons: ${err.runtimeType}');
+        }
+        return const SizedBox.shrink();
+      },
     );
   }
 }

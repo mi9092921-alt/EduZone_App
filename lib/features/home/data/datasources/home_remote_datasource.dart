@@ -4,6 +4,10 @@ import '../../domain/entities/resume_lesson.dart';
 
 abstract class HomeRemoteDataSource {
   Future<ResumeLesson?> getResumeLesson();
+  Future<List<ResumeLesson>> getResumeLessons() async {
+    final lesson = await getResumeLesson();
+    return lesson == null ? [] : [lesson];
+  }
   Future<List<Course>> getRecentCourses();
   Future<List<TodoItem>> getRecentTodos();
 }

@@ -59,7 +59,18 @@ Future<List<HomeTodoSummary>> recentTodos(Ref ref) async {
 /// file, add it here too.
 void invalidateHomeProviders(Ref ref) {
   ref.invalidate(resumeLessonProvider);
+  ref.invalidate(resumeLessonsProvider);
   ref.invalidate(recentCoursesProvider);
   ref.invalidate(recentTodosProvider);
   ref.invalidate(homeRemoteDataSourceProvider);
+}
+
+@riverpod
+Future<List<ResumeLesson>> resumeLessons(Ref ref) async {
+  final repository = ref.watch(homeRepositoryProvider);
+  final result = await repository.getResumeLessons();
+  return result.fold(
+    (failure) => throw failure.toAppException(),
+    (lessons) => lessons,
+  );
 }
