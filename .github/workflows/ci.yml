@@ -144,7 +144,13 @@ jobs:
     # boundaries with deterministic test doubles. `integration_test` requires
     # a target device, so CI provisions an Android emulator rather than
     # attempting to run the suite with no supported device.
+    # GitHub-hosted runners expose no KVM (`-accel off`), so the emulator
+    # runs under full TCG software emulation: ~13 min boot + ~8 min Gradle +
+    # ~8 min APK install locally-observed, tests ~10x slower than hardware.
+    # The suite completes in ~2-3h under TCG; 4h bounds a genuine hang
+    # without truncating a healthy run (default is 6h of silent hanging).
     runs-on: ubuntu-latest
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
