@@ -704,10 +704,22 @@ abstract class AppLocalizations {
   /// **'Due: {time}'**
   String dueLabel(String time);
 
+  /// No description provided for @dueToday.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
   String get dueToday;
 
+  /// No description provided for @dueYesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday'**
   String get dueYesterday;
 
+  /// No description provided for @dueTomorrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Tomorrow'**
   String get dueTomorrow;
 
   /// No description provided for @minCount.

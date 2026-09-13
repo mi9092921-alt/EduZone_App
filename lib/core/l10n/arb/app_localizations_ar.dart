@@ -27,7 +27,7 @@ class AppLocalizationsAr extends AppLocalizations {
   String get passwordHint => 'كلمة المرور';
 
   @override
-  String get loginButton => 'تسجيل الدخول';
+  String get loginButton => 'دخول';
 
   @override
   String get forgotPassword => 'نسيت كلمة المرور؟';
@@ -345,13 +345,13 @@ class AppLocalizationsAr extends AppLocalizations {
   }
 
   @override
-  String get dueToday => '\u0627\u0644\u064a\u0648\u0645';
+  String get dueToday => 'اليوم';
 
   @override
-  String get dueYesterday => '\u0623\u0645\u0633';
+  String get dueYesterday => 'أمس';
 
   @override
-  String get dueTomorrow => '\u0627\u0644\u063a\u062f';
+  String get dueTomorrow => 'الغد';
 
   @override
   String minCount(int count) {

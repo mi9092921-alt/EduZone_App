@@ -70,9 +70,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return AppScreen(
       isLoading: isLoading,
       scrollable: false,
+      // Keyboard-dismissal gesture, not a control: excluded from the
+      // semantics tree so it does not surface as an unnamed full-screen
+      // tappable node (labeledTapTargetGuideline).
       child: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         behavior: HitTestBehavior.opaque,
+        excludeFromSemantics: true,
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(
@@ -105,8 +109,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       const SizedBox(height: AppSpacing.xs),
                       Text(
                         l10n.loginSubtitle,
+                        // w600 keeps glyph stems thick enough that the
+                        // rendered (anti-aliased) pixels of the Cairo font
+                        // hold the nominal WCAG 4.5:1 contrast at 14px —
+                        // w400 strokes blend with the background below the
+                        // limit that textContrastGuideline measures.
                         style: AppTextStyles.bodyMedium.copyWith(
                           color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: AppSpacing.xl2),
@@ -163,55 +173,69 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       const SizedBox(height: AppSpacing.md),
 
                       // Terms Agreement
-                      Row(
-                        children: [
-                          SizedBox(
-                            height: 24,
-                            width: 24,
-                            child: Checkbox(
-                              value: _agreedToTerms,
-                              activeColor: AppColors.primary,
-                              shape: const RoundedRectangleBorder(
-                                borderRadius: AppRadius.xxsBorder,
-                              ),
-                              onChanged: (value) =>
-                                  setState(() => _agreedToTerms = value ?? false),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: Text.rich(
-                              TextSpan(
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: AppColors.textSecondary,
+                      // MergeSemantics + explicit label: the bare Checkbox
+                      // node is tappable but unlabeled, which fails the
+                      // labeledTapTargetGuideline. Merging the row gives
+                      // screen readers one node: checked state + full
+                      // "agree to terms / privacy" label + tap.
+                      MergeSemantics(
+                        child: Semantics(
+                          label: '${l10n.agreeToTermsPrefix}'
+                              '${l10n.termsAndConditions}'
+                              '${l10n.agreeToTermsMiddle}'
+                              '${l10n.privacyPolicy}'
+                              '${l10n.agreeToTermsSuffix}',
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                height: 24,
+                                width: 24,
+                                child: Checkbox(
+                                  value: _agreedToTerms,
+                                  activeColor: AppColors.primary,
+                                  shape: const RoundedRectangleBorder(
+                                    borderRadius: AppRadius.xxsBorder,
+                                  ),
+                                  onChanged: (value) => setState(
+                                      () => _agreedToTerms = value ?? false),
                                 ),
-                                children: [
-                                  TextSpan(text: l10n.agreeToTermsPrefix),
-                                  TextSpan(
-                                    text: l10n.termsAndConditions,
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.bold,
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                    recognizer: _termsRecognizer,
-                                  ),
-                                  TextSpan(text: l10n.agreeToTermsMiddle),
-                                  TextSpan(
-                                    text: l10n.privacyPolicy,
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.bold,
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                    recognizer: _privacyRecognizer,
-                                  ),
-                                  TextSpan(text: l10n.agreeToTermsSuffix),
-                                ],
                               ),
-                            ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Expanded(
+                                child: Text.rich(
+                                  TextSpan(
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.textSecondary,
+                                    ),
+                                    children: [
+                                      TextSpan(text: l10n.agreeToTermsPrefix),
+                                      TextSpan(
+                                        text: l10n.termsAndConditions,
+                                        style: AppTextStyles.bodySmall.copyWith(
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.bold,
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                        recognizer: _termsRecognizer,
+                                      ),
+                                      TextSpan(text: l10n.agreeToTermsMiddle),
+                                      TextSpan(
+                                        text: l10n.privacyPolicy,
+                                        style: AppTextStyles.bodySmall.copyWith(
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.bold,
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                        recognizer: _privacyRecognizer,
+                                      ),
+                                      TextSpan(text: l10n.agreeToTermsSuffix),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
 
                       const SizedBox(height: AppSpacing.xl),
@@ -241,12 +265,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
 
                       const SizedBox(height: AppSpacing.xl2),
-                      // Version Footer
+                      // Version Footer. The previous alpha:0.5 fade put the
+                      // rendered contrast at 1.56:1 — a hard WCAG failure.
+                      // Full-opacity textSecondary (~6.9:1 nominal) at w600
+                      // stays visually quiet while surviving the rendered
+                      // pixel measurement at 12px.
                       if (_appVersion.isNotEmpty)
                         Text(
                           '${l10n.appTitle} ${l10n.versionLabel(_appVersion)}',
                           style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.textSecondary.withValues(alpha: 0.5),
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w600,
                             letterSpacing: 0.5,
                           ),
                         ),
