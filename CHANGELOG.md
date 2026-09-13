@@ -8,6 +8,53 @@
 ## [Unreleased]
 
 ### Added / Fixed
+
+- **CI/CD (2026-09-13 — أول تشغيل فعلي للـ CI)**: كان كل job يعتمد على Flutter
+  يموت في خطوة الإعداد منذ إنشاء الـ workflow لأن `subosito/flutter-action@v2`
+  لا يستطيع حل **نطاق** الإصدار (`environment.flutter: >=3.41.4 <4.0.0` من
+  pubspec.yaml) — ثُبِّت الإصدار الدقيق `3.44.8` في الـ workflows الستة كلها
+  (ci/update-goldens/deploy)، وهو إصدار التحقق المحلي المعتمد. مع أول تشغيل
+  حقيقي ظهرت أعطال كامنة أُغلقت:
+  - **حارس المعمارية (--strict)** كان يرفض الاستثناء الموثق في AGENTS.md
+    (استيراد `features/auth/application/providers/**` بين الـ features) —
+    أُضيف الاستثناء إلى `tool/check_architecture.py` مع بقاء كل ما عدا ذلك
+    WARN/failure.
+  - **integration_test بلا حد زمني**: المحاكي على GitHub-hosted runners يعمل
+    بلا KVM (`-accel off`، محاكاة TCG كاملة) — قياس فعلي: إقلاع 13 د +
+    Gradle 8 د + تثبيت APK 8 د، والاختبارات أبطأ ~10×؛ أُضيف
+    `timeout-minutes: 240` ليُقطع التعليق الحقيقي بدل 6 ساعات افتراضية.
+- **Accessibility (login screen — عيوب مُثبتة بتشغيل integration tests على
+  جهاز حقيقي)**:
+  - تباين WCAG: العنوان الفرعي كان يُرسم 3.76:1 وتذييل الإصدار 1.56:1 —
+    سبب الجذر مزج بكسلات خط Cairo w400 عند 14/12px مع الخلفية (التباين
+    الاسمي 6.9:1 سليم)؛ النصان الآن w600 بشفافية كاملة ويمرّان
+    `textContrastGuideline`.
+  - Checkbox "أوافق على الشروط" كان عقدة tappable بلا تسمية — صُفّ دلاليًا
+    بـ MergeSemantics + تسمية كاملة للقارئات.
+  - إيماءة إخفاء الكيبورد كانت تسرب عقدة tap بلا اسم على الشاشة كاملة —
+    `excludeFromSemantics: true` (ليست أداة تحكم).
+  - ازدواج النص العربي: `loginTitle` و`loginButton` كانا كليهما "تسجيل
+    الدخول" (فشل اختبار RTL لأن `findsOneWidget` وجد نصين)؛ الزر أصبح
+    "دخول".
+- **Tests (إصلاح بنية اختبار، لا إخفاء أعطال)**:
+  - `integration_test/app_test.dart`: الـ SemanticsHandle كان يُحرَّر عبر
+    `addTearDown` الذي يعمل **بعد** تحقق نهاية الاختبار فيصير الاختبار
+    فاشلًا ذاته بمجرد نجاح بوابتَي الوصول — dispose صريح في نهاية الجسم.
+  - `todo_date_formatter_test`: الفرع العام يبني `DateFormat('MMM d, yyyy',
+    locale)` — بيانات intl لا تُهيأ في اختبار وحدة نقي (المصدر الحقيقي:
+    MaterialApp) فأُضيف `initializeDateFormatting('en')` في `setUpAll`.
+- **Security (قبل CI — تم إثباته وإغلاقه في تدقيق الإنتاجية)**: ملف
+  `supabase/db_url.test.txt` (أسرار حية: service_role + sbp_ + كلمة مرور
+  DB) أُضيف قسرًا في commit محلي غير مسبوث — أُزيل من الـ commit نفسه
+  (amend) فلا يدخل التاريخ أبدًا، مع قاعدة `.gitignore` مثبتة. فحص تاريخ
+  كلا المستودعين بأنماط `eyJ…`/`sbp_` نظيف.
+- **Architecture (نقل استدعاءات Supabase لطبقتها)**: ثلاثة player widgets
+  (youtube/modern/player4) كانت تستدعي `log_activity_async` مباشرة — حُوِّلت
+  إلى `LogRemoteDataSource.logLessonStarted()` مع 6 اختبارات جديدة.
+- **Docs**: `AGENTS.md` حُدِّث ليطابق الواقع (مسارات router/design_system/
+  l10n، Riverpod 3.x، سياسة تخزين الجلسة في secure storage، ملاحظة أن
+  `supabase/` في هذا المستودع مرآة متزامنة من مستودع Dashboard).
+
 - **Security/Resource-safety (Section 20, P6 — Orphaned encryption key on
   cancel/delete)**: both `DownloadRepositoryImpl.deleteDownload` (the
   explicit "delete this download" action) and `.cancelDownload` (the
