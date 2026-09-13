@@ -57,7 +57,7 @@ class SettingsSwitchTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.md),
-            Switch(value: value, onChanged: onChanged, activeColor: ds.primary),
+            Switch(value: value, onChanged: onChanged, activeThumbColor: ds.primary),
           ],
         ),
       ),
