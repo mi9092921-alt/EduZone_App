@@ -17,6 +17,7 @@ import '../../../../../shared/cross_feature/auth_shared.dart';
 import '../../../../../shared/services/push_token_registration_service.dart';
 import '../../../../../shared/utils/app_snackbar.dart';
 import '../../../../../shared/widgets/confirm_dialog.dart';
+import '../../../../../shared/providers/download_network_policy_provider.dart';
 import '../../../../auth/domain/entities/auth_state.dart';
 import '../adaptive_settings_picker.dart';
 import '../settings_tile.dart';
@@ -24,6 +25,7 @@ import 'settings_about_dialog.dart';
 import 'settings_divider.dart';
 import 'settings_permissions_card.dart';
 import 'settings_section_header.dart';
+import 'settings_switch_tile.dart';
 import 'settings_theme_label.dart';
 import 'settings_value_display.dart';
 
@@ -210,6 +212,7 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
     final locale = ref.watch(appLocaleProvider);
     final ds = AppColors.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final downloadPolicy = ref.watch(downloadNetworkPolicyProvider);
 
     final currentLanguage = locale.languageCode == 'ar' ? 'العربية' : 'English';
     final currentTheme = themeModeLabel(themeMode, l10n);
@@ -263,6 +266,25 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
             items: _permissionItems,
             statuses: _permissionStatuses,
             onRequestPermission: _requestPermission,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        SettingsSectionHeader(title: l10n.downloadsSettingsHeader),
+        const SizedBox(height: AppSpacing.md),
+        AppCard(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          elevated: false,
+          backgroundColor: scheme.surface,
+          borderColor: scheme.outlineVariant,
+          child: SettingsSwitchTile(
+            icon: AppIcons.wifi,
+            title: l10n.wifiOnlyDownloads,
+            subtitle: l10n.wifiOnlyDownloadsSubtitle,
+            value: downloadPolicy.wifiOnly,
+            semanticsLabel: l10n.wifiOnlyDownloads,
+            onChanged: (value) => ref
+                .read(downloadNetworkPolicyProvider.notifier)
+                .setWifiOnly(value),
           ),
         ),
         const SizedBox(height: AppSpacing.lg),

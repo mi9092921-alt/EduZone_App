@@ -1,6 +1,12 @@
 {
   "@@locale": "ar",
   "appTitle": "EduZone",
+  "downloadsSettingsHeader": "التنزيلات",
+  "wifiOnlyDownloads": "التنزيل عبر الواي فاي فقط",
+  "wifiOnlyDownloadsSubtitle": "توفير باقة الجوال — التنزيل عند اتصال الواي فاي فقط",
+  "wifiOnlyBlockedTitle": "الواي فاي مطلوب",
+  "wifiOnlyBlockedMessage": "أنت متصل ببيانات الجوال وخيار «التنزيل عبر الواي فاي فقط» مفعّل.",
+  "wifiOnlyDownloadAnyway": "تنزيل مرة واحدة على أي حال",
   "welcome": "أهلاً بك",
   
   "loginTitle": "تسجيل الدخول",

@@ -31,6 +31,7 @@ class AppRoutes {
 }
 
 class StorageKeys {
+  static const String downloadWifiOnly = 'download_wifi_only';
   static String lastWatchedLesson(int courseId) => 'last_watched_lesson_$courseId';
 
   /// Stores the latest version string the user dismissed the optional dialog for.

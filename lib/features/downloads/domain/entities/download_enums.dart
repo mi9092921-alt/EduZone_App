@@ -1,5 +1,9 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+class WifiOnlyDownloadBlockedException implements Exception {
+  const WifiOnlyDownloadBlockedException();
+}
+
 /// Status of a download operation.
 enum DownloadStatus {
   @JsonValue('pending')

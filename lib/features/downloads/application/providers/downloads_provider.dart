@@ -6,6 +6,7 @@ import '../../../../core/network/supabase_client.dart';
 import '../../../../core/providers/storage_provider.dart';
 import '../../../../core/security/secure_storage_config.dart';
 import '../../../../core/services/encryption_service.dart';
+import '../../../../shared/providers/download_network_policy_provider.dart';
 import '../../data/datasources/download_local_ds.dart';
 import '../../data/datasources/download_remote_ds.dart';
 import '../../data/repositories/download_repository_impl.dart';
@@ -163,11 +164,16 @@ class DownloadsNotifier extends _$DownloadsNotifier {
     required String title,
     required String videoUrl,
     required VideoQuality quality,
+    bool ignoreWifiOnly = false,
   }) async {
     // Do NOT mutate state here — setting AsyncLoading() would trigger a
     // provider rebuild which disposes this Ref before the await completes.
     // The calling UI already shows its own progress indicator (SnackBar).
     final generation = _buildGeneration;
+    final block = ref.read(downloadNetworkPolicyProvider).block;
+    if (block == DownloadNetworkBlock.wifiOnlyMobileData && !ignoreWifiOnly) {
+      throw const WifiOnlyDownloadBlockedException();
+    }
     final useCase = ref.read(startDownloadUseCaseProvider);
     final result = await useCase.call(
       lessonId: lessonId,
@@ -211,6 +217,10 @@ class DownloadsNotifier extends _$DownloadsNotifier {
   /// Throws a [Failure] if the resume request could not be completed.
   Future<void> resumeDownload(String downloadId) async {
     final generation = _buildGeneration;
+    if (ref.read(downloadNetworkPolicyProvider).block ==
+        DownloadNetworkBlock.wifiOnlyMobileData) {
+      throw const WifiOnlyDownloadBlockedException();
+    }
     final useCase = ref.read(resumeDownloadUseCaseProvider);
     final result = await useCase.call(downloadId);
 

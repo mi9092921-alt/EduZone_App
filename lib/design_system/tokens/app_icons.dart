@@ -60,6 +60,7 @@ class AppIcons {
   static const IconData device      = Icons.phone_android_rounded;
   static const IconData support     = Icons.support_agent_rounded;
   static const IconData wifiOff     = Icons.wifi_off_rounded;
+  static const IconData wifi        = Icons.wifi_rounded;
   static const IconData maintenance = Icons.build_rounded;
 
   // Aliases for Status Screens

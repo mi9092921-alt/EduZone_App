@@ -170,6 +170,13 @@ abstract class AppLocalizations {
   /// **'Downloads'**
   String get downloads;
 
+  String get downloadsSettingsHeader;
+  String get wifiOnlyDownloads;
+  String get wifiOnlyDownloadsSubtitle;
+  String get wifiOnlyBlockedTitle;
+  String get wifiOnlyBlockedMessage;
+  String get wifiOnlyDownloadAnyway;
+
   /// No description provided for @sectionsLabel.
   ///
   /// In en, this message translates to:

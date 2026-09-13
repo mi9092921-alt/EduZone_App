@@ -45,6 +45,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get downloads => 'Downloads';
 
   @override
+  String get downloadsSettingsHeader => 'Downloads';
+
+  @override
+  String get wifiOnlyDownloads => 'Download over Wi-Fi only';
+
+  @override
+  String get wifiOnlyDownloadsSubtitle =>
+      'Save mobile data — downloads run on Wi-Fi only';
+
+  @override
+  String get wifiOnlyBlockedTitle => 'Wi-Fi required';
+
+  @override
+  String get wifiOnlyBlockedMessage =>
+      'You\'re on mobile data and “Wi-Fi only” downloads is on.';
+
+  @override
+  String get wifiOnlyDownloadAnyway => 'Download once anyway';
+
+  @override
   String get sectionsLabel => 'sections';
 
   @override

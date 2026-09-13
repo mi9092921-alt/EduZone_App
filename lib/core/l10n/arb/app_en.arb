@@ -1,6 +1,12 @@
 {
   "@@locale": "en",
   "appTitle": "EduZone",
+  "downloadsSettingsHeader": "Downloads",
+  "wifiOnlyDownloads": "Download over Wi-Fi only",
+  "wifiOnlyDownloadsSubtitle": "Save mobile data — downloads run on Wi-Fi only",
+  "wifiOnlyBlockedTitle": "Wi-Fi required",
+  "wifiOnlyBlockedMessage": "You're on mobile data and “Wi-Fi only” downloads is on.",
+  "wifiOnlyDownloadAnyway": "Download once anyway",
   "welcome": "Welcome",
   
   "loginTitle": "Sign In",

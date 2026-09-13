@@ -7,8 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../../core/constants/app_constants.dart';
 import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../shared/cross_feature/downloads_shared.dart';
+import '../../../../../shared/providers/download_network_policy_provider.dart';
 import '../../../../../shared/utils/app_snackbar.dart';
 import '../../../../../shared/utils/error_handler.dart';
+import '../../../../../shared/widgets/confirm_dialog.dart';
 import '../../../../downloads/domain/entities/download_enums.dart';
 import '../../../application/providers/courses_provider.dart';
 import '../../../data/services/watched_lessons_service.dart';
@@ -325,6 +327,23 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
         onQualitySelected: (quality) async {
           if (!mounted) return;
 
+          final block = ref.read(downloadNetworkPolicyProvider).block;
+          var ignoreWifiOnly = false;
+          if (block == DownloadNetworkBlock.wifiOnlyMobileData) {
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (dialogContext) => ConfirmDialog(
+                title: l10n.wifiOnlyBlockedTitle,
+                description: l10n.wifiOnlyBlockedMessage,
+                confirmLabel: l10n.wifiOnlyDownloadAnyway,
+                cancelLabel: l10n.cancel,
+                onConfirm: () => Navigator.pop(dialogContext, true),
+              ),
+            );
+            if (confirmed != true || !mounted) return;
+            ignoreWifiOnly = true;
+          }
+
           FeedbackService.show(context, message: l10n.downloadStarting);
 
           try {
@@ -337,6 +356,7 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
                   title: localLessonTitle,
                   videoUrl: videoUrl,
                   quality: quality,
+                  ignoreWifiOnly: ignoreWifiOnly,
                 );
             if (!mounted) return;
             AppSnackbar.showSuccess(
