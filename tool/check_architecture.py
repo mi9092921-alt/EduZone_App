@@ -175,12 +175,24 @@ def main() -> None:
                     "-- data must not depend on the UI layer",
                 )
             elif target_feature != feature and target_layer in ("data", "application", "presentation"):
-                report.add(
-                    rel, i + 1,
-                    f"feature '{feature}' imports feature '{target_feature}' internals "
-                    f"({'/'.join(target_rel_parts)}) directly",
-                    severity="WARN",
+                # AGENTS.md import rules grant exactly one cross-feature
+                # exception: "features/ -> may import from features/auth/
+                # (providers only, for auth state)". Imports of
+                # features/auth/application/providers/** are therefore
+                # allowed; anything else under another feature's internals
+                # stays a WARN.
+                is_allowed_auth_providers = (
+                    target_feature == "auth"
+                    and len(target_rel_parts) > 3
+                    and target_rel_parts[3] == "providers"
                 )
+                if not is_allowed_auth_providers:
+                    report.add(
+                        rel, i + 1,
+                        f"feature '{feature}' imports feature '{target_feature}' internals "
+                        f"({'/'.join(target_rel_parts)}) directly",
+                        severity="WARN",
+                    )
 
     report.print_and_exit(
         fix_hint=(
