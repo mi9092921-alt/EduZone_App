@@ -445,7 +445,10 @@ void main() {
       // Enables the semantics tree so the accessibility guideline matchers
       // below can inspect real Semantics nodes instead of a stripped tree.
       final handle = tester.ensureSemantics();
-      addTearDown(handle.dispose);
+      // Disposed explicitly in the body (not via addTearDown): the tester's
+      // end-of-test verification runs BEFORE tearDowns, so a handle still
+      // registered at that point fails the test with
+      // "A SemanticsHandle was active at the end of the test".
 
       final container = _containerFor(const AuthUnauthenticated());
       addTearDown(container.dispose);
@@ -458,6 +461,7 @@ void main() {
       // than merely asserting that a tooltip string exists somewhere.
       await expectLater(tester, meetsGuideline(textContrastGuideline));
       await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+      handle.dispose();
     });
 
     testWidgets(
