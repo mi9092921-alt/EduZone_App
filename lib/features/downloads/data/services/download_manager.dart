@@ -342,7 +342,7 @@ class DownloadManager {
     _downloader.configureNotification(
       running: TaskNotification(
         'EduZone download', // check-ignore -- brand name
-        l10n.downloadNotificationDownloading('{filename}', '{progress}'),
+        l10n.downloadNotificationDownloading('{filename}', '{progress}'), // check-ignore -- tokens
       ),
       complete: TaskNotification(
         'EduZone download', // check-ignore -- brand name
