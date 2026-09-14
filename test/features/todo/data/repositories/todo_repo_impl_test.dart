@@ -133,6 +133,19 @@ void main() {
       expect(result, equals(const Right(null)));
       verify(() => mockRemoteDataSource.addTodo(tTodo)).called(1);
     });
+
+    test('should return Left(ServerFailure) when the data source throws', () async {
+      when(() => mockRemoteDataSource.addTodo(tTodo)).thenThrow(
+        const ServerException('DB Error'),
+      );
+
+      final result = await repository.addTodo(tTodo);
+
+      expect(
+        result,
+        equals(const Left<Failure, void>(ServerFailure('DB Error'))),
+      );
+    });
   });
 
   group('updateTodo', () {
@@ -149,6 +162,19 @@ void main() {
       expect(result, equals(const Right(null)));
       verify(() => mockRemoteDataSource.updateTodo(tTodo)).called(1);
     });
+
+    test('should return Left(ServerFailure) when the data source throws', () async {
+      when(() => mockRemoteDataSource.updateTodo(tTodo)).thenThrow(
+        const ServerException('DB Error'),
+      );
+
+      final result = await repository.updateTodo(tTodo);
+
+      expect(
+        result,
+        equals(const Left<Failure, void>(ServerFailure('DB Error'))),
+      );
+    });
   });
 
   group('deleteTodo', () {
@@ -164,6 +190,19 @@ void main() {
       // assert
       expect(result, equals(const Right(null)));
       verify(() => mockRemoteDataSource.deleteTodo('1')).called(1);
+    });
+
+    test('should return Left(ServerFailure) when the data source throws', () async {
+      when(() => mockRemoteDataSource.deleteTodo('1')).thenThrow(
+        const ServerException('DB Error'),
+      );
+
+      final result = await repository.deleteTodo('1');
+
+      expect(
+        result,
+        equals(const Left<Failure, void>(ServerFailure('DB Error'))),
+      );
     });
   });
 

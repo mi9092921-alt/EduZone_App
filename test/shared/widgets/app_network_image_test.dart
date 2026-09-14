@@ -4,6 +4,7 @@ import 'package:app/shared/widgets/app_network_image.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 /// Widget tests never perform real network I/O (AGENTS testing rules), so
 /// these tests assert AppNetworkImage's *configuration contract* — the
@@ -75,5 +76,38 @@ void main() {
 
     expect(image.fit, BoxFit.contain);
     expect(image.alignment, Alignment.bottomCenter);
+  });
+
+  testWidgets('builds the skeleton placeholder using the supplied width', (
+    tester,
+  ) async {
+    final image = await pumpAndRead(
+      tester,
+      const AppNetworkImage(url: 'https://example.com/placeholder.png', width: 40),
+    );
+    final context = tester.element(find.byType(CachedNetworkImage));
+
+    final placeholder = image.placeholder!(context, image.imageUrl);
+
+    expect(placeholder, isA<Bone>());
+  });
+
+  testWidgets('builds the error state with the configured dimensions', (tester) async {
+    final image = await pumpAndRead(
+      tester,
+      const AppNetworkImage(
+        url: 'https://example.com/error.png',
+        width: 40,
+        height: 24,
+      ),
+    );
+    final context = tester.element(find.byType(CachedNetworkImage));
+
+    await tester.pumpWidget(harness(image.errorWidget!(context, image.imageUrl, 'error')));
+
+    final errorState = tester.widget<Container>(find.byType(Container));
+    expect(errorState.constraints?.maxWidth, 40);
+    expect(errorState.constraints?.maxHeight, 24);
+    expect(find.byIcon(Icons.error_outline), findsOneWidget);
   });
 }

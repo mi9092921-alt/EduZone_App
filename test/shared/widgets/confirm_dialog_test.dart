@@ -1,3 +1,4 @@
+import 'package:app/design_system/design_system.dart';
 import 'package:app/shared/widgets/confirm_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -69,6 +70,15 @@ void main() {
     await tester.tap(find.text('Delete'));
     await tester.pump();
     expect(confirmed, isTrue);
+  });
+
+  testWidgets('uses the danger button variant for destructive confirmations', (
+    tester,
+  ) async {
+    await openDialog(tester, isDangerous: true);
+
+    final button = tester.widget<AppButton>(find.byType(AppButton));
+    expect(button.variant, AppButtonVariant.danger);
   });
 
   testWidgets('loading state disables the confirm action', (tester) async {

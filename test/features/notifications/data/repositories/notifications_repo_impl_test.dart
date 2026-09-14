@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app/core/error/exceptions.dart';
 import 'package:app/core/error/failures.dart';
 import 'package:app/features/notifications/data/datasources/notifications_remote_ds.dart';
@@ -89,6 +91,24 @@ void main() {
 
       expect(result, isA<Left<Failure, void>>());
     });
+  });
+
+  test('watchChanges forwards the data source stream for the current user', () async {
+    final controller = StreamController<void>();
+    when(() => mockDataSource.watchChanges('user1')).thenAnswer(
+      (_) => controller.stream,
+    );
+
+    final events = <void>[];
+    final subscription = repository.watchChanges('user1').listen(events.add);
+    controller.add(null);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(events, hasLength(1));
+    verify(() => mockDataSource.watchChanges('user1')).called(1);
+
+    await subscription.cancel();
+    await controller.close();
   });
 
   group('markAllAsRead', () {
