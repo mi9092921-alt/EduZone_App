@@ -901,6 +901,28 @@ class AppLocalizationsAr extends AppLocalizations {
   String get notStarted => 'لم تبدأ بعد';
 
   @override
+  String lessonNumber(int number) {
+    return 'الدرس $number';
+  }
+
+  @override
+  String downloadNotificationDownloading(String filename, String progress) {
+    return 'جارٍ تنزيل $filename: $progress';
+  }
+
+  @override
+  String get downloadNotificationComplete => 'تم التنزيل بنجاح';
+
+  @override
+  String get downloadNotificationFailed => 'فشل التنزيل';
+
+  @override
+  String get downloadNotificationPaused => 'تم إيقاف التنزيل مؤقتاً';
+
+  @override
+  String get downloadNotificationCanceled => 'تم إلغاء التنزيل';
+
+  @override
   String get statusActive => 'نشط';
 
   @override

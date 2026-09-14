@@ -16,8 +16,18 @@ part 'freerasp_config.dart';
 part 'guards/screen_share_guard.dart';
 
 class SecurityService with WidgetsBindingObserver {
+  /// Audit P0 (M7): enforcement now defaults ON in release builds (and
+  /// OFF in debug/profile), matching what .env.security.example already
+  /// documented. An explicit SECURITY_ENFORCE_THREAT_TERMINATION define
+  /// (e.g. `.env.security` with `false` for emulator development)
+  /// still overrides this default in either direction.
   static const bool _enforceThreatTermination = bool.fromEnvironment(
     'SECURITY_ENFORCE_THREAT_TERMINATION',
+    // The analyzer evaluates kReleaseMode as false during static
+    // analysis and therefore flags the argument as redundant; in real
+    // release builds this default is the whole point (audit P0/M7).
+    // ignore: avoid_redundant_argument_values
+    defaultValue: kReleaseMode,
   );
 
   /// Optional app-layer hook, called instead of the raw platform kill when

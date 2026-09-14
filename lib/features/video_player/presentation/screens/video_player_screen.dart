@@ -275,16 +275,27 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
           },
           loading: () => const AppSkeleton(child: VideoPlayerSkeleton()),
           error: (e, _) => AppScreen(
-            child: Center(
-              child: Text(ErrorHandler.getMessage(context, e)),
+            // Audit P1 (M3): retryable error state.
+            child: AppEmptyState(
+              icon: Icons.error_outline_rounded,
+              title: ErrorHandler.getMessage(context, e),
+              actionLabel: AppLocalizations.of(context)!.retryButton,
+              onActionPressed: () => ref.invalidate(
+                lessonContentProvider(widget.lessonId),
+              ),
             ),
           ),
         );
       },
       loading: () => const AppSkeleton(child: VideoPlayerSkeleton()),
       error: (e, _) => AppScreen(
-        child: Center(
-          child: Text(ErrorHandler.getMessage(context, e)),
+        // Audit P1 (M3): retryable error state.
+        child: AppEmptyState(
+          icon: Icons.error_outline_rounded,
+          title: ErrorHandler.getMessage(context, e),
+          actionLabel: AppLocalizations.of(context)!.retryButton,
+          onActionPressed: () =>
+              ref.invalidate(courseDetailsProvider(widget.courseId)),
         ),
       ),
     );

@@ -151,24 +151,13 @@ class _CoursePreviewScreenState extends ConsumerState<CoursePreviewScreen>
         loading: () => AppSkeleton(
           child: _buildContent(context, Course.skeleton(), l10n, ds),
         ),
-        error: (err, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline_rounded, color: ds.error, size: 48),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  ErrorHandler.getMessage(context, err),
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: ds.textSecondary,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
+        // Audit P1 (M3): retryable error state instead of bare text+icon.
+        error: (err, _) => AppEmptyState(
+          icon: Icons.error_outline_rounded,
+          title: ErrorHandler.getMessage(context, err),
+          actionLabel: l10n.retryButton,
+          onActionPressed: () =>
+              ref.invalidate(courseDetailsProvider(widget.courseId)),
         ),
       ),
       bottomNavigationBar: courseAsync.maybeWhen(

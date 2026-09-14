@@ -354,7 +354,7 @@ final class FeatureFlagsProvider
   }
 }
 
-String _$featureFlagsHash() => r'52cf32fe9e909c6ef542b3795e7f1485ee21b3da';
+String _$featureFlagsHash() => r'c01a639ecfc8b77098255cd897099c470d3d242a';
 
 /// Runtime state of the feature-flag module: a synchronously readable
 /// [FeatureFlagSnapshot], kept alive for the whole app session.

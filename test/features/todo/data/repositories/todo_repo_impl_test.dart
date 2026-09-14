@@ -166,4 +166,33 @@ void main() {
       verify(() => mockRemoteDataSource.deleteTodo('1')).called(1);
     });
   });
+
+  group('toggleTodoStatus', () {
+    test('should return Right(null) when call is successful', () async {
+      // arrange (audit P1 coverage: toggleTodoStatus had no tests at all)
+      when(
+        () => mockRemoteDataSource.toggleTodoStatus('1', true),
+      ).thenAnswer((_) async => {});
+
+      // act
+      final result = await repository.toggleTodoStatus('1', true);
+
+      // assert
+      expect(result, equals(const Right(null)));
+      verify(() => mockRemoteDataSource.toggleTodoStatus('1', true)).called(1);
+    });
+
+    test('should return Left(ServerFailure) when data source throws', () async {
+      // arrange
+      when(
+        () => mockRemoteDataSource.toggleTodoStatus('1', true),
+      ).thenThrow(const ServerException('DB Error'));
+
+      // act
+      final result = await repository.toggleTodoStatus('1', true);
+
+      // assert
+      expect(result, isA<Left<Failure, void>>());
+    });
+  });
 }

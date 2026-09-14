@@ -26,6 +26,7 @@ import '../../domain/entities/app_user.dart';
 import '../../domain/entities/auth_state.dart';
 import '../../domain/entities/update_info.dart';
 import '../../domain/entities/user_access.dart';
+import '../../domain/enums/account_status.dart';
 import '../../domain/enums/user_role.dart';
 import '../policies/auth_error_policy.dart';
 import '../services/check_student_app_access_service.dart';
@@ -268,6 +269,33 @@ class Auth extends _$Auth {
       } else {
         // Explicit denial from the server — always AuthRestricted,
         // regardless of the transient-error policy below.
+        //
+        // Audit P0 (M11): for statuses whose forced-sign-out matrix
+        // behavior is "sign out" (locked / banned / suspended), mirror
+        // login() and clear the local session so a denied account never
+        // keeps a live JWT in secure storage after a cold start.
+        // maintenance_mode and app_locked deliberately KEEP the session
+        // (matrix: no sign-out) so the screen's re-check loop keeps
+        // working. Local-only cleanup (no server revocation attempt —
+        // the account is already server-denied); the restricted screen
+        // still renders because the router maps AuthRestricted
+        // independently of any stored session. Best-effort: a cleanup
+        // failure must not override the user-facing restricted state.
+        if (access.status == AccountStatus.locked ||
+            access.status == AccountStatus.banned ||
+            access.status == AccountStatus.suspended) {
+          final client = ref.read(supabaseClientProvider);
+          try {
+            await _forceLocalSignOutOnly(client);
+          } catch (e, st) {
+            GlobalErrorHandler.logError(e, st);
+            debugPrint(
+              '[Auth] Restricted cold-start sign-out failed: '
+              '${e.runtimeType}',
+            );
+          }
+          if (!_isCurrentAuthOperation(operationGeneration)) return;
+        }
         _safeSetStateIfStillPending(
           AuthRestricted(status: access.status, access: access),
         );
@@ -572,6 +600,12 @@ class Auth extends _$Auth {
       // already-failed login path (unlike the documented sign-out
       // failures in LogoutOrchestrator, which represent an explicit
       // user-initiated logout not completing).
+      //
+      // Forced-sign-out matrix note (audit P0/L2): MAX_DEVICES_REACHED
+      // lands here too — the freshly created session was never
+      // device-bound, so tearing it down is intentional and does not
+      // affect the matrix's "show error, do not sign out" guarantee for
+      // any previously bound session on this or another device.
       try {
         final client = ref.read(supabaseClientProvider);
         if (client.auth.currentSession != null) {

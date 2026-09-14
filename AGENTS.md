@@ -26,7 +26,7 @@ flutter pub get
 dart run build_runner build --delete-conflicting-outputs
 
 # Run the app (development)
-flutter run --dart-define-from-file=.env.local
+flutter run --dart-define-from-file=.env
 
 # Lint — must be zero warnings before committing
 flutter analyze
@@ -38,10 +38,10 @@ flutter test
 flutter test --coverage
 
 # Build APK (release check)
-flutter build apk --release --dart-define-from-file=.env.local --target-platform android-arm64
+flutter build apk --release --dart-define-from-file=.env --target-platform android-arm64
 
 # Build App Bundle (production)
-flutter build appbundle --release --dart-define-from-file=.env.production
+flutter build appbundle --release --dart-define-from-file=.env.prod
 ```
 
 Run `flutter analyze` and `flutter test` after every non-trivial change.
@@ -259,7 +259,7 @@ The design system lives in `lib/design_system/` (components/, tokens/, rules/, `
 
 The app supports Arabic (`ar-EG`, RTL) and English (`en-US`, LTR).
 
-- All user-facing strings go in `lib/core/l10n/arb/app_ar.arb` and `lib/core/l10n/arb/app_en.arb` (both files must keep identical key sets — 355 keys as of the last audit)
+- All user-facing strings go in `lib/core/l10n/arb/app_ar.arb` and `lib/core/l10n/arb/app_en.arb` (both files must keep identical key sets — 370 keys as of the last audit)
 - Never hardcode a user-visible string in Dart. Use `context.l10n.someKey`
 - After adding a key to both ARB files, run `flutter gen-l10n` (or `flutter pub get` triggers it via `l10n.yaml`)
 - Test every new screen in both locales. RTL layout must be verified manually
@@ -377,10 +377,11 @@ These are common mistakes that will be caught in review:
 The app is configured via `--dart-define-from-file`:
 
 ```
-.env.local       ← development (not committed)
-.env.staging     ← staging (not committed)
-.env.production  ← production (not committed)
-.env.example     ← committed, template only
+.env                  ← development (not committed)
+.env.prod             ← production (not committed)
+.env.security         ← RASP/security flags (not committed)
+.env.example          ← committed, template only
+.env.security.example ← committed, template only
 ```
 
 Read env values via:

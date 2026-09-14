@@ -453,6 +453,23 @@
     }
   },
   "notStarted": "لم تبدأ بعد",
+  "lessonNumber": "الدرس {number}",
+  "@lessonNumber": {
+    "placeholders": {
+      "number": { "type": "int" }
+    }
+  },
+  "downloadNotificationDownloading": "جارٍ تنزيل {filename}: {progress}",
+  "@downloadNotificationDownloading": {
+    "placeholders": {
+      "filename": { "type": "String" },
+      "progress": { "type": "String" }
+    }
+  },
+  "downloadNotificationComplete": "تم التنزيل بنجاح",
+  "downloadNotificationFailed": "فشل التنزيل",
+  "downloadNotificationPaused": "تم إيقاف التنزيل مؤقتاً",
+  "downloadNotificationCanceled": "تم إلغاء التنزيل",
 
   "statusActive": "نشط",
   "statusLocked": "مقفل",

@@ -71,9 +71,12 @@ class _EditProfileBottomSheetState
       imageQuality: 85,
     );
 
-    if (image != null) {
-      setState(() => _selectedImagePath = image.path);
-    }
+    if (image == null) return;
+    // Audit P1 (L9): the sheet can be closed while the system picker is
+    // open — this was the only async gap in the file without a mounted
+    // check, causing "setState after dispose" when the user cancels late.
+    if (!mounted) return;
+    setState(() => _selectedImagePath = image.path);
   }
 
   Future<void> _save() async {

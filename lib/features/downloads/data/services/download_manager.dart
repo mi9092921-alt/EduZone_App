@@ -14,12 +14,15 @@ import 'package:dio/dio.dart'
         ResponseBody,
         ResponseType;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding;
+import 'package:flutter/widgets.dart'
+    show AppLifecycleState, Locale, WidgetsBinding;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../app/app_initializer.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../core/network/certificate_pinning.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/encryption_service.dart'
@@ -326,33 +329,51 @@ class DownloadManager {
     return state == AppLifecycleState.resumed;
   }
 
+  /// Notification strings resolve through the generated l10n catalog
+  /// (audit P0/M9 — they were hardcoded English). The locale is the
+  /// in-app `app_locale` preference with a device-locale fallback, and
+  /// the config is applied once at construction: a language change takes
+  /// effect for download notifications on the next app launch. The
+  /// `{filename}` / `{progress}` tokens passed into the ARB template are
+  /// intentionally literal — background_downloader substitutes them at
+  /// notification-render time.
   void _configureDownloader() {
+    final l10n = lookupAppLocalizations(_notificationLocale());
     _downloader.configureNotification(
-      running: const TaskNotification(
-        'EduZone download', // check-ignore
-        'Downloading {filename}: {progress}', // check-ignore
+      running: TaskNotification(
+        'EduZone download', // check-ignore -- brand name
+        l10n.downloadNotificationDownloading('{filename}', '{progress}'),
       ),
-      complete: const TaskNotification(
-        'EduZone download', // check-ignore
-        'Download complete', // check-ignore
+      complete: TaskNotification(
+        'EduZone download', // check-ignore -- brand name
+        l10n.downloadNotificationComplete,
       ),
-      error: const TaskNotification(
-        'EduZone download', // check-ignore
-        'Download failed', // check-ignore
+      error: TaskNotification(
+        'EduZone download', // check-ignore -- brand name
+        l10n.downloadNotificationFailed,
       ),
-      paused: const TaskNotification(
-        'EduZone download', // check-ignore
-        'Download paused', // check-ignore
+      paused: TaskNotification(
+        'EduZone download', // check-ignore -- brand name
+        l10n.downloadNotificationPaused,
       ),
-      canceled: const TaskNotification(
-        'EduZone download', // check-ignore
-        'Download canceled', // check-ignore
+      canceled: TaskNotification(
+        'EduZone download', // check-ignore -- brand name
+        l10n.downloadNotificationCanceled,
       ),
       progressBar: true,
     );
     _downloader.configure(
       androidConfig: (Config.runInForeground, Config.always),
     );
+  }
+
+  Locale _notificationLocale() {
+    final pref = AppInitializer.prefs.getString('app_locale');
+    if (pref == 'ar') return const Locale('ar');
+    if (pref == 'en') return const Locale('en');
+    final device =
+        WidgetsBinding.instance.platformDispatcher.locale.languageCode;
+    return device == 'en' ? const Locale('en') : const Locale('ar');
   }
 
   /// Starts or enqueues a download task from [url] to [savePath].

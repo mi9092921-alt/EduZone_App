@@ -98,7 +98,21 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 }
                 return _buildDownloadsList(downloads, l10n);
               },
-              loading: () => const Center(child: CircularProgressIndicator()),
+              // Audit P1 (M2): skeletonizer instead of a page-level spinner.
+              loading: () => AppSkeleton(
+                child: Column(
+                  children: List.generate(
+                    4,
+                    (index) => const Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg,
+                        vertical: AppSpacing.sm,
+                      ),
+                      child: AppSkeletonTile(height: 72),
+                    ),
+                  ),
+                ),
+              ),
               error: (error, _) => _buildErrorState(context, ds, l10n, error),
             ),
           ),

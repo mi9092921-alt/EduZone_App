@@ -366,14 +366,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       error: (error, stack) => [
         SliverFillRemaining(
           hasScrollBody: false,
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xl),
-              child: Text(
-                ErrorHandler.getMessage(context, error),
-                textAlign: TextAlign.center,
-              ),
-            ),
+          // Audit P1 (M3): retryable error state instead of a bare message.
+          child: AppEmptyState(
+            icon: Icons.error_outline_rounded,
+            title: ErrorHandler.getMessage(context, error),
+            actionLabel: AppLocalizations.of(context)!.retryButton,
+            onActionPressed: () => ref.invalidate(publicCoursesProvider),
           ),
         ),
       ],

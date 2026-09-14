@@ -124,17 +124,12 @@ class NotificationsScreen extends ConsumerWidget {
       error: (e, s) => [
         SliverFillRemaining(
           hasScrollBody: false,
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xl),
-              child: Text(
-                ErrorHandler.getMessage(context, e),
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: Theme.of(context).colorScheme.error,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
+          // Audit P1 (M3): retryable error state instead of a bare message.
+          child: AppEmptyState(
+            icon: Icons.error_outline_rounded,
+            title: ErrorHandler.getMessage(context, e),
+            actionLabel: AppLocalizations.of(context)!.retryButton,
+            onActionPressed: () => ref.invalidate(notificationsProvider),
           ),
         ),
       ],

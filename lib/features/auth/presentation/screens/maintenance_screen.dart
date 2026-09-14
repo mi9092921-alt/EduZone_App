@@ -43,10 +43,14 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
 
   void _startCountdown() {
     final authState = ref.read(authProvider);
-    final until = authState is AuthRestricted ? authState.access.until : null;
-    if (until == null) return;
+    // Audit P0 (M8): the server's maintenance branch returns `ends_at`
+    // (parsed into UserAccess.endsAt); `until` is only populated for
+    // suspensions, so this countdown previously never appeared.
+    final endsAt =
+        authState is AuthRestricted ? authState.access.endsAt : null;
+    if (endsAt == null) return;
 
-    _remaining = until.difference(DateTime.now());
+    _remaining = endsAt.difference(DateTime.now());
     if (_remaining.isNegative) {
       _remaining = Duration.zero;
       _checkAccess();
@@ -55,7 +59,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
 
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       final now = DateTime.now();
-      final diff = until.difference(now);
+      final diff = endsAt.difference(now);
 
       if (diff.isNegative || diff == Duration.zero) {
         _countdownTimer?.cancel();
@@ -140,7 +144,7 @@ class _MaintenanceScreenState extends ConsumerState<MaintenanceScreen> {
               ),
 
               // Countdown timer (if available)
-              if (access?.until != null) ...[
+              if (access?.endsAt != null) ...[
                 const SizedBox(height: AppSpacing.xl),
                 Container(
                   padding: const EdgeInsets.symmetric(

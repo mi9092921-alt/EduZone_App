@@ -1,5 +1,6 @@
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 
@@ -25,7 +26,8 @@ class LegalScreen extends StatelessWidget {
         iconSize: 24,
         color: ds.textPrimary,
         semanticLabel: l10n.navigateBack,
-        onPressed: () => Navigator.of(context).pop(),
+        // Audit P1 (M4): go_router instead of Navigator.
+        onPressed: () => context.pop(),
       ),
       slivers: [
         SliverPadding(

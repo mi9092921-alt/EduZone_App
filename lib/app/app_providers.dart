@@ -35,7 +35,14 @@ class AppLocale extends _$AppLocale {
   static Locale _loadLocale() {
     final value = AppInitializer.prefs.getString(_key);
     if (value == 'ar') return const Locale('ar');
-    return const Locale('en');
+    if (value == 'en') return const Locale('en');
+    // Audit P0 (H3): first launch (no explicit in-app choice yet) now
+    // follows the device language. This is an ar-EG-first product, so any
+    // non-English device — including every Arabic device — starts in
+    // Arabic instead of the old hardcoded English default.
+    final device =
+        WidgetsBinding.instance.platformDispatcher.locale.languageCode;
+    return device == 'en' ? const Locale('en') : const Locale('ar');
   }
 
   void updateLocale(Locale locale) {

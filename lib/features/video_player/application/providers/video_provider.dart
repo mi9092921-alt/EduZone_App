@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../../../shared/cross_feature/courses_shared.dart';
+import '../../../../shared/cross_feature/home_shared.dart';
 import '../../data/datasources/video_player_remote_ds.dart';
 import '../../data/repositories/video_player_repo_impl.dart';
 import '../../domain/entities/lesson_progress_sync_item.dart';
@@ -177,6 +179,7 @@ class VideoProgress extends _$VideoProgress {
       _syncTimer?.cancel();
       _queueSync(courseId, lessonId, flushNow: true);
       _logCompletion(courseId, lessonId);
+      _refreshDownstreamProgressProviders(courseId);
     } else {
       _scheduleDebouncedSync(courseId, lessonId);
     }
@@ -191,6 +194,7 @@ class VideoProgress extends _$VideoProgress {
       _syncTimer?.cancel();
       _queueSync(courseId, lessonId, flushNow: true);
       _logCompletion(courseId, lessonId);
+      _refreshDownstreamProgressProviders(courseId);
     }
   }
 
@@ -224,6 +228,20 @@ class VideoProgress extends _$VideoProgress {
   void _flushPendingProgress(String courseId, String lessonId) {
     if (!_hasPendingProgress) return;
     _queueSync(courseId, lessonId, flushNow: true);
+  }
+
+  /// Audit P1 (M1): lesson completion used to update nothing downstream —
+  /// [courseProgressProvider] (keepAlive) and Home's resume/recent
+  /// providers kept stale data until a manual pull-to-refresh, and
+  /// MainShell's IndexedStack keeps those branches alive. Completion is a
+  /// rare event, so the refetch cost is negligible next to showing wrong
+  /// progress. The providers come from the cross_feature seams —
+  /// video_player must not import courses/home internals directly.
+  void _refreshDownstreamProgressProviders(String courseId) {
+    ref.invalidate(courseProgressProvider(courseId));
+    ref.invalidate(myCoursesProvider);
+    ref.invalidate(resumeLessonsProvider);
+    ref.invalidate(recentCoursesProvider);
   }
 
   /// Does NOT use `ref` or `state` — safe to call from onDispose or after disposal.

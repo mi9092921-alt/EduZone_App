@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
+import '../../../../app/app_initializer.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
 import '../../../../shared/utils/error_handler.dart';
@@ -10,6 +13,7 @@ import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/collapsing_tab_bar_delegate.dart';
 import '../../application/providers/courses_provider.dart';
 import '../../domain/entities/course.dart';
+import '../../domain/entities/section.dart';
 import '../widgets/course_about_tab_content.dart';
 import '../widgets/course_enroll_price_row.dart';
 import '../widgets/sections_accordion.dart';
@@ -102,7 +106,8 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
                     backgroundColor: Colors.black.withValues(alpha: 0.3),
                     child: BackButton(
                       color: Colors.white,
-                      onPressed: () => Navigator.of(context).pop(),
+                      // Audit P1 (M4): go_router instead of Navigator.
+                      onPressed: () => context.pop(),
                     ),
                   ),
                 ),
@@ -296,7 +301,18 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
             if (isEnrolled) {
               return _buildEnrolledFooterWithProgress(course, ref, l10n, ds);
             } else if (enrollmentAsync.isLoading) {
-              return const Center(child: CircularProgressIndicator());
+              // Audit P1 (M2): skeleton instead of a spinner, matching the
+              // enrollment skeleton below.
+              return AppSkeleton(
+                child: Container(
+                  width: double.infinity,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: ds.surface2,
+                    borderRadius: AppRadius.smBorder,
+                  ),
+                ),
+              );
             } else {
               return _buildNotEnrolledFooter(course, l10n, ds);
             }
@@ -359,7 +375,16 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
                       const SizedBox(height: 2),
                       Text(
                         l10n.lastWatched(
-                          timeago.format(enrollment.lastWatchedAt!),
+                          timeago.format(
+                            enrollment.lastWatchedAt!,
+                            // Audit P0 (H4): timeago has no default locale
+                            // registered via setDefaultLocale, so this
+                            // previously rendered English relative time
+                            // inside the Arabic string.
+                            locale: Localizations.localeOf(
+                              context,
+                            ).languageCode,
+                          ),
                         ),
                         style: AppTextStyles.bodySmall.copyWith(
                           color: ds.textMuted,
@@ -375,10 +400,15 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
                 child: AppButton(
                   label: isCompleted
                       ? l10n.reviewCourse
-                      : isNotStarted
-                          ? l10n.resumeLearning
-                          : l10n.resumeLearning,
-                  onPressed: () {},
+                      : l10n.resumeLearning,
+                  onPressed: () => _openLesson(
+                    context,
+                    course,
+                    _resolveResumeLessonId(
+                      course,
+                      restartFromStart: isCompleted,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -399,6 +429,40 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
         }
       },
     );
+  }
+
+  /// Audit P0 (H1): the enrolled footer CTA was a dead button
+  /// (`onPressed: () {}`). Resume opens the lesson recorded in
+  /// [StorageKeys.lastWatchedLesson], falling back to the first lesson of
+  /// the first section; a completed course ("Review") restarts from the
+  /// first lesson. Navigation uses the default `/lesson/` player route —
+  /// the same entry point ResumeCard uses on Home; the in-player switch
+  /// sheet still allows changing the playback backend.
+  String? _resolveResumeLessonId(
+    Course course, {
+    required bool restartFromStart,
+  }) {
+    if (!restartFromStart) {
+      final lastWatched = AppInitializer.prefs.getString(
+        StorageKeys.lastWatchedLesson(int.tryParse(course.id) ?? 0),
+      );
+      if (lastWatched != null && lastWatched.isNotEmpty) {
+        return lastWatched;
+      }
+    }
+    final sections = course.sections ?? const <Section>[];
+    for (final section in sections) {
+      final lessons = section.lessons;
+      if (lessons != null && lessons.isNotEmpty) {
+        return lessons.first.id;
+      }
+    }
+    return null;
+  }
+
+  void _openLesson(BuildContext context, Course course, String? lessonId) {
+    if (lessonId == null || lessonId.isEmpty) return;
+    context.push('${AppRoutes.courses}/${course.id}/lesson/$lessonId');
   }
 
   Widget _buildNotEnrolledFooter(

@@ -905,6 +905,28 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notStarted => 'Not started yet';
 
   @override
+  String lessonNumber(int number) {
+    return 'Lesson $number';
+  }
+
+  @override
+  String downloadNotificationDownloading(String filename, String progress) {
+    return 'Downloading $filename: $progress';
+  }
+
+  @override
+  String get downloadNotificationComplete => 'Download complete';
+
+  @override
+  String get downloadNotificationFailed => 'Download failed';
+
+  @override
+  String get downloadNotificationPaused => 'Download paused';
+
+  @override
+  String get downloadNotificationCanceled => 'Download canceled';
+
+  @override
   String get statusActive => 'Active';
 
   @override

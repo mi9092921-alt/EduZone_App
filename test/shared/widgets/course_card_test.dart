@@ -49,7 +49,9 @@ void main() {
       expect(find.text('12 lessons'), findsOneWidget);
       expect(find.text('1h 30m'), findsOneWidget);
       expect(find.text('Free'), findsOneWidget);
-      expect(find.text('4.8'), findsOneWidget);
+      // Audit P0 (H5): the fake placeholder rating was removed — no
+      // rating renders until a real ratings source exists.
+      expect(find.text('4.8'), findsNothing);
     });
 
     testWidgets('hides rating and duration when not available', (WidgetTester tester) async {

@@ -1712,6 +1712,42 @@ abstract class AppLocalizations {
   /// **'Not started yet'**
   String get notStarted;
 
+  /// No description provided for @lessonNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Lesson {number}'**
+  String lessonNumber(int number);
+
+  /// No description provided for @downloadNotificationDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading {filename}: {progress}'**
+  String downloadNotificationDownloading(String filename, String progress);
+
+  /// No description provided for @downloadNotificationComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Download complete'**
+  String get downloadNotificationComplete;
+
+  /// No description provided for @downloadNotificationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Download failed'**
+  String get downloadNotificationFailed;
+
+  /// No description provided for @downloadNotificationPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Download paused'**
+  String get downloadNotificationPaused;
+
+  /// No description provided for @downloadNotificationCanceled.
+  ///
+  /// In en, this message translates to:
+  /// **'Download canceled'**
+  String get downloadNotificationCanceled;
+
   /// No description provided for @statusActive.
   ///
   /// In en, this message translates to:

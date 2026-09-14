@@ -91,11 +91,9 @@ class DiscoverCourseCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs2),
         ],
         _buildDiscoverMetaRow(colors, l10n),
-        // ignore: todo
-        // TODO(rating): fixed placeholder rating until the ratings table
-        // exists — always shown regardless of data.rating.
-        const SizedBox(height: AppSpacing.xs2),
-        _buildRating(colors),
+        // Audit P0 (H5): the fake 4.8 placeholder rating was removed —
+        // no ratings source exists yet. Reintroduce via data.rating once
+        // the ratings table ships.
         const Spacer(),
         Row(
           children: [
@@ -235,29 +233,6 @@ class DiscoverCourseCard extends StatelessWidget {
         ? price.toInt().toString()
         : price.toStringAsFixed(2);
     return '\$$formatted';
-  }
-
-  // ignore: todo
-  // TODO(rating): remove this placeholder and switch back to data.rating /
-  // data.ratingCount once the ratings table exists.
-  static const double _placeholderRating = 4.8;
-
-  Widget _buildRating(DesignSystemColors colors) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.star_rounded, color: AppColors.warning, size: 18),
-        const SizedBox(width: AppSpacing.xs2),
-        Text(
-          _placeholderRating.toStringAsFixed(1),
-          style: AppTextStyles.labelSmall.copyWith(
-            color: colors.textPrimary,
-            fontWeight: FontWeight.w700,
-            fontSize: 12,
-          ),
-        ),
-      ],
-    );
   }
 
   Widget _buildPriceBadge(DesignSystemColors colors, AppLocalizations l10n) {

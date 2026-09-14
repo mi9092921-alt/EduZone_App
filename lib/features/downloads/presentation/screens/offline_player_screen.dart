@@ -35,15 +35,18 @@ class _OfflinePlayerScreenState extends ConsumerState<OfflinePlayerScreen> {
     return downloadAsync.when(
       loading: () => Scaffold(
         appBar: AppBar(elevation: 0),
-        body: const Center(child: CircularProgressIndicator()),
+        // Audit P1 (M2): skeletonizer instead of a page-level spinner.
+        body: const AppSkeleton(child: SizedBox.expand()),
       ),
       error: (err, _) => Scaffold(
         appBar: AppBar(elevation: 0),
-        body: Center(
-          child: Text(
-            l10n.errorGeneric,
-            style: AppTextStyles.bodyMedium.copyWith(color: ds.error),
-          ),
+        // Audit P1 (M3): retryable error state instead of a bare message.
+        body: AppEmptyState(
+          icon: Icons.error_outline_rounded,
+          title: l10n.errorGeneric,
+          actionLabel: l10n.retryButton,
+          onActionPressed: () =>
+              ref.invalidate(downloadByIdProvider(widget.downloadId)),
         ),
       ),
       data: (download) {

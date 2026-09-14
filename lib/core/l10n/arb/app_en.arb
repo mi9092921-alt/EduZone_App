@@ -450,6 +450,23 @@
     }
   },
   "notStarted": "Not started yet",
+  "lessonNumber": "Lesson {number}",
+  "@lessonNumber": {
+    "placeholders": {
+      "number": { "type": "int" }
+    }
+  },
+  "downloadNotificationDownloading": "Downloading {filename}: {progress}",
+  "@downloadNotificationDownloading": {
+    "placeholders": {
+      "filename": { "type": "String" },
+      "progress": { "type": "String" }
+    }
+  },
+  "downloadNotificationComplete": "Download complete",
+  "downloadNotificationFailed": "Download failed",
+  "downloadNotificationPaused": "Download paused",
+  "downloadNotificationCanceled": "Download canceled",
 
   "statusActive": "Active",
   "statusLocked": "Locked",

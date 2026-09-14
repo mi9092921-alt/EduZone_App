@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app/core/l10n/arb/app_localizations.dart';
+import 'package:app/design_system/design_system.dart';
 import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:app/features/downloads/domain/entities/download_enums.dart';
 import 'package:app/features/downloads/domain/entities/downloaded_lesson.dart';
@@ -58,9 +59,11 @@ Future<void> pumpOfflinePlayer(
 }
 
 void main() {
-  testWidgets('shows a spinner while the download record is loading', (
+  testWidgets('shows a skeleton while the download record is loading', (
     tester,
   ) async {
+    // Audit P1 (M2): the page-level spinner was replaced with a
+    // skeletonizer placeholder per the design-system loading rule.
     await pumpOfflinePlayer(
       tester,
       overrides: [
@@ -72,7 +75,8 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(AppSkeleton), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
   testWidgets(

@@ -121,7 +121,10 @@ class _RecentLessonsSection extends ConsumerWidget {
         return Column(
           children: [
             SectionHeader(
-              title: l10n.continue_learning,
+              // Audit P0 (M5): the recent-lessons and recent-courses
+              // sections both rendered "Continue Learning"; the lessons
+              // section now uses the existing continueWatching key.
+              title: l10n.continueWatching,
               onTrailingTapped: () => context.go(AppRoutes.courses),
               trailing: Text(
                 l10n.see_all,
@@ -162,7 +165,16 @@ class _RecentLessonsSection extends ConsumerWidget {
         if (kDebugMode) {
           debugPrint('[HomeScreen] Error loading resume lessons: ${err.runtimeType}');
         }
-        return const SizedBox.shrink();
+        // Audit P1 (M3): was a silent SizedBox.shrink() — the section
+        // vanished on error. Now shows a retryable state like the
+        // sibling sections.
+        return AppEmptyState(
+          isFullPage: false,
+          icon: Icons.error_outline_rounded,
+          title: ErrorHandler.getMessage(context, err),
+          actionLabel: l10n.retryButton,
+          onActionPressed: () => ref.invalidate(resumeLessonsProvider),
+        );
       },
     );
   }
@@ -223,7 +235,9 @@ class _RecentCoursesSection extends ConsumerWidget {
                       totalLessons: course.totalLessons,
                       progress: (course.progressPct ?? 0.0) / 100.0,
                       currentLessonTitle: course.completedLessons != null
-                          ? 'Lesson ${course.completedLessons! + 1}'
+                          // Audit P0 (M6): was a hardcoded English
+                          // 'Lesson N' — now localized via ARB.
+                          ? l10n.lessonNumber(course.completedLessons! + 1)
                           : null,
                     );
 

@@ -54,6 +54,19 @@ void main() {
         );
       },
     );
+
+    test('should return Left(ServerFailure) on exception', () async {
+      // arrange (audit P1 coverage: getNotifications error path)
+      when(
+        () => mockDataSource.getNotifications('user1'),
+      ).thenThrow(const ServerException('Failed'));
+
+      // act
+      final result = await repository.getNotifications('user1');
+
+      // assert
+      expect(result.isLeft(), isTrue);
+    });
   });
 
   group('markAsRead', () {
@@ -87,6 +100,19 @@ void main() {
       final result = await repository.markAllAsRead('user1');
 
       expect(result, isA<Right<Failure, void>>());
+    });
+
+    test('should return Left(ServerFailure) on exception', () async {
+      // arrange (audit P1 coverage: markAllAsRead error path)
+      when(
+        () => mockDataSource.markAllAsRead('user1'),
+      ).thenThrow(const ServerException('Failed'));
+
+      // act
+      final result = await repository.markAllAsRead('user1');
+
+      // assert
+      expect(result.isLeft(), isTrue);
     });
   });
 }
