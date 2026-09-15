@@ -34,12 +34,15 @@ class AuthActivitySyncService {
 
   /// - [skipBind]: true when the calling flow (login, or device
   ///   re-validation on cold start) has already bound/re-bound the device
-  ///   itself. When true, this also skips `recordSession` to avoid
-  ///   flooding the sessions table on every app resume — a session row is
-  ///   only recorded on a genuinely fresh login.
+  ///   itself. Independent of [recordSession].
+  /// - [recordSession]: true only on a genuinely fresh login — records a
+  ///   `sessions` row (region, device, user_agent, started_at). Must stay
+  ///   false on cold-start session resume to avoid flooding the sessions
+  ///   table on every app open.
   Future<void> syncActivityAndSession(
     AppUser user, {
     bool skipBind = false,
+    bool recordSession = false,
   }) async {
     try {
       final fingerprint = _deviceService.fingerprint;
@@ -58,7 +61,7 @@ class AuthActivitySyncService {
         deviceFingerprint: fingerprint,
       );
 
-      if (!skipBind) {
+      if (recordSession) {
         await _remoteDataSource.recordSession(
           userId: user.id,
           tenantId: user.tenantId,

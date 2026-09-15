@@ -71,78 +71,127 @@ void main() {
     );
   });
 
-  group('syncActivityAndSession — skipBind: true (login / resumed session)', () {
-    test('syncs activity but does NOT record a new session', () async {
-      await service.syncActivityAndSession(tUser, skipBind: true);
+  group(
+    'syncActivityAndSession — skipBind: true, recordSession: false (cold-start resume)',
+    () {
+      test('syncs activity but does NOT record a new session', () async {
+        await service.syncActivityAndSession(tUser, skipBind: true);
 
-      verify(
-        () => mockRemoteDataSource.syncUserActivity(
-          userId: tUser.id,
-          tenantId: tUser.tenantId,
-          deviceFingerprint: 'fp-123',
-        ),
-      ).called(1);
+        verify(
+          () => mockRemoteDataSource.syncUserActivity(
+            userId: tUser.id,
+            tenantId: tUser.tenantId,
+            deviceFingerprint: 'fp-123',
+          ),
+        ).called(1);
 
-      verifyNever(
-        () => mockRemoteDataSource.recordSession(
-          userId: any(named: 'userId'),
-          tenantId: any(named: 'tenantId'),
-          deviceFingerprint: any(named: 'deviceFingerprint'),
-          regionId: any(named: 'regionId'),
-          userAgent: any(named: 'userAgent'),
-        ),
+        verifyNever(
+          () => mockRemoteDataSource.recordSession(
+            userId: any(named: 'userId'),
+            tenantId: any(named: 'tenantId'),
+            deviceFingerprint: any(named: 'deviceFingerprint'),
+            regionId: any(named: 'regionId'),
+            userAgent: any(named: 'userAgent'),
+          ),
+        );
+
+        verifyNever(() => mockBindDevice(any(), any(), any()));
+      });
+    },
+  );
+
+  group(
+    'syncActivityAndSession — skipBind: true, recordSession: true (fresh login)',
+    () {
+      test(
+        'records a session without re-binding the device (already bound by login)',
+        () async {
+          await service.syncActivityAndSession(
+            tUser,
+            skipBind: true,
+            recordSession: true,
+          );
+
+          verify(
+            () => mockRemoteDataSource.syncUserActivity(
+              userId: tUser.id,
+              tenantId: tUser.tenantId,
+              deviceFingerprint: 'fp-123',
+            ),
+          ).called(1);
+
+          verify(
+            () => mockRemoteDataSource.recordSession(
+              userId: tUser.id,
+              tenantId: tUser.tenantId,
+              deviceFingerprint: 'fp-123',
+              regionId: tUser.regionId,
+              userAgent: 'android: Pixel 8',
+            ),
+          ).called(1);
+
+          verifyNever(() => mockBindDevice(any(), any(), any()));
+        },
       );
 
-      verifyNever(() => mockBindDevice(any(), any(), any()));
-    });
-  });
+      test('falls back to "Unknown" in userAgent when model is missing',
+          () async {
+        when(() => mockDeviceService.deviceInfoJson).thenReturn({});
 
-  group('syncActivityAndSession — skipBind: false (fresh flow)', () {
-    test('binds the device, syncs activity, and records a session', () async {
-      await service.syncActivityAndSession(tUser);
+        await service.syncActivityAndSession(
+          tUser,
+          skipBind: true,
+          recordSession: true,
+        );
 
-      verify(
-        () => mockBindDevice('fp-123', {'model': 'Pixel 8'}, 'android'),
-      ).called(1);
+        verify(
+          () => mockRemoteDataSource.recordSession(
+            userId: tUser.id,
+            tenantId: tUser.tenantId,
+            deviceFingerprint: 'fp-123',
+            regionId: tUser.regionId,
+            userAgent: 'android: Unknown',
+          ),
+        ).called(1);
+      });
+    },
+  );
 
-      verify(
-        () => mockRemoteDataSource.syncUserActivity(
-          userId: tUser.id,
-          tenantId: tUser.tenantId,
-          deviceFingerprint: 'fp-123',
-        ),
-      ).called(1);
+  group(
+    'syncActivityAndSession — skipBind: false, recordSession: true (fresh flow)',
+    () {
+      test('binds the device, syncs activity, and records a session',
+          () async {
+        await service.syncActivityAndSession(tUser, recordSession: true);
 
-      verify(
-        () => mockRemoteDataSource.recordSession(
-          userId: tUser.id,
-          tenantId: tUser.tenantId,
-          deviceFingerprint: 'fp-123',
-          regionId: tUser.regionId,
-          userAgent: 'android: Pixel 8',
-        ),
-      ).called(1);
-    });
+        verify(
+          () => mockBindDevice('fp-123', {'model': 'Pixel 8'}, 'android'),
+        ).called(1);
 
-    test('falls back to "Unknown" in userAgent when model is missing', () async {
-      when(() => mockDeviceService.deviceInfoJson).thenReturn({});
+        verify(
+          () => mockRemoteDataSource.syncUserActivity(
+            userId: tUser.id,
+            tenantId: tUser.tenantId,
+            deviceFingerprint: 'fp-123',
+          ),
+        ).called(1);
 
-      await service.syncActivityAndSession(tUser);
-
-      verify(
-        () => mockRemoteDataSource.recordSession(
-          userId: tUser.id,
-          tenantId: tUser.tenantId,
-          deviceFingerprint: 'fp-123',
-          regionId: tUser.regionId,
-          userAgent: 'android: Unknown',
-        ),
-      ).called(1);
-    });
-  });
+        verify(
+          () => mockRemoteDataSource.recordSession(
+            userId: tUser.id,
+            tenantId: tUser.tenantId,
+            deviceFingerprint: 'fp-123',
+            regionId: tUser.regionId,
+            userAgent: 'android: Pixel 8',
+          ),
+        ).called(1);
+      });
+    },
+  );
 
   group('error handling', () {
-    test('swallows exceptions instead of rethrowing (best-effort sync)', () async {
+    test('swallows exceptions instead of rethrowing (best-effort sync)',
+        () async {
       when(
         () => mockRemoteDataSource.syncUserActivity(
           userId: any(named: 'userId'),
@@ -157,12 +206,13 @@ void main() {
       );
     });
 
-    test('a bindDevice failure is also swallowed and does not stop the caller', () async {
+    test('a bindDevice failure is also swallowed and does not stop the caller',
+        () async {
       when(() => mockBindDevice(any(), any(), any()))
           .thenThrow(Exception('max devices reached'));
 
       await expectLater(
-        service.syncActivityAndSession(tUser),
+        service.syncActivityAndSession(tUser, recordSession: true),
         completes,
       );
 

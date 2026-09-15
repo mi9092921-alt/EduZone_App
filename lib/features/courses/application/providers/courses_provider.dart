@@ -173,8 +173,14 @@ class UserSubscriptions extends _$UserSubscriptions {
     return result.fold((_) => <String>{}, (ids) => ids);
   }
 
-  // Enrollment is intentionally not triggered from the UI until payment is integrated.
-  // Later, wire the confirmed payment flow to enrollInCourseProvider.
+  // Enrollment is intentionally not triggered from the UI until payment is
+  // integrated. Later, wire the confirmed payment flow to
+  // enrollInCourseProvider.
+  //
+  // PRODUCT DECISION (audit 2026-09): enrollment is documented as OUT OF
+  // RELEASE SCOPE — the EnrollActionButton intentionally surfaces
+  // `enrollmentComingSoon` and `enrollInCourseProvider` stays unwired until
+  // the payment flow ships. Do not wire it without a new product decision.
 }
 
 // Keep track of loaded pagination to prevent duplicates

@@ -511,10 +511,17 @@ class Auth extends _$Auth {
           }),
         );
 
-        // Track activity and session in the background (skip bindDevice — already done above)
+        // Track activity and session in the background (skip bindDevice — already done above).
+        // This IS a genuinely fresh login, so a sessions row must be recorded
+        // (region, device, user_agent, started_at) — skipBind only skips the
+        // device re-binding, not session recording.
         await ref
             .read(authActivitySyncServiceProvider)
-            .syncActivityAndSession(appUser, skipBind: true);
+            .syncActivityAndSession(
+              appUser,
+              skipBind: true,
+              recordSession: true,
+            );
 
         // Start security monitoring (polling + Realtime token_version check)
         _startAccessMonitoring(appUser.id, appUser.tenantId);
