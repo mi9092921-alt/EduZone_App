@@ -311,6 +311,22 @@ COMMENT ON TABLE public.users IS
 Soft delete with cascade to enrollments, sessions, roles.
 Email is tenant-scoped unique (must be validated before INSERT).';
 
+-- Tenant Switcher (super_admin only). NULL means "acting as my own
+-- tenant" (tenant_id), which is the state for every non-super_admin user
+-- and the default for super_admin. Only ever written by
+-- switch_tenant_context() (07_functions.sql), which validates the
+-- caller is super_admin and the target tenant exists and is active --
+-- never written directly by client code. ON DELETE SET NULL covers a
+-- hard delete; get_current_tenant_id() additionally re-checks
+-- status='active' for the (rare) switched-super_admin case on every
+-- read, since tenants in this schema are always soft-deleted in
+-- practice (deleted_at/status), not physically deleted.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS acting_tenant_id uuid REFERENCES public.tenants(id) ON DELETE SET NULL;
+COMMENT ON COLUMN public.users.acting_tenant_id IS
+  'super_admin only: tenant currently being viewed/managed, distinct from '
+  'their own home tenant_id. get_current_tenant_id() prefers this over '
+  'tenant_id when set and the caller is super_admin. NULL = acting as home tenant.';
+
 -- safety guard if deployed from earlier draft
 
 -- LOW-04: admins_legacy is deprecated and removed.
@@ -1253,6 +1269,11 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   region_id text REFERENCES public.regions(id) ON DELETE SET NULL,
   target_audience text NOT NULL DEFAULT 'all'
     CHECK (target_audience IN ('all', 'students', 'teachers', 'admins')),
+  -- Explicit user targeting is separate from the audience value so a queued
+  -- fanout cannot fall back to a tenant-wide audience while target rows are
+  -- being attached by the caller.
+  targeting_mode text NOT NULL DEFAULT 'audience'
+    CHECK (targeting_mode IN ('audience', 'users')),
   target_permission text REFERENCES public.permissions(name) ON DELETE RESTRICT,
   deleted_at timestamptz,
   created_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
@@ -1264,6 +1285,22 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 COMMENT ON TABLE public.notifications IS 
 'In-app notifications for users. region_id allows targeting by data residency region.
 Soft-delete via deleted_at.';
+
+-- Existing production databases use CREATE TABLE IF NOT EXISTS, so ensure the
+-- hardening column exists before 07_functions.sql is applied on an upgrade.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'notifications'
+      AND column_name = 'targeting_mode'
+  ) THEN
+    ALTER TABLE public.notifications
+      ADD COLUMN targeting_mode text NOT NULL DEFAULT 'audience'
+      CHECK (targeting_mode IN ('audience', 'users'));
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS public.notification_targets (
   notification_id uuid NOT NULL REFERENCES public.notifications(id) ON DELETE CASCADE,
