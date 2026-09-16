@@ -3,30 +3,22 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
-// Architecture exception (reviewed): CleanupScheduler.callbackDispatcher runs
-// in WorkManager's own isolate, which has no Flutter binding and no Riverpod
-// container (see class doc-comment below), so it cannot reach
-// DownloadLocalDataSource through the normal application/domain layer the
-// way every other core/ file must. Importing it directly from core/ is the
-// smallest safe option today; the correct long-term fix is to extract a
-// small feature-agnostic "expired downloads" data contract into core/ or
-// shared/ so this isolate entrypoint no longer reaches into
-// features/downloads/data/ at all. Tracked as a known architecture debt
-// item rather than silently allowed.
-import '../../features/downloads/data/datasources/download_local_ds.dart'; // check-ignore
-import '../security/secure_storage_config.dart';
-import '../services/encryption_service.dart';
-import '../services/storage_service.dart';
+import '../../../../core/security/secure_storage_config.dart';
+import '../../../../core/services/encryption_service.dart';
+import '../../../../core/services/storage_service.dart';
+import '../datasources/download_local_ds.dart';
 
 /// Service for scheduling automatic cleanup of expired downloads.
 ///
 /// Uses WorkManager on Android to run cleanup tasks periodically.
 /// Cleanup runs daily to remove expired downloads and free storage.
 ///
-/// The [callbackDispatcher] runs in its own isolate (no Flutter binding,
-/// no Riverpod container). It therefore bootstraps only the lowest-level
-/// data-access objects directly, without going through any provider or
-/// use-case layer.
+/// Lives under `features/downloads` (not core/) — it is downloads-specific.
+/// NOTE: moving it here resolved the layer violation of core/ importing a
+/// feature datasource; the constraint that [callbackDispatcher] runs in its
+/// own WorkManager isolate (no Flutter binding, no Riverpod container) and
+/// therefore bootstraps lowest-level data-access objects directly remains
+/// a documented, separate piece of architecture debt.
 class CleanupScheduler {
   static const _cleanupTask = 'cleanupExpiredDownloads';
 

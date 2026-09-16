@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+
 import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,11 +11,11 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../core/network/supabase_client.dart';
 import '../core/security/secure_storage_config.dart';
 import '../core/security/security_service.dart';
-import '../core/services/cleanup_scheduler.dart';
 import '../core/services/storage_service.dart';
 import '../core/utils/device_info_helper.dart';
 import '../features/downloads/application/services/offline_crash_recovery.dart';
 import '../features/downloads/data/datasources/download_local_ds.dart';
+import '../features/downloads/data/services/cleanup_scheduler.dart';
 import '../features/downloads/data/services/download_manager.dart';
 import '../features/downloads/data/services/download_recovery_service.dart';
 import '../features/notifications/data/services/fcm_service.dart';

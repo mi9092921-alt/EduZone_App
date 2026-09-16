@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:app/core/services/cleanup_scheduler.dart';
 import 'package:app/core/services/encryption_service.dart';
 import 'package:app/features/downloads/data/datasources/download_local_ds.dart';
+import 'package:app/features/downloads/data/services/cleanup_scheduler.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
