@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/layout/adaptive_layout.dart';
 import '../../core/services/location_service.dart';
 
 class MainShell extends ConsumerStatefulWidget {
@@ -37,8 +38,18 @@ class _MainShellState extends ConsumerState<MainShell>
 
   @override
   Widget build(BuildContext context) {
+    // Tablet/desktop: center the active branch's content and cap its width,
+    // so lists/cards don't stretch edge-to-edge on wide windows. The bottom
+    // nav stays on all breakpoints (mobile-first product).
     return Scaffold(
-      body: widget.navigationShell,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: AdaptiveValue.maxContentWidth,
+          ),
+          child: widget.navigationShell,
+        ),
+      ),
       bottomNavigationBar: AppBottomNav(
         currentIndex: widget.navigationShell.currentIndex,
         onTap: (index) {

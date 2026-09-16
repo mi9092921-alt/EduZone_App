@@ -282,8 +282,8 @@ Use `AdaptiveLayout` from `core/layout/adaptive_layout.dart` for layout differen
 ```dart
 // Breakpoints defined in core/layout/breakpoints.dart
 // mobile  < 600px
-// tablet  600–1024px
-// desktop > 1024px
+// tablet  600–1200px
+// desktop ≥ 1200px
 ```
 
 All layouts must work at all three breakpoints. Test on a tablet emulator before submitting UI changes.

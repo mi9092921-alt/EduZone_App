@@ -9,4 +9,8 @@ class Breakpoints {
   static bool isTablet(BuildContext ctx)  => MediaQuery.sizeOf(ctx).width >= mobile
                                           && MediaQuery.sizeOf(ctx).width < desktop;
   static bool isDesktop(BuildContext ctx) => MediaQuery.sizeOf(ctx).width >= desktop;
+
+  static bool isMobileWidth(double width)  => width < mobile;
+  static bool isTabletWidth(double width)  => width >= mobile && width < desktop;
+  static bool isDesktopWidth(double width) => width >= desktop;
 }
