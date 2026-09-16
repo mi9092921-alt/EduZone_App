@@ -27,3 +27,9 @@ StreamSubscription<void> homeRefreshListener(Ref ref) {
   ref.onDispose(sub.cancel);
   return sub;
 }
+
+/// Invalidates the app-wide home listener at a session boundary so its
+/// subscription is rebuilt with the next account's provider graph.
+void invalidateHomeRefreshProviders(Ref ref) {
+  ref.invalidate(homeRefreshListenerProvider);
+}

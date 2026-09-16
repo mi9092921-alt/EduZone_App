@@ -27,3 +27,9 @@ StreamSubscription<void> courseRefreshListener(Ref ref) {
   ref.onDispose(sub.cancel);
   return sub;
 }
+
+/// Invalidates the app-wide progress listener at a session boundary so its
+/// subscription is rebuilt with the next account's provider graph.
+void invalidateCourseRefreshProviders(Ref ref) {
+  ref.invalidate(courseRefreshListenerProvider);
+}

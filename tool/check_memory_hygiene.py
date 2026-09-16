@@ -78,6 +78,13 @@ LONG_LIVED_PROVIDER_ALLOWLIST = {
     "featureFlagRepository",
     "featureFlagCache",
     "FeatureFlags",
+    # App-lifetime event subscriptions are owned by the composition root and
+    # each listener cancels its subscription through ref.onDispose(). They are
+    # explicitly invalidated at session boundaries and rebuilt by appListeners.
+    "appListeners",
+    "courseRefreshListener",
+    "offlineAccountPurgeListener",
+    "homeRefreshListener",
 }
 
 MANUAL_PROVIDER_RE = re.compile(

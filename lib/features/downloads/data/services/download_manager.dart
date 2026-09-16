@@ -101,8 +101,8 @@ Future<Task?> handleTokenRefresh(Task task) async {
     // produced zero production observability signal at all.
     GlobalErrorHandler.logError(
       Exception(
-        '[handleTokenRefresh] Link refresh failed (${e.runtimeType}): '
-        '${_redactLinkRefreshFailure(e)}',
+        '[handleTokenRefresh] Link refresh failed (${e.runtimeType}): ' // check-ignore: telemetry only
+        '${_redactLinkRefreshFailure(e)}', // check-ignore: telemetry only
       ),
       stack,
     );
@@ -172,8 +172,8 @@ Future<String?> fetchFreshTrackUrl({
     // there.
     GlobalErrorHandler.logError(
       Exception(
-        '[fetchFreshTrackUrl] Link refresh failed (${e.runtimeType}): '
-        '${_redactLinkRefreshFailure(e)}',
+        '[fetchFreshTrackUrl] Link refresh failed (${e.runtimeType}): ' // check-ignore: telemetry only
+        '${_redactLinkRefreshFailure(e)}', // check-ignore: telemetry only
       ),
       stack,
     );

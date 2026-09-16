@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:app/core/feature_flags/feature_flags_provider.dart';
+import 'package:app/features/courses/application/providers/course_refresh_listener.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
+import 'package:app/features/downloads/application/listeners/offline_account_purge_listener.dart';
 import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:app/features/home/application/providers/home_provider.dart';
+import 'package:app/features/home/application/providers/home_refresh_listener.dart';
 import 'package:app/features/notifications/application/providers/notifications_provider.dart';
 import 'package:app/features/profile/application/providers/profile_provider.dart';
 import 'package:app/features/todo/application/providers/todo_provider.dart';
@@ -49,6 +52,9 @@ void invalidateAllUserScopedProviders(Ref ref) {
   // rebuilds from safe defaults (no session → no cache to load); the next
   // authenticated session re-fetches via the auth flow's refresh hook.
   ref.invalidate(featureFlagsProvider);
+  invalidateCourseRefreshProviders(ref);
+  invalidateOfflineAccountPurgeProviders(ref);
+  invalidateHomeRefreshProviders(ref);
 }
 
 /// Closes the shared lesson-progress queue at a logout boundary. Manual

@@ -42,3 +42,9 @@ StreamSubscription<void> offlineAccountPurgeListener(Ref ref) {
   ref.onDispose(sub.cancel);
   return sub;
 }
+
+/// Invalidates the app-wide account-purge listener at a session boundary so
+/// its subscription is rebuilt with the next account's provider graph.
+void invalidateOfflineAccountPurgeProviders(Ref ref) {
+  ref.invalidate(offlineAccountPurgeListenerProvider);
+}

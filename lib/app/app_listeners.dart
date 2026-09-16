@@ -14,7 +14,11 @@ part 'app_listeners.g.dart';
 /// via `ref.onDispose` and may only touch its own feature's internals —
 /// cross-feature communication flows through the [EventBus], never through
 /// direct feature-to-feature imports.
-@Riverpod(keepAlive: true)
+///
+/// This is intentionally app-lifetime state: the composition root owns the
+/// subscriptions, while each listener is invalidated at logout and cleans up
+/// its subscription through `ref.onDispose`.
+@Riverpod(keepAlive: true) // check-ignore: app-lifetime composition-root listener
 void appListeners(Ref ref) {
   ref.watch(offlineAccountPurgeListenerProvider);
   ref.watch(courseRefreshListenerProvider);
