@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../error/exceptions.dart';
+import 'session_revocation_hook.dart';
 
 /// Central, reusable classifier for exceptions raised by network-bound
 /// datasource calls (Supabase Postgrest/RPC/Auth/Storage/Edge Function
@@ -55,6 +56,20 @@ class NetworkExceptionMapper {
     }
 
     if (error is PostgrestException) {
+      // Session revocation surfacing from ANY RPC (not just auth ones): the
+      // server kills sessions via token_version bumps / session-row
+      // deactivation, which non-auth RPCs report as Postgres ERRCODE 28000
+      // ("invalid authorization") or the project's AUTH_REQUIRED business
+      // error. These must trip the forced sign-out hook instead of
+      // collapsing into a generic ServerException — see SessionRevocationHook.
+      final message = error.message.toLowerCase();
+      if (error.code == '28000' ||
+          message.contains('invalid user session') ||
+          message.contains('auth_required')) {
+        const revoked = SessionRevokedException();
+        SessionRevocationHook.notify(revoked);
+        return revoked;
+      }
       // Preserve the real Postgres/RLS error code instead of discarding
       // it -- callers that need to branch on specific codes (RPC
       // business errors like MAX_DEVICES_REACHED) already catch

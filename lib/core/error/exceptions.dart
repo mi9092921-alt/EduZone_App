@@ -66,6 +66,24 @@ class UnauthenticatedException extends AppException {
     : super('Authentication required', code: 'AUTH_REQUIRED');
 }
 
+/// The server revoked a session that WAS active mid-flight: a non-auth RPC
+/// (courses, downloads, telemetry, ...) rejected the call with Postgres
+/// ERRCODE 28000 ("invalid authorization") or the project's AUTH_REQUIRED
+/// business error because the account's token_version was bumped, the
+/// session row was deactivated server-side, or the device binding was
+/// revoked.
+///
+/// Distinct from [UnauthenticatedException] ("there is no session to use"):
+/// this asserts the server actively killed a live session, so the client
+/// must force a sign-out instead of silently retrying or surfacing a
+/// generic server error. Classification lives in
+/// `NetworkExceptionMapper.map`; the forced-sign-out reaction is wired via
+/// `SessionRevocationHook` (auth_provider registers the handler).
+class SessionRevokedException extends AppException {
+  const SessionRevokedException()
+    : super('Session revoked by server', code: 'SESSION_REVOKED');
+}
+
 class ServerException extends AppException {
   const ServerException([super.message = 'Server error', String? errorCode]) // check-ignore
     : super(code: errorCode ?? 'server_error');

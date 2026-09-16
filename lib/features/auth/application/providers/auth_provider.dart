@@ -14,6 +14,7 @@ import '../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../core/logging/domain/app_event.dart';
 import '../../../../core/logging/logging_providers.dart';
 import '../../../../core/network/request_cancellation_manager.dart';
+import '../../../../core/network/session_revocation_hook.dart';
 import '../../../../core/security/secure_storage_config.dart';
 import '../../../../core/services/device_service.dart';
 import '../../../../core/services/location_service.dart';
@@ -78,10 +79,12 @@ class Auth extends _$Auth {
   AuthState build() {
     _remoteDataSource = ref.watch(authRemoteDataSourceProvider);
     _listenToSupabaseAuthChanges();
+    _wireSessionRevocationHook();
     ref.onDispose(() {
       _authSubscription?.cancel();
       _accessService?.stop();
       _degradedRetryTimer?.cancel();
+      SessionRevocationHook.onSessionRevoked = null;
     });
 
     // Kick off session check — UI shows splash via AuthInitializing.
@@ -89,6 +92,26 @@ class Auth extends _$Auth {
     Future.microtask(() => _initializeSession(generation: generation));
 
     return const AuthInitializing();
+  }
+
+  /// Any RPC (not just auth ones) can surface a server-side session
+  /// revocation (Postgres ERRCODE 28000 / AUTH_REQUIRED — token_version
+  /// bump, session-row deactivation, device-binding revocation). React with
+  /// the same forced sign-out the access poll uses instead of waiting up to
+  /// 5 minutes for the next poll tick. Scoped to states where a session is
+  /// actually in use: login and cold-start restore classify and handle
+  /// their own auth errors, and this hook must not interfere with them.
+  void _wireSessionRevocationHook() {
+    SessionRevocationHook.onSessionRevoked = (exception) {
+      final current = state;
+      if (current is AuthAuthenticated || current is AuthDegraded) {
+        debugPrint(
+          '[Auth] Session revoked mid-session (${exception.code}) — '
+          'forcing sign-out',
+        );
+        handleAccessDenied(reason: 'session_revoked');
+      }
+    };
   }
 
   void _safeSetState(AuthState nextState) {

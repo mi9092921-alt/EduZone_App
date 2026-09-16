@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:app/core/error/exceptions.dart';
 import 'package:app/core/network/network_exception_mapper.dart';
+import 'package:app/core/network/session_revocation_hook.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -52,6 +53,84 @@ void main() {
       expect(mapped, isA<ServerException>());
       expect((mapped as ServerException).message, 'permission denied');
       expect(mapped.code, '42501');
+    });
+
+    group('session revocation (28000 / AUTH_REQUIRED)', () {
+      tearDown(() {
+        SessionRevocationHook.onSessionRevoked = null;
+      });
+
+      test('classifies Postgrest ERRCODE 28000 as SessionRevokedException', () {
+        final mapped = NetworkExceptionMapper.map(
+          const PostgrestException(
+            message: 'new row violates row-level security policy',
+            code: '28000',
+          ),
+        );
+        expect(mapped, isA<SessionRevokedException>());
+        expect((mapped as SessionRevokedException).code, 'SESSION_REVOKED');
+      });
+
+      test('classifies "invalid user session" message as revocation', () {
+        final mapped = NetworkExceptionMapper.map(
+          const PostgrestException(
+            message: 'Invalid user session: token_version mismatch',
+          ),
+        );
+        expect(mapped, isA<SessionRevokedException>());
+      });
+
+      test('classifies AUTH_REQUIRED message as revocation', () {
+        final mapped = NetworkExceptionMapper.map(
+          const PostgrestException(message: 'AUTH_REQUIRED'),
+        );
+        expect(mapped, isA<SessionRevokedException>());
+      });
+
+      test('notifies the wired hook exactly once', () {
+        var hookCalls = 0;
+        SessionRevocationHook.onSessionRevoked = (_) => hookCalls++;
+
+        NetworkExceptionMapper.map(
+          const PostgrestException(message: 'Invalid user session', code: '28000'),
+        );
+
+        expect(hookCalls, 1);
+      });
+
+      test('stays inert (no throw, still classified) when unwired', () {
+        expect(SessionRevocationHook.isWired, isFalse);
+
+        final mapped = NetworkExceptionMapper.map(
+          const PostgrestException(message: 'AUTH_REQUIRED', code: '28000'),
+        );
+
+        expect(mapped, isA<SessionRevokedException>());
+      });
+
+      test('hook errors never escape into the caller path', () {
+        SessionRevocationHook.onSessionRevoked = (_) {
+          throw StateError('handler exploded');
+        };
+
+        expect(
+          () => NetworkExceptionMapper.map(
+            const PostgrestException(message: 'AUTH_REQUIRED', code: '28000'),
+          ),
+          returnsNormally,
+        );
+      });
+
+      test('ordinary Postgrest errors do NOT trip the hook', () {
+        var hookCalls = 0;
+        SessionRevocationHook.onSessionRevoked = (_) => hookCalls++;
+
+        NetworkExceptionMapper.map(
+          const PostgrestException(message: 'permission denied', code: '42501'),
+        );
+
+        expect(hookCalls, 0);
+      });
     });
 
     test('classifies FormatException without leaking parser internals', () {
