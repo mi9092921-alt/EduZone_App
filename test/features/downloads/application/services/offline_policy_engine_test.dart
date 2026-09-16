@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:app/core/error/exceptions.dart';
 import 'package:app/core/services/encryption_service.dart';
 import 'package:app/features/downloads/application/services/offline_clock_guard.dart';
 import 'package:app/features/downloads/application/services/offline_policy_engine.dart';
@@ -97,21 +98,65 @@ void main() {
     tempDir.deleteSync(recursive: true);
   });
 
+  /// Mirrors the real datasource contract: delegates to the mocked
+  /// `revalidate_offline_entitlement` RPC (same stub the suite already
+  /// configures in setUp) and pre-classifies failures the way
+  /// `DownloadRemoteDataSource.revalidateOfflineEntitlement` does —
+  /// transient Postgrest classes and socket/timeout faults become
+  /// ServerException(network_error), everything else
+  /// ServerException(server_error).
+  Future<Map<String, dynamic>> defaultRevalidateFromMock(
+      {required String entitlementId}) async {
+    try {
+      return await mockSupabaseClient
+          .rpc(
+            'revalidate_offline_entitlement',
+            params: {'p_entitlement_id': entitlementId},
+          )
+          as Map<String, dynamic>;
+    } on PostgrestException catch (e) {
+      final code = e.code ?? '';
+      final transient = code.startsWith('08') ||
+          code.startsWith('53') ||
+          code == 'PGRST000' ||
+          code == 'PGRST001' ||
+          code == 'PGRST002' ||
+          code == 'PGRST003';
+      throw ServerException(
+        'Offline entitlement revalidation failed', // check-ignore
+        transient ? 'network_error' : 'server_error',
+      );
+    } catch (e) {
+      // Same catch-all shape as the real datasource: raw socket/timeout
+      // faults (the mocked RPC throws them directly) classify as
+      // network_error → offline fallback in the engine.
+      throw ServerException(
+        'Offline entitlement revalidation failed', // check-ignore
+        e is SocketException || e is TimeoutException
+            ? 'network_error'
+            : 'server_error',
+      );
+    }
+  }
+
   OfflinePolicyEngine buildEngine({
     String? userId = currentUserId,
     String device = currentDeviceId,
     OfflineClockGuard? clockGuard,
-    SupabaseClient? supabaseClient,
+    Future<Map<String, dynamic>> Function({required String entitlementId})?
+        revalidateEntitlement,
   }) {
     return OfflinePolicyEngine(
       localDataSource: localDataSource,
       encryptionService: encryptionService,
-      supabaseClient: supabaseClient ?? mockSupabaseClient,
+      revalidateEntitlement:
+          revalidateEntitlement ?? defaultRevalidateFromMock,
       currentUserId: () => userId,
       deviceFingerprint: () => device,
       clockGuard: clockGuard,
     );
   }
+
 
   Map<String, dynamic> validRow({
     String status = 'completed',

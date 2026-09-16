@@ -14,6 +14,7 @@ import '../../../../../core/security/secure_storage_config.dart';
 import '../../../../../core/services/encryption_service.dart'
     show detectContainerExt;
 import '../../../../../core/services/offline_playback_service.dart';
+import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/downloads_provider.dart';
 import '../../../application/services/offline_clock_guard.dart';
 import '../../../application/services/offline_policy_engine.dart';
@@ -120,6 +121,12 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
     _policyEngine = OfflinePolicyEngine(
       localDataSource: ref.read(downloadLocalDataSourceProvider),
       encryptionService: ref.read(encryptionServiceProvider),
+      // Server revalidation reaches Supabase only through the downloads
+      // datasource (pre-classified network_error/server_error contract).
+      revalidateEntitlement:
+          ref.read(downloadRemoteDataSourceProvider).revalidateOfflineEntitlement,
+      // Auth-state-derived identity for ownership/telemetry checks.
+      currentUserId: () => ref.read(currentUserIdProvider),
       // Real secure-storage-backed clock guard (P6.16) — see
       // OfflinePolicyEngine's constructor doc comment for why this must be
       // passed explicitly rather than relying on the default.

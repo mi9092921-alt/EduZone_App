@@ -1,10 +1,8 @@
 import 'dart:io';
 
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+import '../../../../core/error/exceptions.dart';
 import '../../../../core/logging/domain/app_event.dart';
 import '../../../../core/logging/infrastructure/event_bus.dart';
-import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/encryption_service.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../data/datasources/download_local_ds.dart';
@@ -118,16 +116,18 @@ class OfflinePolicyEngine {
   OfflinePolicyEngine({
     required DownloadLocalDataSource localDataSource,
     required EncryptionService encryptionService,
-    SupabaseClient? supabaseClient,
+    Future<Map<String, dynamic>> Function({
+      required String entitlementId,
+    })? revalidateEntitlement,
+    required String? Function() currentUserId,
     String Function()? deviceFingerprint,
-    String? Function()? currentUserId,
     OfflineClockGuard? clockGuard,
     EventBus? eventBus,
   })  : _localDataSource = localDataSource,
         _encryptionService = encryptionService,
-        _supabaseClient = supabaseClient,
+        _revalidateEntitlement = revalidateEntitlement,
         _deviceFingerprint = deviceFingerprint ?? _defaultDeviceFingerprint,
-        _currentUserId = currentUserId ?? _defaultCurrentUserId,
+        _currentUserId = currentUserId,
         // Defaults to a no-secure-storage instance (degrades to "cannot
         // detect rollback" rather than throwing) so every existing
         // construction site — including every existing test — keeps
@@ -145,7 +145,17 @@ class OfflinePolicyEngine {
 
   final DownloadLocalDataSource _localDataSource;
   final EncryptionService _encryptionService;
-  final SupabaseClient? _supabaseClient;
+
+  /// Server-side entitlement revalidation, injected from the downloads
+  /// datasource (`revalidateOfflineEntitlement` — derives the device id
+  /// itself) so this application service never touches Supabase directly.
+  /// Null means "no revalidation wired" — treated exactly like a
+  /// transient/offline failure: playback continues on the locally cached
+  /// ACTIVE entitlement. Failures arrive pre-classified as
+  /// `ServerException(network_error | server_error)`.
+  final Future<Map<String, dynamic>> Function({
+    required String entitlementId,
+  })? _revalidateEntitlement;
   final String Function() _deviceFingerprint;
   final String? Function() _currentUserId;
   final OfflineClockGuard _clockGuard;
@@ -159,14 +169,6 @@ class OfflinePolicyEngine {
       // match a stored device_id, so a bound download is correctly denied
       // rather than silently allowed.
       return '';
-    }
-  }
-
-  static String? _defaultCurrentUserId() {
-    try {
-      return SupabaseService.client.auth.currentUser?.id;
-    } catch (_) {
-      return null;
     }
   }
 
@@ -262,20 +264,12 @@ class OfflinePolicyEngine {
     // ACTIVE entitlement and its fixed expiry. Any server-side deny is a hard
     // deny and updates local state before playback can continue.
     try {
-      final client = _supabaseClient ?? SupabaseService.client;
-      final serverData = await client.rpc(
-        'revalidate_offline_entitlement',
-        params: {
-          'p_entitlement_id': entitlementId,
-          'p_device_id': _deviceFingerprint(),
-        },
-      );
-      if (serverData is! Map<String, dynamic>) {
-        throw const OfflinePlaybackDeniedException(
-          OfflinePlaybackDenialReason.serverRevalidationDenied,
-          'invalid server revalidation response', // check-ignore: dev-only debugDetail, never rendered — see userMessage
-        );
-      }
+      final revalidate = _revalidateEntitlement;
+      if (revalidate == null) {
+        // No revalidation wired — behave exactly like a failed call:
+        // continue with the locally cached ACTIVE entitlement below.
+      } else {
+      final serverData = await revalidate(entitlementId: entitlementId);
       final serverStatus = serverData['status']?.toString();
       final serverExpiry = DateTime.tryParse(serverData['expires_at']?.toString() ?? '');
       final serverRevokedAt = DateTime.tryParse(serverData['revoked_at']?.toString() ?? '');
@@ -302,24 +296,20 @@ class OfflinePolicyEngine {
           'downloadId=$downloadId serverStatus=$serverStatus', // check-ignore
         );
       }
+      }
     } on OfflinePlaybackDeniedException {
       rethrow;
-    } on PostgrestException catch (e) {
-      final code = e.code ?? '';
-      final transient = code.startsWith('08') ||
-          code.startsWith('53') ||
-          code == 'PGRST000' ||
-          code == 'PGRST001' ||
-          code == 'PGRST002' ||
-          code == 'PGRST003';
-      if (!transient) {
+    } on ServerException catch (e) {
+      // The datasource pre-classifies: network_error covers genuine
+      // offline operation, connectivity faults and transient server classes
+      // (08/53/PGRST00x) — continue with the cached server entitlement
+      // below. server_error is a real server decision/response: hard deny.
+      if (e.code != 'network_error') {
         throw OfflinePlaybackDeniedException(
           OfflinePlaybackDenialReason.serverRevalidationDenied,
-          'downloadId=$downloadId serverCode=$code', // check-ignore
+          'downloadId=$downloadId serverCode=${e.code}', // check-ignore
         );
       }
-    } on SocketException {
-      // Genuine offline operation: use the cached server entitlement below.
     }
 
     final localExpiresAt = _asDateTime(row['expires_at']);

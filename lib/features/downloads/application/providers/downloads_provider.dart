@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/logging/logging_providers.dart';
-import '../../../../core/network/supabase_client.dart';
+import '../../../../core/network/supabase_client_provider.dart';
 import '../../../../core/providers/storage_provider.dart';
 import '../../../../core/security/secure_storage_config.dart';
 import '../../../../core/services/encryption_service.dart';
@@ -48,7 +48,7 @@ DownloadLocalDataSource downloadLocalDataSource(Ref ref) {
 /// Provides the DownloadRemoteDataSource instance.
 @Riverpod(keepAlive: true)
 DownloadRemoteDataSource downloadRemoteDataSource(Ref ref) {
-  return DownloadRemoteDataSource(SupabaseService.client);
+  return DownloadRemoteDataSource(ref.watch(supabaseClientProvider));
 }
 
 /// Provides the DownloadRepository instance.
