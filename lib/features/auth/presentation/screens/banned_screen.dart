@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,8 +13,44 @@ import '../../application/providers/auth_provider.dart';
 ///
 /// Access data is derived from the sealed [AuthState], not passed via constructor.
 /// Logout triggers auth state change → router redirects automatically.
-class BannedScreen extends ConsumerWidget {
+///
+/// A periodic verifyAccess() re-check (same cadence as MaintenanceScreen)
+/// covers the rare un-ban case: verifyAccess resolves to unauthenticated
+/// (the session was force-signed-out) → the router moves the user to
+/// /login automatically instead of leaving them stranded here.
+class BannedScreen extends ConsumerStatefulWidget {
   const BannedScreen({super.key});
+
+  @override
+  ConsumerState<BannedScreen> createState() => _BannedScreenState();
+}
+
+class _BannedScreenState extends ConsumerState<BannedScreen> {
+  Timer? _pollingTimer;
+  bool _isChecking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startPolling();
+  }
+
+  void _startPolling() {
+    _pollingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      _checkAccess();
+    });
+  }
+
+  /// Re-checks access — state change drives router navigation.
+  Future<void> _checkAccess() async {
+    if (_isChecking || !mounted) return;
+    _isChecking = true;
+    try {
+      await ref.read(authProvider.notifier).verifyAccess();
+    } finally {
+      _isChecking = false;
+    }
+  }
 
   Future<void> _appealBan() async {
     final uri = Uri.parse('mailto:appeals@eduzone.io?subject=Ban%20Appeal');
@@ -22,7 +60,13 @@ class BannedScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final ds = AppColors.of(context);
 

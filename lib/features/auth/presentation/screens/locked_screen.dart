@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,8 +14,48 @@ import '../../application/providers/auth_provider.dart';
 ///
 /// Access data is derived from the sealed [AuthState].
 /// Logout triggers auth state change → router redirects automatically.
-class LockedScreen extends ConsumerWidget {
+///
+/// Also serves `/app-locked` (app-wide kill-switch, session deliberately
+/// KEPT per the forced-sign-out matrix), so a periodic verifyAccess()
+/// re-check runs here: when the restriction is lifted, the state change
+/// drives the router back automatically — for `/app-locked` the kept
+/// session re-authenticates straight to `/home`, for `/locked` (signed
+/// out) verifyAccess resolves to unauthenticated → `/login`.
+class LockedScreen extends ConsumerStatefulWidget {
   const LockedScreen({super.key});
+
+  @override
+  ConsumerState<LockedScreen> createState() => _LockedScreenState();
+}
+
+class _LockedScreenState extends ConsumerState<LockedScreen> {
+  Timer? _pollingTimer;
+  bool _isChecking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startPolling();
+  }
+
+  void _startPolling() {
+    // Poll every 60 seconds (same cadence as MaintenanceScreen) so a
+    // lifted restriction recovers without manual intervention.
+    _pollingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      _checkAccess();
+    });
+  }
+
+  /// Re-checks access — state change drives router navigation.
+  Future<void> _checkAccess() async {
+    if (_isChecking || !mounted) return;
+    _isChecking = true;
+    try {
+      await ref.read(authProvider.notifier).verifyAccess();
+    } finally {
+      _isChecking = false;
+    }
+  }
 
   Future<void> _contactSupport() async {
     final uri = Uri.parse('mailto:support@eduzone.io?subject=Account%20Locked');
@@ -23,7 +65,13 @@ class LockedScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final ds = AppColors.of(context);
 

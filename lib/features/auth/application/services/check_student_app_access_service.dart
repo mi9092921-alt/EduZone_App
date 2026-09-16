@@ -120,7 +120,8 @@ class CheckStudentAppAccessService {
             }
 
             if (status == AccountStatus.banned ||
-                status == AccountStatus.locked) {
+                status == AccountStatus.locked ||
+                status == AccountStatus.suspended) {
               _onAccessDenied(reason: 'account_${status.toDbString}');
               return;
             }

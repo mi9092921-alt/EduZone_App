@@ -549,20 +549,33 @@ class Auth extends _$Auth {
             );
       } else {
         if (!_isCurrentAuthOperation(generation)) return;
-        // Sign out if not allowed, but do not let a cleanup failure override
-        // the user-facing restricted-state screen.
-        final client = ref.read(supabaseClientProvider);
-        try {
-          await client.auth.signOut();
-        } catch (e, st) {
-          // A restricted (banned/suspended/locked) account's client-side
-          // sign-out failing is worth knowing about: the UI still shows
-          // the restricted screen either way, but a real Supabase session
-          // may remain locally active until it naturally expires.
-          GlobalErrorHandler.logError(e, st);
-          debugPrint(
-            '[Auth] Restricted login sign-out failed: ${e.runtimeType}',
-          );
+        // Explicit denial from the server — always AuthRestricted.
+        //
+        // Forced-sign-out matrix (mirrors _initializeSession): only
+        // locked / banned / suspended tear the (just-created) session
+        // down. maintenance_mode and app_locked deliberately KEEP the
+        // session (matrix: no sign-out) — the restricted screen's
+        // re-check loop calls verifyAccess() against the live session,
+        // and a mid-outage restart would otherwise re-login the user
+        // into a session that is immediately destroyed again. A cleanup
+        // failure must not override the user-facing restricted screen.
+        if (access.status == AccountStatus.locked ||
+            access.status == AccountStatus.banned ||
+            access.status == AccountStatus.suspended) {
+          final client = ref.read(supabaseClientProvider);
+          try {
+            await client.auth.signOut();
+          } catch (e, st) {
+            // A restricted account's client-side sign-out failing is
+            // worth knowing about: the UI still shows the restricted
+            // screen either way, but a real Supabase session may remain
+            // locally active until it naturally expires.
+            GlobalErrorHandler.logError(e, st);
+            debugPrint(
+              '[Auth] Restricted login sign-out failed: ${e.runtimeType}',
+            );
+          }
+          if (!_isCurrentAuthOperation(generation)) return;
         }
         _safeSetState(AuthRestricted(status: access.status, access: access));
       }
