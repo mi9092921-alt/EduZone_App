@@ -44,6 +44,10 @@ flutter build apk --release --dart-define-from-file=.env --target-platform andro
 flutter build appbundle --release --dart-define-from-file=.env.prod
 ```
 
+> After `flutter test` sessions, run `flutter clean` before a release
+> build — test runs leave stale build artifacts that can poison
+> `flutter build apk/appbundle` otherwise (CI does this automatically).
+
 Run `flutter analyze` and `flutter test` after every non-trivial change.
 Never commit code that fails either command.
 
@@ -70,6 +74,14 @@ features/ → MUST NOT import from other features/
 ```
 
 Violating these rules breaks the architecture. If a feature needs data from another feature, route it through a shared model in `shared/models/` or a provider in `core/`.
+
+### Core data pattern
+
+Cross-cutting infrastructure that needs Supabase access owns its own
+`data/` layer inside `core/` (same datasource → repository shape as a
+feature slice, e.g. `core/logging/data/` and
+`core/feature_flags/data/`). Application services elsewhere must call
+those datasources/repositories — never touch Supabase directly.
 
 ### Feature Slice Structure
 

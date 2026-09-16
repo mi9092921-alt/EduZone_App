@@ -146,8 +146,9 @@ lib/
 │   ├── profile/
 │   ├── todo/
 │   └── video_player/
-├── shared/             cross-cutting widgets/models, plus the one sanctioned
-│                       cross-feature facade layer: shared/cross_feature/
+├── shared/             cross-cutting contracts: models/, components/,
+│                       widgets/ (no cross-feature facades — dissolved;
+│                       see AGENTS.md import rules)
 └── main.dart           entry point + ProviderScope
 ```
 
@@ -156,8 +157,8 @@ lib/
 ```
 ✅ features/*/presentation → features/*/application → features/*/domain ← features/*/data
 ✅ any feature → core/ and design_system/
-✅ feature A needs feature B's provider/widget → import the facade in
-   shared/cross_feature/*_shared.dart (never feature B's internals directly)
+✅ feature A needs feature B's data → shared/models/ contract, or
+   features/auth/ providers directly (the one allowed exception)
 ❌ core/ or design_system/ importing from features/
 ❌ feature A importing feature B's data/, application/, or presentation/ internals directly
 ```

@@ -24,14 +24,17 @@ Rules:
          presentation/ internals directly (not just feature B's domain/)
          -> tight cross-feature coupling; consider exposing a domain
             interface, or moving the shared piece into lib/shared/.
-  ERROR  a file under lib/core/ imports anything under lib/features/**
-         -> core is infrastructure and must stay feature-agnostic; a
-            feature may depend on core, never the reverse. This is the
-            "core -> feature" direction called out in the architecture
-            contract. lib/shared/cross_feature/**  is intentionally
-            exempt: those files are the one sanctioned facade layer for
-            controlled cross-feature access (see that folder's own
-            doc-comments), so this rule does not apply to lib/shared/.
+   ERROR  a file under lib/core/ imports anything under lib/features/**
+          -> core is infrastructure and must stay feature-agnostic; a
+             feature may depend on core, never the reverse. This is the
+             "core -> feature" direction called out in the architecture
+             contract. lib/shared/** is intentionally exempt: shared
+             models/components are the sanctioned zone for controlled
+             cross-feature contracts (the old lib/shared/cross_feature/
+             facade layer was dissolved; cross-feature sharing now goes
+             through lib/shared/models/, lib/shared/components/, or
+             features/auth/ providers directly), so this rule does not
+             apply to lib/shared/.
   ERROR  a file under lib/design_system/ imports anything under
          lib/features/** -> the design system must stay app-agnostic so
          it can be reused/tested independently of any one feature.
@@ -41,10 +44,10 @@ everything): lib/app/**, lib/main.dart, and any *_providers.dart /
 *injection*.dart dependency-injection wiring file.
 
 Note: the two new core/design_system ERROR rules only scan files that
-live under lib/core/ or lib/design_system/. lib/shared/cross_feature/**
-is untouched by them (it lives under lib/shared/, not lib/core/), which
-is intentional: those files are the one sanctioned facade layer for
-controlled cross-feature access -- see that folder's own doc-comments.
+live under lib/core/ or lib/design_system/. lib/shared/** is untouched
+by them (it lives under lib/shared/, not lib/core/), which is
+intentional: shared models/components are the sanctioned zone for
+controlled cross-feature contracts -- see AGENTS.md import rules.
 
 Exit code: 0 = OK (or only warnings, unless --strict), 1 = errors found.
 """
