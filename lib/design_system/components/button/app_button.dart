@@ -1,7 +1,15 @@
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 
-enum AppButtonVariant { primary, secondary, danger, dangerOutline, ghost, gradient }
+enum AppButtonVariant {
+  primary,
+  secondary,
+  danger,
+  dangerOutline,
+  ghost,
+  gradient,
+  onGradient,
+}
 
 class AppButton extends StatelessWidget {
   final String label;
@@ -114,6 +122,20 @@ class AppButton extends StatelessWidget {
             ),
             child: _buildContent(context, Colors.white),
           ),
+        );
+        break;
+      case AppButtonVariant.onGradient:
+        final colorScheme = Theme.of(context).colorScheme;
+        button = OutlinedButton(
+          onPressed: action,
+          style: OutlinedButton.styleFrom(
+            backgroundColor: colorScheme.onPrimary.withValues(alpha: 0.14),
+            foregroundColor: colorScheme.onPrimary,
+            side: BorderSide(
+              color: colorScheme.onPrimary.withValues(alpha: 0.85),
+            ),
+          ),
+          child: _buildContent(context, colorScheme.onPrimary),
         );
         break;
     }

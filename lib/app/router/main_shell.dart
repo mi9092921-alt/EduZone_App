@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,7 +28,7 @@ class _MainShellState extends ConsumerState<MainShell>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      LocationService.logOnAppOpen();
+      unawaited(LocationService.logOnAppOpen());
     }
   }
 

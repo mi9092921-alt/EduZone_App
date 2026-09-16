@@ -68,7 +68,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final errorKey = authState is AuthUnauthenticated ? authState.error : null;
 
     return AppScreen(
-      isLoading: isLoading,
       scrollable: false,
       // Keyboard-dismissal gesture, not a control: excluded from the
       // semantics tree so it does not surface as an unnamed full-screen

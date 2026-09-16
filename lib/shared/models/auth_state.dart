@@ -17,7 +17,7 @@ enum AppAuthState {
   /// Deliberately distinct from [initializing]: this fires from /login
   /// (see [AuthAuthenticating]'s doc comment), and the Router must NOT
   /// force-navigate away from /login to /splash for it. LoginScreen
-  /// renders its own loading overlay for this state
+  /// renders the button loading state for this state
   /// (`isLoading = authState is AuthAuthenticating`), so forcing a
   /// navigation to /splash mid-tap fought that overlay and made
   /// pressing "Login" look like nothing happened until the request

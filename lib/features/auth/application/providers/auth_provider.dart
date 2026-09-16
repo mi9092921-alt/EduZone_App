@@ -284,7 +284,7 @@ class Auth extends _$Auth {
           _startAccessMonitoring(appUser.id, appUser.tenantId);
 
           // Log location on app open — fire-and-forget, non-blocking
-          await LocationService.logOnAppOpen();
+          unawaited(LocationService.logOnAppOpen());
         } else {
           _safeSetStateIfStillPending(const AuthUnauthenticated());
         }
@@ -535,7 +535,7 @@ class Auth extends _$Auth {
         _startAccessMonitoring(appUser.id, appUser.tenantId);
 
         // Log location on login — fire-and-forget, non-blocking
-        await LocationService.logOnAppOpen();
+        unawaited(LocationService.logOnAppOpen());
 
         // Emit Login Event
         ref

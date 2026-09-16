@@ -203,11 +203,9 @@ void main() {
       await tester.pump();
 
       expect(tester.takeException(), isNull);
-      // Both AppScreen's overlay and AppButton's inline spinner render a
-      // CircularProgressIndicator while isLoading is true; this only
-      // asserts presence, not which one, so it isn't coupled to either
-      // component's internal layout.
-      expect(find.byType(CircularProgressIndicator), findsWidgets);
+      // Login uses the button's inline spinner; AppScreen must not add a
+      // second full-screen indicator for the same auth state.
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
   });
 

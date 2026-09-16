@@ -78,7 +78,7 @@ class DiscoveryBanner extends StatelessWidget {
     return AppButton(
       label: l10n.exploreMore,
       onPressed: () => context.go(AppRoutes.discover),
-      variant: AppButtonVariant.secondary,
+      variant: AppButtonVariant.onGradient,
     );
   }
 

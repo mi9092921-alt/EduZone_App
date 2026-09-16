@@ -69,6 +69,11 @@ enum LocationPermissionStatus {
 class LocationService {
   const LocationService._();
 
+  // Location logging is best-effort telemetry. Keep one in-flight operation
+  // so a login transition and an app-resume callback cannot request/check the
+  // platform permission concurrently.
+  static bool _isLogging = false;
+
   // ─── Public API ────────────────────────────────────────────────────────────
 
   /// Fire-and-forget location log on every confirmed app open.
@@ -76,6 +81,17 @@ class LocationService {
   /// Never throws — all errors are swallowed so app flow is never interrupted.
   /// Returns a diagnostic string for debug logging only.
   static Future<String?> logOnAppOpen({String? sessionId}) async {
+    if (_isLogging) return 'already_running';
+
+    _isLogging = true;
+    try {
+      return await _logOnAppOpen(sessionId: sessionId);
+    } finally {
+      _isLogging = false;
+    }
+  }
+
+  static Future<String?> _logOnAppOpen({String? sessionId}) async {
     try {
       // ── 1. Client-side throttle (fast, no network hit) ─────────────────────
       final prefs = await SharedPreferences.getInstance();
@@ -197,17 +213,14 @@ class LocationService {
 
   // ─── Private Helpers ───────────────────────────────────────────────────────
 
-  /// Checks + requests location permission, returning a typed status.
+  /// Checks location permission without requesting it, returning a typed
+  /// status. Passive app-open telemetry must never show a permission dialog;
+  /// permission requests belong to an explicit user action in the UI.
   static Future<LocationPermissionStatus> _resolvePermission() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return LocationPermissionStatus.serviceDisabled;
 
-    var raw = await Geolocator.checkPermission();
-
-    if (raw == LocationPermission.denied) {
-      // Ask once — the OS controls the UI dialog.
-      raw = await Geolocator.requestPermission();
-    }
+    final raw = await Geolocator.checkPermission();
 
     return switch (raw) {
       LocationPermission.denied           => LocationPermissionStatus.denied,
