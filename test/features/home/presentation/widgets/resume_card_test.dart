@@ -1,4 +1,5 @@
 import 'package:app/core/l10n/arb/app_localizations.dart';
+import 'package:app/design_system/design_system.dart';
 import 'package:app/features/home/domain/entities/resume_lesson.dart';
 import 'package:app/features/home/presentation/widgets/resume_card.dart';
 import 'package:flutter/material.dart';
@@ -27,20 +28,21 @@ void main() {
   );
 
   group('ResumeCard', () {
-    testWidgets('renders nothing when there is no resume lesson and not loading',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(
-        buildTestableWidget(const ResumeCard()),
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      'renders nothing when there is no resume lesson and not loading',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(buildTestableWidget(const ResumeCard()));
+        await tester.pumpAndSettle();
 
-      expect(find.byType(ResumeCard), findsOneWidget);
-      // The widget renders an empty SizedBox — none of the lesson content exists.
-      expect(find.text('Continue Learning'), findsNothing);
-    });
+        expect(find.byType(ResumeCard), findsOneWidget);
+        // The widget renders an empty SizedBox — none of the lesson content exists.
+        expect(find.text('Continue Learning'), findsNothing);
+      },
+    );
 
-    testWidgets('renders skeleton placeholder content while loading',
-        (WidgetTester tester) async {
+    testWidgets('renders skeleton placeholder content while loading', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         buildTestableWidget(const ResumeCard(isLoading: true)),
       );
@@ -52,45 +54,88 @@ void main() {
       await tester.pump();
 
       // Loading state renders ResumeLesson.skeleton()'s placeholder copy.
-      expect(find.text('Continue Learning'), findsOneWidget);
+      // The section title is owned by SectionHeader, never by ResumeCard.
+      expect(find.text('Continue Learning'), findsNothing);
       expect(find.textContaining('Loading Lesson Title'), findsOneWidget);
       expect(find.textContaining('Loading Course Title'), findsOneWidget);
     });
 
-    testWidgets('renders lesson title, course title, section label and progress',
-        (WidgetTester tester) async {
+    testWidgets(
+      'renders lesson title, course title, section label and progress',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          buildTestableWidget(ResumeCard(resumeLesson: tLesson)),
+        );
+        await tester.pumpAndSettle();
+
+        // The section title is owned by SectionHeader, never by ResumeCard.
+        expect(find.text('Continue Learning'), findsNothing);
+        expect(find.text('Widgets 101'), findsOneWidget);
+        expect(find.text('Flutter Basics'), findsOneWidget);
+        expect(find.text('42%'), findsOneWidget);
+
+        final progressBar = tester.widget<LinearProgressIndicator>(
+          find.byType(LinearProgressIndicator),
+        );
+        expect(progressBar.value, closeTo(0.42, 0.0001));
+      },
+    );
+
+    testWidgets(
+      'clamps progress display to 100% when progressPct exceeds 100',
+      (WidgetTester tester) async {
+        final overshotLesson = tLesson.copyWith(progressPct: 137);
+
+        await tester.pumpWidget(
+          buildTestableWidget(ResumeCard(resumeLesson: overshotLesson)),
+        );
+        await tester.pumpAndSettle();
+
+        final progressBar = tester.widget<LinearProgressIndicator>(
+          find.byType(LinearProgressIndicator),
+        );
+        expect(progressBar.value, 1.0);
+        // Note: the displayed percentage label is not clamped in the widget
+        // (only the progress bar value is), so it will still read "137%".
+        expect(find.text('137%'), findsOneWidget);
+      },
+    );
+
+    testWidgets('keeps a fixed card size and detects content direction', (
+      WidgetTester tester,
+    ) async {
+      final mixedDirectionLesson = tLesson.copyWith(
+        lessonTitle: 'Flutter \u0627\u0644\u062f\u0631\u0633',
+        courseTitle: '\u0627\u0644\u062f\u0648\u0631\u0629 Flutter',
+      );
+
       await tester.pumpWidget(
-        buildTestableWidget(ResumeCard(resumeLesson: tLesson)),
+        buildTestableWidget(
+          SizedBox(
+            width: AppSizes.resumeCardMaxWidth,
+            height: AppSizes.resumeCardHeight,
+            child: ResumeCard(resumeLesson: mixedDirectionLesson),
+          ),
+        ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Continue Learning'), findsOneWidget);
-      expect(find.text('Widgets 101'), findsOneWidget);
-      expect(find.text('Flutter Basics'), findsOneWidget);
-      expect(find.text('42%'), findsOneWidget);
-
-      final progressBar = tester.widget<LinearProgressIndicator>(
-        find.byType(LinearProgressIndicator),
+      expect(
+        tester.getSize(find.byType(AppCard)),
+        const Size(AppSizes.resumeCardMaxWidth, AppSizes.resumeCardHeight),
       );
-      expect(progressBar.value, closeTo(0.42, 0.0001));
-    });
-
-    testWidgets('clamps progress display to 100% when progressPct exceeds 100',
-        (WidgetTester tester) async {
-      final overshotLesson = tLesson.copyWith(progressPct: 137);
-
-      await tester.pumpWidget(
-        buildTestableWidget(ResumeCard(resumeLesson: overshotLesson)),
+      expect(
+        tester
+            .widget<Text>(find.text(mixedDirectionLesson.lessonTitle))
+            .textDirection,
+        TextDirection.ltr,
       );
-      await tester.pumpAndSettle();
-
-      final progressBar = tester.widget<LinearProgressIndicator>(
-        find.byType(LinearProgressIndicator),
+      expect(
+        tester
+            .widget<Text>(find.text(mixedDirectionLesson.courseTitle))
+            .textDirection,
+        TextDirection.rtl,
       );
-      expect(progressBar.value, 1.0);
-      // Note: the displayed percentage label is not clamped in the widget
-      // (only the progress bar value is), so it will still read "137%".
-      expect(find.text('137%'), findsOneWidget);
     });
   });
 }

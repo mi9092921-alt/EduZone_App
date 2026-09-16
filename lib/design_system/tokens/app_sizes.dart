@@ -24,6 +24,11 @@ class AppSizes {
 
   // Progress indicators
   static const double progressHeight = 6.0;
+  // Home "continue watching" carousel. The width is a cap, not a fixed
+  // card width: the carousel uses the available viewport width on smaller
+  // devices and stops growing on tablets/desktops.
+  static const double resumeCardMaxWidth = 360.0;
+  static const double resumeCardHeight = 208.0;
   static const double appBarHeight = 56.0;
   static const double bottomNavHeight = 64.0;
 }

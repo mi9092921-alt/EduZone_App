@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -140,33 +142,21 @@ class _RecentLessonsSection extends ConsumerWidget {
                 ),
               ),
             ),
-            SizedBox(
-              height: 208,
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                scrollDirection: Axis.horizontal,
-                itemCount: visibleLessons.length,
-                separatorBuilder: (_, _) =>
-                    const SizedBox(width: AppSpacing.md),
-                itemBuilder: (context, index) {
-                  final lesson = visibleLessons[index];
-                  return SizedBox(
-                    width: 300,
-                    child: ResumeCard(
+            _buildResumeLessonsCarousel(
+              visibleLessons
+                  .map(
+                    (lesson) => ResumeCard(
                       key: ValueKey(lesson.courseId),
                       resumeLesson: lesson,
                     ),
-                  );
-                },
-              ),
+                  )
+                  .toList(),
             ),
           ],
         );
       },
-      loading: () => const Padding(
-        padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
-        child: ResumeCard(isLoading: true),
-      ),
+      loading: () =>
+          _buildResumeLessonsCarousel(const [ResumeCard(isLoading: true)]),
       error: (err, _) {
         if (kDebugMode) {
           debugPrint('[HomeScreen] Error loading resume lessons: ${err.runtimeType}');
@@ -180,6 +170,35 @@ class _RecentLessonsSection extends ConsumerWidget {
           title: ErrorHandler.getMessage(context, err),
           actionLabel: l10n.retryButton,
           onActionPressed: () => ref.invalidate(resumeLessonsProvider),
+        );
+      },
+    );
+  }
+
+  Widget _buildResumeLessonsCarousel(List<Widget> cards) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth =
+            constraints.maxWidth - (AppSpacing.lg * 2);
+        final cardWidth = math.min(
+          AppSizes.resumeCardMaxWidth,
+          availableWidth,
+        ).toDouble();
+
+        return SizedBox(
+          height: AppSizes.resumeCardHeight,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            scrollDirection: Axis.horizontal,
+            itemCount: cards.length,
+            separatorBuilder: (_, _) =>
+                const SizedBox(width: AppSpacing.md),
+            itemBuilder: (context, index) => SizedBox(
+              width: cardWidth,
+              height: AppSizes.resumeCardHeight,
+              child: cards[index],
+            ),
+          ),
         );
       },
     );
