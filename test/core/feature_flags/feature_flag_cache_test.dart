@@ -8,7 +8,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   const userId = 'user-1';
-  final evaluatedAt = DateTime.utc(2026, 9, 13, 12);
+
+  // Must stay relative to real now AND millisecond-truncated: the cache
+  // persists `millisecondsSinceEpoch`, so a microsecond-precision
+  // `DateTime.now()` would fail the `isAtSameMomentAs` assertions after the
+  // save → load round-trip, and a fixed date eventually exceeds the 24h
+  // staleness window and turns every un-pinned `load()` test into a failure.
+  final evaluatedAt = DateTime.fromMillisecondsSinceEpoch(
+    DateTime.now().millisecondsSinceEpoch,
+    isUtc: true,
+  );
   late FeatureFlagCache cache;
 
   FeatureFlagSnapshot serverSnapshot({bool enabled = true, int version = 4}) {
