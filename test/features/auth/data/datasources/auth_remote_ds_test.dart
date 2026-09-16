@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:app/core/error/exceptions.dart';
 import 'package:app/features/auth/data/datasources/auth_remote_ds.dart';
 import 'package:app/features/auth/domain/entities/bind_device_result.dart';
@@ -11,6 +13,19 @@ class MockSupabaseClient extends Mock implements SupabaseClient {}
 class MockGoTrueClient extends Mock implements GoTrueClient {}
 
 class MockRpcBuilder extends Mock implements PostgrestFilterBuilder<dynamic> {}
+
+class MockSession extends Mock implements Session {}
+
+/// Builds a fake (unsigned, not cryptographically valid — signature isn't
+/// checked client-side) JWT string with the given payload claims, matching
+/// how `currentJwtTokenVersion` decodes tokens (base64url, no padding).
+String _fakeJwt(Map<String, dynamic> payload) {
+  String encode(Map<String, dynamic> m) =>
+      base64Url.encode(utf8.encode(jsonEncode(m))).replaceAll('=', '');
+  final header = encode({'alg': 'none', 'typ': 'JWT'});
+  final body = encode(payload);
+  return '$header.$body.';
+}
 
 void main() {
   setUpAll(() {
@@ -424,6 +439,62 @@ void main() {
         ),
       );
     });
+  });
+
+  group('currentJwtTokenVersion', () {
+    // The getter parses the access token by hand (base64url decode +
+    // jsonDecode) without any external validation library. These pin down
+    // that malformed input degrades to null (handled upstream by the
+    // missing-jwtVersion strike logic in CheckStudentAppAccessService)
+    // instead of throwing.
+    void stubToken(String token) {
+      final session = MockSession();
+      when(() => mockAuth.currentSession).thenReturn(session);
+      when(() => session.accessToken).thenReturn(token);
+    }
+
+    test('reads token_version from the root of a valid payload', () {
+      stubToken(_fakeJwt({'sub': 'user-1', 'token_version': 7}));
+      expect(dataSource.currentJwtTokenVersion, 7);
+    });
+
+    test('falls back to app_metadata.token_version', () {
+      stubToken(_fakeJwt({
+        'sub': 'user-1',
+        'app_metadata': {'token_version': 9},
+      }));
+      expect(dataSource.currentJwtTokenVersion, 9);
+    });
+
+    test('returns null when there is no active session', () {
+      when(() => mockAuth.currentSession).thenReturn(null);
+      expect(dataSource.currentJwtTokenVersion, isNull);
+    });
+
+    for (final case_ in <(String name, String token)>[
+      ('empty string', ''),
+      ('single segment, no dots', 'not-a-jwt-at-all'),
+      ('two segments only (missing signature)', 'aGVhZGVy.cGF5bG9hZA'),
+      (
+        'payload segment is not valid base64url',
+        'aGVhZGVy.!!!not-base64!!!.'
+      ),
+      (
+        'payload segment decodes but is not valid JSON',
+        '${base64Url.encode(utf8.encode('{"alg":"none"}')).replaceAll('=', '')}.'
+            '${base64Url.encode(utf8.encode('not-json-at-all')).replaceAll('=', '')}.'
+      ),
+      (
+        'payload is valid JSON but token_version is a nested object, not '
+        'int/String',
+        _fakeJwt({'token_version': {'nested': true}}),
+      ),
+    ]) {
+      test('${case_.$1} -> resolves to null without throwing', () {
+        stubToken(case_.$2);
+        expect(dataSource.currentJwtTokenVersion, isNull);
+      });
+    }
   });
 
   group('login', () {

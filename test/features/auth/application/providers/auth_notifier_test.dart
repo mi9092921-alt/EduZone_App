@@ -172,22 +172,28 @@ void main() {
         .thenAnswer((_) async => <String>[]);
 
     // CheckStudentAppAccessService._check() (started automatically after a
-    // successful login/session-restore) calls
-    // `await _supabase.rpc('check_student_app_access')` for its background
-    // polling/monitoring check. Without this stub, mocktail cannot return
-    // null for this non-nullable-Future-returning method and throws
-    // "type 'Null' is not a subtype of type 'PostgrestFilterBuilder<dynamic>'"
-    // — this was caught internally by _check()'s own try/catch (hence the
-    // "[Security] Check error" log noise) and never affected login()'s
-    // result directly, but stubbing it properly removes the noise and
-    // exercises the real polling path deterministically.
-// ✅ صحيح:
-when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
-  (_) => _FakeCheckAccessRpcBuilder(const {
-    'allowed': true,
-    'token_version': null,
-  }),
-);
+    // successful login/session-restore) goes through the auth datasource
+    // for its background monitoring check. Without these stubs mocktail
+    // throws "type 'Null' is not a subtype of ..." — caught internally by
+    // _check()'s try/catch (hence "[Security] Check error" log noise) and
+    // never affecting login()'s result directly, but stubbing them
+    // properly removes the noise and exercises the polling path
+    // deterministically. An allowed response with a null token_version
+    // keeps the strike counter at zero by design.
+    when(() => mockDataSource.checkStudentAppAccessRaw()).thenAnswer(
+      (_) async => const {
+        'allowed': true,
+        'token_version': null,
+      },
+    );
+    when(() => mockDataSource.currentJwtTokenVersion).thenReturn(null);
+
+    // LogoutOrchestrator (wired by logout()/forceLocalCleanup paths) now
+    // reaches Supabase only through the datasource.
+    when(() => mockDataSource.revokeCurrentSession()).thenAnswer((_) async {});
+    when(() => mockDataSource.disconnectRealtime())
+        .thenAnswer((_) async => <String>[]);
+    when(() => mockDataSource.signOutLocally()).thenAnswer((_) async {});
 
     when(() => mockDevice.fingerprint).thenReturn('fp-test');
     when(() => mockDevice.platform).thenReturn('android');
@@ -398,24 +404,15 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
     test('is idempotent — second call is a no-op', () async {
       await putInAuthenticatedState();
 
-      when(() => mockAuth.signOut()).thenAnswer((_) async {});
-      when(() => mockSupabase.removeAllChannels())
-          .thenAnswer((_) async => <String>[]);
-      final rpcBuilder = _MockRpcBuilder();
-      when(() => mockSupabase.rpc('logout_current_user'))
-          .thenAnswer((_) => rpcBuilder);
-      when(() => rpcBuilder.timeout(any())).thenAnswer((_) async => null);
-
       await container.read(authProvider.notifier).logout();
       // Second call — state is already AuthUnauthenticated, guarded no-op
       // at the top of logout() (lib/.../auth_provider.dart:541).
       await container.read(authProvider.notifier).logout();
 
-      // forceLocalCleanup() calls the BARE signOut() — not
-      // signOut(scope: ...) — see logout_orchestrator.dart:120. The
-      // previous verify() checked the wrong overload and could never
-      // match, regardless of how many times signOut() was really called.
-      verify(() => mockAuth.signOut()).called(1);
+      // forceLocalCleanup() reaches Supabase only through the auth
+      // datasource now — exactly one local sign-out for both logout calls
+      // (the second is a guarded no-op).
+      verify(() => mockDataSource.signOutLocally()).called(1);
     });
   });
 
@@ -682,7 +679,7 @@ when(() => mockSupabase.rpc('check_student_app_access')).thenAnswer(
       await _settleInitialization();
 
       expect(rebindContainer.read(authProvider), isA<AuthUnauthenticated>());
-      verify(() => mockAuth.signOut()).called(1);
+      verify(() => mockDataSource.signOutLocally()).called(1);
       verifyNever(() => mockDataSource.bindDevice(any(), any(), any()));
     });
 

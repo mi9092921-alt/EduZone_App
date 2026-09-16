@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:app/features/auth/application/services/check_student_app_access_service.dart';
+import 'package:app/features/auth/data/datasources/auth_remote_ds.dart';
 import 'package:app/features/auth/domain/entities/user_access.dart';
 import 'package:app/features/auth/domain/enums/account_status.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,111 +12,48 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MockSupabaseClient extends Mock implements SupabaseClient {}
 
-class MockGoTrueClient extends Mock implements GoTrueClient {}
-
-class MockSession extends Mock implements Session {}
-
-/// `SupabaseClient.rpc()` returns `PostgrestFilterBuilder<dynamic>`, not
-/// a plain `Future<Map>` — it only *behaves* like a Future when awaited
-/// (it implements `Future<T>` and delegates via `then`). mocktail's
-/// `thenAnswer`/`thenReturn` need the exact declared return type, so a bare
-/// `Future<Map>` doesn't satisfy it (this is what caused
-/// `argument_type_not_assignable`). This Fake wraps a value and only
-/// overrides `then`, which is all `await` needs to work.
-class _FakePostgrestFilterBuilder<T> extends Fake
-    implements PostgrestFilterBuilder<T> {
-  _FakePostgrestFilterBuilder(this._value);
-  final T _value;
-
-  @override
-  Future<S> then<S>(
-    FutureOr<S> Function(T value) onValue, {
-    Function? onError,
-  }) {
-    return Future<T>.value(_value).then(onValue, onError: onError);
-  }
-}
-
-/// Builds a fake (unsigned, not cryptographically valid — signature isn't
-/// checked client-side) JWT string with the given payload claims, matching
-/// how `_currentJwtTokenVersion` decodes tokens (base64url, no padding).
-String _fakeJwt(Map<String, dynamic> payload) {
-  String encode(Map<String, dynamic> m) =>
-      base64Url.encode(utf8.encode(jsonEncode(m))).replaceAll('=', '');
-  final header = encode({'alg': 'none', 'typ': 'JWT'});
-  final body = encode(payload);
-  return '$header.$body.';
-}
-
-
-class _DelayedPostgrestFilterBuilder<T> extends Fake
-    implements PostgrestFilterBuilder<T> {
-  _DelayedPostgrestFilterBuilder(this._future);
-  final Future<T> _future;
-
-  @override
-  Future<S> then<S>(
-    FutureOr<S> Function(T value) onValue, {
-    Function? onError,
-  }) {
-    return _future.then(onValue, onError: onError);
-  }
-}
-
-/// Simulates `supabase.rpc()` itself failing before any response is ever
-/// received — e.g. the DNS/socket-level failure a device with no network
-/// connectivity produces (see CHECKUSERACCESS-BUG-01 below).
-class _ThrowingPostgrestFilterBuilder<T> extends Fake
-    implements PostgrestFilterBuilder<T> {
-  _ThrowingPostgrestFilterBuilder(this._error);
-  final Object _error;
-
-  @override
-  Future<S> then<S>(
-    FutureOr<S> Function(T value) onValue, {
-    Function? onError,
-  }) {
-    return Future<T>.error(_error).then(onValue, onError: onError);
-  }
-}
+// Kept only because the service constructor still takes a SupabaseClient
+// for REALTIME channel lifecycle; no test path here touches channels.
+class MockAuthRemoteDataSource extends Mock implements AuthRemoteDataSource {}
 
 void main() {
   late MockSupabaseClient supabase;
-  late MockGoTrueClient auth;
-  late MockSession session;
+  late MockAuthRemoteDataSource dataSource;
   late List<String> deniedReasons;
   late List<UserAccess> restrictedAccesses;
 
   // Mutable holders so setUp can register stubs once with thenAnswer,
-  // and individual tests simply update these variables.
-  // This avoids the "Cannot call `when` within a stub response" mocktail
-  // guard that fires when when() is called mid-test after setUp stubs fire.
-  late Map<String, dynamic> mockRpcResponse;
-  late String mockAccessToken;
+  // and individual tests simply update these variables. This avoids the
+  // "Cannot call `when` within a stub response" mocktail guard that fires
+  // when when() is called mid-test after setUp stubs fire.
+  late Map<String, dynamic>? mockRpcResponse;
+  late int? mockJwtVersion;
+  Object? checkError; // when non-null, the raw check throws this
 
   setUp(() {
     supabase = MockSupabaseClient();
-    auth = MockGoTrueClient();
-    session = MockSession();
+    dataSource = MockAuthRemoteDataSource();
     deniedReasons = [];
     restrictedAccesses = [];
 
     // Default values — overridden per-test by reassigning the variables above.
     mockRpcResponse = {'token_version': 5, 'allowed': true};
-    mockAccessToken = _fakeJwt({'sub': 'user-123'});
+    mockJwtVersion = 5;
+    checkError = null;
 
-    when(() => supabase.auth).thenReturn(auth);
-    when(() => auth.currentSession).thenReturn(session);
-    // thenAnswer (not thenReturn) — rpc returns a Future-like builder.
-    when(() => session.accessToken).thenAnswer((_) => mockAccessToken);
-    when(() => supabase.rpc('check_student_app_access')).thenAnswer(
-      (_) => _FakePostgrestFilterBuilder<Map<String, dynamic>>(mockRpcResponse),
-    );
+    when(() => dataSource.checkStudentAppAccessRaw()).thenAnswer((_) async {
+      final error = checkError;
+      if (error != null) throw error;
+      return mockRpcResponse;
+    });
+    when(() => dataSource.currentJwtTokenVersion)
+        .thenAnswer((_) => mockJwtVersion);
   });
 
   CheckStudentAppAccessService buildService() {
     return CheckStudentAppAccessService(
       supabase: supabase,
+      authRemoteDataSource: dataSource,
       onAccessDenied: ({required String reason}) => deniedReasons.add(reason),
       onAccessRestricted: ({required UserAccess access}) =>
           restrictedAccesses.add(access),
@@ -127,9 +64,11 @@ void main() {
     test(
         'access denied callback fires only after three consecutive missing '
         'jwtVersion checks, not before', () async {
-      // JWT with no token_version claim → jwtVersion resolves to null.
-      // mockAccessToken already defaults to a JWT with no token_version.
+      // mockJwtVersion == null stands for "JWT missing/unparseable
+      // token_version" (the datasource getter resolves malformed tokens to
+      // null — see the parsing fuzz group in auth_remote_ds_test).
       // mockRpcResponse already returns token_version: 5.
+      mockJwtVersion = null;
 
       final service = buildService();
 
@@ -149,21 +88,21 @@ void main() {
         () async {
       final service = buildService();
 
-      // Two strikes with missing jwtVersion (default mockAccessToken has none).
+      // Two strikes with missing jwtVersion.
+      mockJwtVersion = null;
       await service.checkNow();
       await service.checkNow();
       expect(deniedReasons, isEmpty);
 
       // A valid, in-sync JWT arrives — should reset the strike counter.
-      mockAccessToken =
-          _fakeJwt({'sub': 'user-123', 'token_version': 5});
+      mockJwtVersion = 5;
       await service.checkNow();
       expect(deniedReasons, isEmpty);
 
       // Two more missing-jwtVersion checks — should NOT trigger force logout
       // yet, because the counter reset (would only trigger on a 3rd fresh
       // strike, not the 2nd).
-      mockAccessToken = _fakeJwt({'sub': 'user-123'});
+      mockJwtVersion = null;
       await service.checkNow();
       await service.checkNow();
       expect(deniedReasons, isEmpty,
@@ -173,7 +112,7 @@ void main() {
     test('dbTokenVersion > jwtVersion still forces immediate logout',
         () async {
       mockRpcResponse = {'token_version': 9, 'allowed': true};
-      mockAccessToken = _fakeJwt({'sub': 'user-123', 'token_version': 3});
+      mockJwtVersion = 3;
 
       final service = buildService();
       await service.checkNow();
@@ -182,87 +121,23 @@ void main() {
     });
   });
 
-  group('malformed / hostile JWT parsing (fuzz)', () {
-    // _currentJwtTokenVersion parses the access token by hand (base64url
-    // decode + jsonDecode) without any external validation library. These
-    // pin down that malformed input degrades to "jwtVersion == null"
-    // (handled by the missing-jwtVersion strike logic above) instead of
-    // throwing and crashing the polling/realtime check.
-    for (final case_ in <(String name, String token)>[
-      ('empty string', ''),
-      ('single segment, no dots', 'not-a-jwt-at-all'),
-      ('two segments only (missing signature)', 'aGVhZGVy.cGF5bG9hZA'),
-      (
-        'payload segment is not valid base64url',
-        'aGVhZGVy.!!!not-base64!!!.'
-      ),
-      (
-        'payload segment decodes but is not valid JSON',
-        '${base64Url.encode(utf8.encode('{"alg":"none"}')).replaceAll('=', '')}.'
-            '${base64Url.encode(utf8.encode('not-json-at-all')).replaceAll('=', '')}.'
-      ),
-      (
-        'payload is valid JSON but token_version is a nested object, not '
-        'int/String',
-        _fakeJwt({'token_version': {'nested': true}}),
-      ),
-    ]) {
-      test(
-          '${case_.$1} -> does not throw, resolves to no forced logout on '
-          'a single occurrence', () async {
-        mockAccessToken = case_.$2;
-
-        final service = buildService();
-
-        // Must not throw synchronously or asynchronously.
-        await expectLater(service.checkNow(), completes);
-
-        // A single malformed-token check is treated the same as "missing
-        // jwtVersion" — it must NOT force a logout on the first strike.
-        expect(deniedReasons, isEmpty);
-      });
-    }
-
-    test(
-        'three consecutive malformed tokens still trigger the same '
-        'missing-jwtVersion strike policy as a genuinely absent claim',
-        () async {
-      mockAccessToken = '!!!completely-invalid!!!';
-
-      final service = buildService();
-      await service.checkNow(); // strike 1
-      await service.checkNow(); // strike 2
-      expect(deniedReasons, isEmpty);
-      await service.checkNow(); // strike 3
-      expect(deniedReasons, ['token_version_mismatch']);
-    });
-  });
-
   group('connectivity failure during check (CHECKUSERACCESS-BUG-01)', () {
-    // Production incident: a device with no network at all makes
-    // `supabase.rpc('check_student_app_access')` fail with a DNS/socket-level
-    // error (`http.ClientException` wrapping a `SocketException`/`OSError`
-    // — never even reaches Supabase, so it is not a `PostgrestException`)
-    // on every 5-minute poll for as long as the device stays offline. This
-    // must never crash the polling loop and must never be treated as a
-    // real access denial/forced logout — a network blip is not the server
-    // saying "no". (It also must not be reported to Sentry as a recurring
-    // production error, but that filtering — see the service's `_check`
-    // catch block — isn't independently observable from a unit test
-    // without mocking the static `GlobalErrorHandler`/`Sentry` funnel, so
-    // this suite pins down the functional contract instead: no crash, no
-    // denial, and normal operation resumes once connectivity returns.)
+    // Production incident: a device with no network at all makes the
+    // check RPC fail with a DNS/socket-level error (`http.ClientException`
+    // wrapping a `SocketException`/`OSError` — never even reaches Supabase,
+    // so it is not a `PostgrestException`) on every 5-minute poll for as
+    // long as the device stays offline. This must never crash the polling
+    // loop and must never be treated as a real access denial/forced logout
+    // — a network blip is not the server saying "no". (The datasource now
+    // surfaces raw transport errors; the service's catch block classifies
+    // them via NetworkExceptionMapper.)
     test(
         'ClientException wrapping a SocketException does not throw and '
         'does not deny access', () async {
-      when(() => supabase.rpc('check_student_app_access')).thenAnswer(
-        (_) => _ThrowingPostgrestFilterBuilder<Map<String, dynamic>>(
-          http.ClientException(
-            'ClientException with SocketException: Failed host lookup: '
-            "'evmrahlzcgqgjhwvxzih.supabase.co' (OS Error: No address "
-            'associated with hostname, errno = 7)',
-          ),
-        ),
+      checkError = http.ClientException(
+        'ClientException with SocketException: Failed host lookup: '
+        "'evmrahlzcgqgjhwvxzih.supabase.co' (OS Error: No address "
+        'associated with hostname, errno = 7)',
       );
 
       final service = buildService();
@@ -274,11 +149,7 @@ void main() {
 
     test('a plain SocketException also does not throw or deny access',
         () async {
-      when(() => supabase.rpc('check_student_app_access')).thenAnswer(
-        (_) => _ThrowingPostgrestFilterBuilder<Map<String, dynamic>>(
-          const SocketException('Network is unreachable'),
-        ),
-      );
+      checkError = const SocketException('Network is unreachable');
 
       final service = buildService();
 
@@ -287,11 +158,7 @@ void main() {
     });
 
     test('a TimeoutException also does not throw or deny access', () async {
-      when(() => supabase.rpc('check_student_app_access')).thenAnswer(
-        (_) => _ThrowingPostgrestFilterBuilder<Map<String, dynamic>>(
-          TimeoutException('check_student_app_access'),
-        ),
-      );
+      checkError = TimeoutException('check_student_app_access');
 
       final service = buildService();
 
@@ -301,24 +168,19 @@ void main() {
 
     test('connectivity failures do not corrupt the missing-jwtVersion '
         'strike counter for the next successful check', () async {
-      // mockAccessToken defaults to a JWT with no token_version claim, so a
-      // *successful* response would normally count as a strike. A failed
-      // check must not silently consume/advance that counter either way.
-      when(() => supabase.rpc('check_student_app_access')).thenAnswer(
-        (_) => _ThrowingPostgrestFilterBuilder<Map<String, dynamic>>(
-          const SocketException('Network is unreachable'),
-        ),
-      );
+      // mockJwtVersion defaults to 5 (in sync), so a *successful* response
+      // would normally reset the counter. A failed check must not silently
+      // consume/advance anything either way.
+      checkError = const SocketException('Network is unreachable');
       final service = buildService();
 
       await service.checkNow(); // network failure — ignored
       await service.checkNow(); // network failure — ignored
 
-      // Connectivity returns; RPC now succeeds again.
-      when(() => supabase.rpc('check_student_app_access')).thenAnswer(
-        (_) =>
-            _FakePostgrestFilterBuilder<Map<String, dynamic>>(mockRpcResponse),
-      );
+      // Connectivity returns; the check now succeeds again — but with a
+      // missing jwtVersion, so successes start counting strikes afresh.
+      checkError = null;
+      mockJwtVersion = null;
 
       await service.checkNow(); // strike 1 (missing jwtVersion)
       await service.checkNow(); // strike 2
@@ -332,14 +194,12 @@ void main() {
   });
 
   group('stale async security callbacks', () {
-    test('a check that completes after stop cannot force access denial', () async {
-      final completer = Completer<Map<String, dynamic>>();
-      when(() => supabase.rpc('check_student_app_access')).thenAnswer(
-        (_) => _DelayedPostgrestFilterBuilder<Map<String, dynamic>>(
-          completer.future,
-        ),
-      );
-      mockAccessToken = _fakeJwt({'sub': 'user-123', 'token_version': 5});
+    test('a check that completes after stop cannot force access denial',
+        () async {
+      final completer = Completer<Map<String, dynamic>?>();
+      when(() => dataSource.checkStudentAppAccessRaw())
+          .thenAnswer((_) => completer.future);
+      mockJwtVersion = 5;
 
       final service = buildService();
       final pending = service.checkNow();
@@ -359,7 +219,6 @@ void main() {
         'reason': 'maintenance_mode',
         'token_version': 5,
       };
-      mockAccessToken = _fakeJwt({'sub': 'user-123', 'token_version': 5});
 
       final service = buildService();
       await service.checkNow();
@@ -375,7 +234,6 @@ void main() {
         'reason': 'app_locked',
         'token_version': 5,
       };
-      mockAccessToken = _fakeJwt({'sub': 'user-123', 'token_version': 5});
 
       final service = buildService();
       await service.checkNow();

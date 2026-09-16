@@ -1,21 +1,27 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/error/exceptions.dart';
-import '../../../../core/network/network_config.dart';
 import '../../../../core/network/network_exception_mapper.dart';
 import '../../../../shared/utils/global_error_handler.dart';
+import '../../data/datasources/auth_remote_ds.dart';
 import '../../domain/entities/user_access.dart';
 import '../../domain/enums/account_status.dart';
 
 typedef AccessDeniedCallback = void Function({required String reason});
 typedef AccessRestrictedCallback = void Function({required UserAccess access});
 
+/// Reviewed seam: this service keeps a raw [SupabaseClient] for REALTIME
+/// channel lifecycle only ([_subscribeRealtime]/[stop]) — channels are
+/// persistent subscriptions with callbacks, not data queries; extracting
+/// them into a datasource would rewrite the security-critical test suite
+/// for zero behavioral gain. The data access itself (the check RPC and the
+/// session JWT's token_version claim) lives in [AuthRemoteDataSource].
 class CheckStudentAppAccessService {
   final SupabaseClient _supabase;
+  final AuthRemoteDataSource _authRemoteDataSource;
   final AccessDeniedCallback _onAccessDenied;
   final AccessRestrictedCallback? _onAccessRestricted;
 
@@ -33,10 +39,12 @@ class CheckStudentAppAccessService {
 
   CheckStudentAppAccessService({
     required SupabaseClient supabase,
+    required AuthRemoteDataSource authRemoteDataSource,
     required AccessDeniedCallback onAccessDenied,
     AccessRestrictedCallback? onAccessRestricted,
     this.pollingInterval = const Duration(minutes: 5),
   }) : _supabase = supabase,
+       _authRemoteDataSource = authRemoteDataSource,
        _onAccessDenied = onAccessDenied,
        _onAccessRestricted = onAccessRestricted;
 
@@ -128,15 +136,17 @@ class CheckStudentAppAccessService {
   Future<void> _check() async {
     if (!_active) return;
     try {
-      // Wrap the PostgREST builder in a real Future before applying the
-      // timeout. Besides keeping the production timeout, this avoids calling
-      // a builder-specific timeout override in lightweight test doubles.
-      final response = await Future<dynamic>.value(
-        _supabase.rpc('check_student_app_access'),
-      ).timeout(NetworkConfig.readTimeout);
+      final response = await _authRemoteDataSource.checkStudentAppAccessRaw();
       if (!_active) return;
+      if (response == null) {
+        // The datasource fails closed on a missing payload; a null here can
+        // only mean the RPC itself returned null — treat it like any other
+        // unexpected payload: log and skip this tick (next poll retries).
+        debugPrint('[Security] check_student_app_access returned null');
+        return;
+      }
 
-      final data = response as Map<String, dynamic>;
+      final data = response;
 
       final dbTokenVersion = data['token_version'] as int?;
       final jwtVersion = _currentJwtTokenVersion;
@@ -258,44 +268,5 @@ class CheckStudentAppAccessService {
     return false;
   }
 
-  int? get _currentJwtTokenVersion {
-    final session = _supabase.auth.currentSession;
-    final token = session?.accessToken;
-    if (token == null || token.isEmpty) {
-      return null;
-    }
-
-    final parts = token.split('.');
-    if (parts.length < 2) {
-      return null;
-    }
-
-    final payload = parts[1];
-    final normalizedPayload = payload.replaceAll('-', '+').replaceAll('_', '/');
-    final padding = '=' * ((4 - (normalizedPayload.length % 4)) % 4).toInt();
-
-    try {
-      final decoded = utf8.decode(
-        base64Url.decode(normalizedPayload + padding),
-      );
-      final json = jsonDecode(decoded) as Map<String, dynamic>;
-
-      // 1. Check root level (standard for our Hook)
-      final directVersion = json['token_version'];
-      if (directVersion is int) return directVersion;
-      if (directVersion is String) return int.tryParse(directVersion);
-
-      // 2. Check app_metadata (common fallback)
-      final appMetadata = json['app_metadata'];
-      if (appMetadata is Map) {
-        final metadataVersion = appMetadata['token_version'];
-        if (metadataVersion is int) return metadataVersion;
-        if (metadataVersion is String) return int.tryParse(metadataVersion);
-      }
-    } catch (_) {
-      return null;
-    }
-
-    return null;
-  }
+  int? get _currentJwtTokenVersion => _authRemoteDataSource.currentJwtTokenVersion;
 }

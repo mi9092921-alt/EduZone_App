@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -84,6 +85,68 @@ class AuthRemoteDataSource {
         throw _mapRpcException(e);
       }
     });
+  }
+
+  /// Raw `check_student_app_access()` payload for the security-monitoring
+  /// service ([CheckStudentAppAccessService from application/services]),
+  /// which needs fields the [UserAccess] mapping intentionally drops —
+  /// `token_version` for server-revocation detection and the localized
+  /// restriction message. Callers wanting a decision should prefer
+  /// [checkStudentAppAccess].
+  Future<Map<String, dynamic>?> checkStudentAppAccessRaw() async {
+    return NetworkGuard.read(() async {
+      try {
+        final res = await _client.rpc('check_student_app_access');
+        return res == null ? null : res as Map<String, dynamic>;
+      } on PostgrestException catch (e) {
+        throw _mapRpcException(e);
+      }
+    });
+  }
+
+  /// `token_version` claim from the current session's JWT, or null when the
+  /// session/claim is missing or the token is malformed.
+  ///
+  /// Kept here because session/token handling is datasource territory; the
+  /// security-monitoring service compares this against the DB value to
+  /// detect server-side revocation.
+  int? get currentJwtTokenVersion {
+    final session = _client.auth.currentSession;
+    final token = session?.accessToken;
+    if (token == null || token.isEmpty) {
+      return null;
+    }
+
+    final parts = token.split('.');
+    if (parts.length < 2) {
+      return null;
+    }
+
+    final payload = parts[1];
+    final normalizedPayload = payload.replaceAll('-', '+').replaceAll('_', '/');
+    final padding = '=' * ((4 - (normalizedPayload.length % 4)) % 4).toInt();
+
+    try {
+      final decoded = utf8.decode(base64Url.decode(normalizedPayload + padding));
+      final json = jsonDecode(decoded) as Map<String, dynamic>;
+
+      // 1. Check root level (standard for our Hook)
+      final directVersion = json['token_version'];
+      if (directVersion is int) return directVersion;
+      if (directVersion is String) return int.tryParse(directVersion);
+
+      // 2. Check app_metadata (common fallback)
+      final appMetadata = json['app_metadata'];
+      if (appMetadata is Map) {
+        final metadataVersion = appMetadata['token_version'];
+        if (metadataVersion is int) return metadataVersion;
+        if (metadataVersion is String) return int.tryParse(metadataVersion);
+      }
+    } catch (_) {
+      return null;
+    }
+
+    return null;
   }
 
   // ─── Login ────────────────────────────────────────────────────
@@ -247,6 +310,39 @@ class AuthRemoteDataSource {
       // Best-effort — RPC may fail if session already expired
     }
     await _client.auth.signOut().timeout(NetworkConfig.writeTimeout);
+  }
+
+  /// Revokes the current session server-side (`logout_current_user()` RPC).
+  ///
+  /// Only the RPC — the local sign-out teardown is [signOutLocally]. The
+  /// primary logout path is [LogoutOrchestrator], which sequences these
+  /// steps itself (server revocation → realtime disconnect → local wipe).
+  Future<void> revokeCurrentSession() async {
+    return NetworkGuard.write(() async {
+      try {
+        await _client.rpc('logout_current_user');
+      } on PostgrestException catch (e) {
+        throw _mapRpcException(e);
+      }
+    });
+  }
+
+  /// Tears down ALL Supabase Realtime channels (used on logout).
+  Future<void> disconnectRealtime() async {
+    await _client.removeAllChannels();
+  }
+
+  /// Local-only sign-out (`SignOutScope.local`): clears the GoTrue persisted
+  /// session from SecureLocalStorage and fires onAuthStateChange(signedOut)
+  /// WITHOUT any network call — used by LogoutOrchestrator.forceLocalCleanup
+  /// where the server side was already handled and the call must never hang
+  /// on a dead/revoked token.
+  Future<void> signOutLocally() async {
+    await _client.auth
+        // Explicit: local-only cleanup must never depend on network. The
+        // value happens to be the SDK default, but the intent is the point.
+        // ignore: avoid_redundant_argument_values
+        .signOut(scope: SignOutScope.local);
   }
 
   // ─── Validate Device ──────────────────────────────────────────

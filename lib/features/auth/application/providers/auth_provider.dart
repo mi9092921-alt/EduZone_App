@@ -666,6 +666,7 @@ class Auth extends _$Auth {
     _accessService?.stop();
     _accessService = CheckStudentAppAccessService(
       supabase: ref.read(supabaseClientProvider),
+      authRemoteDataSource: _remoteDataSource,
       onAccessDenied: ({required String reason}) =>
           handleAccessDenied(reason: reason),
       onAccessRestricted: ({required UserAccess access}) =>
@@ -775,7 +776,7 @@ class Auth extends _$Auth {
 
   Future<void> _forceLocalSignOutOnly(SupabaseClient client) async {
     final orchestrator = LogoutOrchestrator(
-      supabase: client,
+      authRemoteDataSource: _remoteDataSource,
       secureStorage: hardenedSecureStorage,
       cancellationManager: ref.read(requestCancellationManagerProvider),
       fcmConfigured: AppConfig.fcmEnabled,
@@ -833,7 +834,7 @@ class Auth extends _$Auth {
     _degradedRetryTimer?.cancel();
 
     final orchestrator = LogoutOrchestrator(
-      supabase: client,
+      authRemoteDataSource: _remoteDataSource,
       secureStorage: hardenedSecureStorage,
       cancellationManager: ref.read(requestCancellationManagerProvider),
       fcmConfigured: AppConfig.fcmEnabled,

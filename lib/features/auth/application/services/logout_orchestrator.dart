@@ -2,12 +2,12 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/network/request_cancellation_manager.dart';
 import '../../../../shared/services/push_token_registration_service.dart';
 import '../../../../shared/utils/global_error_handler.dart';
+import '../../data/datasources/auth_remote_ds.dart';
 import '../models/logout_result.dart';
 
 /// Keys that must be preserved across logout.
@@ -23,8 +23,11 @@ const _sensitiveSecureKeys = {
   'supabase_access_token',
 };
 
+/// All Supabase interactions (server revocation RPC, realtime teardown,
+/// local sign-out) go through [AuthRemoteDataSource] — this orchestrator
+/// only sequences them alongside FCM and local-storage cleanup.
 class LogoutOrchestrator {
-  final SupabaseClient _supabase;
+  final AuthRemoteDataSource _authRemoteDataSource;
   final FlutterSecureStorage _secureStorage;
   final bool _fcmConfigured;
   final RequestCancellationManager _cancellationManager;
@@ -32,11 +35,11 @@ class LogoutOrchestrator {
   static const _remoteTimeout = Duration(seconds: 3);
 
   const LogoutOrchestrator({
-    required SupabaseClient supabase,
+    required AuthRemoteDataSource authRemoteDataSource,
     required FlutterSecureStorage secureStorage,
     required RequestCancellationManager cancellationManager,
     bool fcmConfigured = false,
-  })  : _supabase = supabase,
+  })  : _authRemoteDataSource = authRemoteDataSource,
         _secureStorage = secureStorage,
         _cancellationManager = cancellationManager,
         _fcmConfigured = fcmConfigured;
@@ -53,9 +56,7 @@ class LogoutOrchestrator {
 
     // ── Step 1: Server-side session revocation (best effort) ────────────────
     try {
-      await _supabase
-          .rpc('logout_current_user')
-          .timeout(_remoteTimeout);
+      await _authRemoteDataSource.revokeCurrentSession().timeout(_remoteTimeout);
     } catch (e, st) {
       // Best-effort by design (local cleanup below still runs either
       // way), but if the server never hears about this logout, the old
@@ -79,7 +80,7 @@ class LogoutOrchestrator {
 
     // ── Step 3: Kill all Realtime channels (synchronous) ────────────────────
     try {
-      await _supabase.removeAllChannels();
+      await _authRemoteDataSource.disconnectRealtime();
     } catch (e) {
       failedSteps.add('realtime_disconnect');
     }
@@ -116,12 +117,7 @@ class LogoutOrchestrator {
     // Keystore/Keychain-held 'supabase_access_token' entry; we must let the
     // SDK handle that key itself rather than deleting it out from under it.
     try {
-      const localScope = SignOutScope.local;
-      await _supabase.auth
-          // Explicit because local-only cleanup must never depend on network.
-          // ignore: avoid_redundant_argument_values
-          .signOut(scope: localScope)
-          .timeout(const Duration(seconds: 2));
+      await _authRemoteDataSource.signOutLocally().timeout(const Duration(seconds: 2));
       debugPrint('[LogoutOrchestrator] Supabase local signOut ✓');
     } catch (e, st) {
       // This is the step that actually clears the local Supabase session

@@ -1,61 +1,46 @@
 import 'package:app/core/network/request_cancellation_manager.dart';
 import 'package:app/features/auth/application/services/logout_orchestrator.dart';
+import 'package:app/features/auth/data/datasources/auth_remote_ds.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-class MockSupabaseClient extends Mock implements SupabaseClient {}
-
-class MockGoTrueClient extends Mock implements GoTrueClient {}
+class MockAuthRemoteDataSource extends Mock implements AuthRemoteDataSource {}
 
 class MockFlutterSecureStorage extends Mock implements FlutterSecureStorage {}
 
 class MockRequestCancellationManager extends Mock
     implements RequestCancellationManager {}
 
-class MockRpcBuilder extends Mock implements PostgrestFilterBuilder<dynamic> {}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() {
     registerFallbackValue(Duration.zero);
-    registerFallbackValue(SignOutScope.local);
   });
 
-  late MockSupabaseClient mockClient;
-  late MockGoTrueClient mockAuth;
+  late MockAuthRemoteDataSource mockDataSource;
   late MockFlutterSecureStorage mockStorage;
   late MockRequestCancellationManager mockCancellationManager;
   late LogoutOrchestrator orchestrator;
 
-  void stubRpc({bool throws = false}) {
-    final builder = MockRpcBuilder();
-    when(() => mockClient.rpc('logout_current_user')).thenAnswer((_) => builder);
-    when(() => builder.timeout(any())).thenAnswer((_) {
-      if (throws) return Future<dynamic>.error(Exception('network error'));
-      return Future<dynamic>.value();
-    });
-  }
-
   setUp(() {
-    mockClient = MockSupabaseClient();
-    mockAuth = MockGoTrueClient();
+    mockDataSource = MockAuthRemoteDataSource();
     mockStorage = MockFlutterSecureStorage();
     mockCancellationManager = MockRequestCancellationManager();
     SharedPreferences.setMockInitialValues({});
 
-    when(() => mockClient.auth).thenReturn(mockAuth);
-    when(() => mockCancellationManager.cancelAll()).thenReturn(null);
-    when(() => mockClient.removeAllChannels())
+    when(() => mockDataSource.revokeCurrentSession()).thenAnswer((_) async {});
+    when(() => mockDataSource.disconnectRealtime())
         .thenAnswer((_) async => <String>[]);
+    when(() => mockDataSource.signOutLocally()).thenAnswer((_) async {});
+    when(() => mockCancellationManager.cancelAll()).thenReturn(null);
     when(() => mockStorage.delete(key: any(named: 'key')))
         .thenAnswer((_) async {});
 
     orchestrator = LogoutOrchestrator(
-      supabase: mockClient,
+      authRemoteDataSource: mockDataSource,
       secureStorage: mockStorage,
       cancellationManager: mockCancellationManager,
     );
@@ -63,16 +48,12 @@ void main() {
 
   group('execute', () {
     test('cancels in-flight requests immediately', () async {
-      stubRpc();
-
       await orchestrator.execute(logoutFlow: 'manual');
 
       verify(() => mockCancellationManager.cancelAll()).called(1);
     });
 
     test('returns success when all steps pass', () async {
-      stubRpc();
-
       final result = await orchestrator.execute(logoutFlow: 'manual');
 
       expect(result.success, isTrue);
@@ -81,7 +62,8 @@ void main() {
     });
 
     test('records server_revocation in failedSteps when RPC throws', () async {
-      stubRpc(throws: true);
+      when(() => mockDataSource.revokeCurrentSession())
+          .thenThrow(Exception('network error'));
 
       final result = await orchestrator.execute(logoutFlow: 'forced');
 
@@ -90,8 +72,7 @@ void main() {
     });
 
     test('records realtime_disconnect when removeAllChannels throws', () async {
-      stubRpc();
-      when(() => mockClient.removeAllChannels())
+      when(() => mockDataSource.disconnectRealtime())
           .thenThrow(Exception('realtime error'));
 
       final result = await orchestrator.execute(logoutFlow: 'manual');
@@ -100,8 +81,6 @@ void main() {
     });
 
     test('toLog() contains required fields', () async {
-      stubRpc();
-
       final result = await orchestrator.execute(logoutFlow: 'manual');
       final log = result.toLog();
 
@@ -112,12 +91,10 @@ void main() {
   });
 
   group('forceLocalCleanup', () {
-    test('wipes the actual Supabase access token key after local signOut', () async {
+    test('wipes the actual Supabase access token key after local signOut',
+        () async {
       final remainingKeys = <String>{'supabase_access_token'};
 
-      when(
-        () => mockAuth.signOut(scope: any(named: 'scope')),
-      ).thenAnswer((_) async {});
       when(() => mockStorage.delete(key: any(named: 'key')))
           .thenAnswer((invocation) async {
         remainingKeys.remove(invocation.namedArguments[#key] as String);
@@ -132,23 +109,15 @@ void main() {
       verifyNever(() => mockStorage.delete(key: 'user_id_cache'));
     });
 
-    test('calls signOut with local scope', () async {
-      when(
-        () => mockAuth.signOut(scope: any(named: 'scope')),
-      ).thenAnswer((_) async {});
-
+    test('calls signOutLocally (never a full network signOut)', () async {
       await orchestrator.forceLocalCleanup();
 
-      const localScope = SignOutScope.local;
-      // ignore: avoid_redundant_argument_values
-      verify(() => mockAuth.signOut(scope: localScope)).called(1);
-      verifyNever(() => mockAuth.signOut());
+      verify(() => mockDataSource.signOutLocally()).called(1);
     });
 
-    test('continues cleanup even if signOut throws', () async {
-      when(
-        () => mockAuth.signOut(scope: any(named: 'scope')),
-      ).thenThrow(Exception('signOut failed'));
+    test('continues cleanup even if signOutLocally throws', () async {
+      when(() => mockDataSource.signOutLocally())
+          .thenThrow(Exception('signOut failed'));
 
       await expectLater(orchestrator.forceLocalCleanup(), completes);
     });
