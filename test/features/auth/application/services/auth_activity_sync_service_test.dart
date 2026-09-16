@@ -1,9 +1,9 @@
 import 'package:app/core/services/device_service.dart';
 import 'package:app/features/auth/application/services/auth_activity_sync_service.dart';
 import 'package:app/features/auth/data/datasources/auth_remote_ds.dart';
-import 'package:app/features/auth/domain/entities/app_user.dart';
 import 'package:app/features/auth/domain/entities/bind_device_result.dart';
 import 'package:app/features/auth/domain/usecases/bind_device.dart';
+import 'package:app/shared/models/app_user.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 

@@ -14,11 +14,11 @@ import '../../../../../core/security/secure_storage_config.dart';
 import '../../../../../core/services/encryption_service.dart'
     show detectContainerExt;
 import '../../../../../core/services/offline_playback_service.dart';
+import '../../../../../shared/models/downloaded_lesson.dart';
 import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/downloads_provider.dart';
 import '../../../application/services/offline_clock_guard.dart';
 import '../../../application/services/offline_policy_engine.dart';
-import '../../../domain/entities/downloaded_lesson.dart';
 import 'offline_player_center_button.dart';
 import 'offline_player_controls_overlay.dart';
 import 'offline_player_error_view.dart';

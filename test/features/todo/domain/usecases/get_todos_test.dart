@@ -1,6 +1,6 @@
-import 'package:app/features/todo/domain/entities/todo_item.dart';
 import 'package:app/features/todo/domain/repositories/todo_repository.dart';
 import 'package:app/features/todo/domain/usecases/get_todos.dart';
+import 'package:app/shared/models/todo_item.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:mocktail/mocktail.dart';

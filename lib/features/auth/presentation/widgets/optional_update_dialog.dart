@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../domain/entities/update_info.dart';
+import '../../../../shared/models/update_info.dart';
 
 /// Shows a non-blocking update dialog once per version.
 ///

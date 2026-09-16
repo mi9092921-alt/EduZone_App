@@ -1,5 +1,5 @@
+import '../../../../shared/models/download_enums.dart';
 import '../../data/models/video_info.dart';
-import '../../domain/entities/download_enums.dart';
 
 /// Holds the video format selected for download and, when the format
 /// requires a separate audio stream, the corresponding [AudioTrack].

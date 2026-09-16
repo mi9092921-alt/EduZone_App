@@ -8,11 +8,11 @@ import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/network_config.dart';
 import '../../../../core/network/network_guard.dart';
 import '../../../../core/network/supabase_client.dart';
-import '../../domain/entities/app_user.dart';
+import '../../../../shared/models/account_status.dart';
+import '../../../../shared/models/app_user.dart';
+import '../../../../shared/models/user_access.dart';
+import '../../../../shared/models/user_role.dart';
 import '../../domain/entities/bind_device_result.dart';
-import '../../domain/entities/user_access.dart';
-import '../../domain/enums/account_status.dart';
-import '../../domain/enums/user_role.dart';
 
 /// Remote data source for all auth-related Supabase operations.
 ///

@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../shared/models/account_status.dart';
 import '../../../../shared/utils/app_snackbar.dart';
 import '../../../../shared/widgets/app_avatar.dart';
 import '../../../../shared/widgets/status_chip.dart';
-import '../../../auth/domain/enums/account_status.dart';
 import '../../domain/entities/student_profile.dart';
 
 /// Displays the user's avatar, name, email, and account status.

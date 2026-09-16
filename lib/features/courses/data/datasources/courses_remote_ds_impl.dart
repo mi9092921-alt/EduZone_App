@@ -4,7 +4,7 @@ import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/network_exception_mapper.dart';
 import '../../../../core/network/network_guard.dart';
 import '../../../../core/network/supabase_client.dart';
-import '../../domain/entities/course.dart';
+import '../../../../shared/models/course.dart';
 import '../../domain/entities/course_enrollment.dart';
 import '../../domain/entities/course_progress_summary.dart';
 import '../../domain/entities/lesson_content.dart';

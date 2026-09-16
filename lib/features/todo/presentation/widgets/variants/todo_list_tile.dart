@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../../core/l10n/arb/app_localizations.dart';
-import '../../../domain/entities/todo_item.dart';
+import '../../../../../shared/models/todo_item.dart';
 import '../../extensions/todo_ui_extension.dart';
 import '../components/todo_card_base.dart';
 import '../components/todo_checkbox.dart';

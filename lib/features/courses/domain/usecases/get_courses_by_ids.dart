@@ -1,6 +1,6 @@
 import 'package:fpdart/fpdart.dart';
 import '../../../../core/error/failures.dart';
-import '../entities/course.dart';
+import '../../../../shared/models/course.dart';
 import '../repositories/courses_repository.dart';
 
 class GetCoursesByIds {

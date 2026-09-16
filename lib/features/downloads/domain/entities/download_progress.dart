@@ -1,5 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'download_enums.dart';
+import '../../../../shared/models/download_enums.dart';
 
 part 'download_progress.freezed.dart';
 part 'download_progress.g.dart';

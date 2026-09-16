@@ -1,6 +1,6 @@
 import 'package:fpdart/fpdart.dart';
 import '../../../../core/error/failures.dart';
-import '../../../courses/domain/entities/course.dart';
+import '../../../../shared/models/course.dart';
 import '../../domain/entities/home_course_summary.dart';
 import '../../domain/entities/home_todo_summary.dart';
 import '../../domain/entities/resume_lesson.dart';

@@ -1,5 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-import '../../../../core/l10n/arb/app_localizations.dart';
+import '../../core/l10n/arb/app_localizations.dart';
 import 'section.dart';
 
 part 'course.freezed.dart';

@@ -1,10 +1,10 @@
 import 'package:app/core/logging/infrastructure/event_bus.dart';
 import 'package:app/core/logging/logging_providers.dart';
-import 'package:app/features/auth/domain/entities/auth_state.dart';
 import 'package:app/features/todo/application/providers/todo_provider.dart';
-import 'package:app/features/todo/domain/entities/todo_item.dart';
 import 'package:app/features/todo/domain/repositories/todo_repository.dart';
 import 'package:app/shared/cross_feature/auth_shared.dart';
+import 'package:app/shared/models/auth_state.dart';
+import 'package:app/shared/models/todo_item.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';

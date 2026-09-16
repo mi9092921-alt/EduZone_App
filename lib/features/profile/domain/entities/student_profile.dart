@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
-import '../../../auth/domain/enums/account_status.dart';
-import '../../../auth/domain/enums/user_role.dart';
+import '../../../../shared/models/account_status.dart';
+import '../../../../shared/models/user_role.dart';
 
 /// Student profile entity — mirrors `users` table fields.
 ///

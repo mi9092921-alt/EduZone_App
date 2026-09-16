@@ -2,7 +2,7 @@ import 'package:app/core/error/exceptions.dart';
 import 'package:app/core/error/failures.dart';
 import 'package:app/features/todo/data/datasources/todo_remote_ds.dart';
 import 'package:app/features/todo/data/repositories/todo_repo_impl.dart';
-import 'package:app/features/todo/domain/entities/todo_item.dart';
+import 'package:app/shared/models/todo_item.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:mocktail/mocktail.dart';

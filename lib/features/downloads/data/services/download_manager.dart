@@ -34,8 +34,8 @@ import '../../../../core/services/encryption_service.dart'
         planChunkLayout,
         totalEncryptedSizeForPlan;
 import '../../../../core/utils/global_error_handler.dart';
+import '../../../../shared/models/download_enums.dart';
 import '../../data/datasources/download_remote_ds.dart';
-import '../../domain/entities/download_enums.dart';
 import 'chunk_scheduler.dart';
 import 'chunk_transport.dart';
 

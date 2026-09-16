@@ -1,12 +1,12 @@
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
-import 'package:app/features/courses/domain/entities/course.dart';
 import 'package:app/features/courses/domain/entities/course_enrollment.dart';
-import 'package:app/features/courses/domain/entities/lesson.dart';
-import 'package:app/features/courses/domain/entities/section.dart';
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
 import 'package:app/features/video_player/presentation/widgets/lessons_sidebar.dart';
 import 'package:app/shared/components/lesson_tile.dart';
+import 'package:app/shared/models/course.dart';
+import 'package:app/shared/models/lesson.dart';
+import 'package:app/shared/models/section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

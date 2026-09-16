@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
-import '../enums/account_status.dart';
-import '../enums/user_role.dart';
+import 'account_status.dart';
+import 'user_role.dart';
 
 /// Core user entity for the authenticated user.
 ///

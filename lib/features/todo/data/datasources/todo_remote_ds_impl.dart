@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/network_exception_mapper.dart';
 import '../../../../core/network/network_guard.dart';
-import '../../domain/entities/todo_item.dart';
+import '../../../../shared/models/todo_item.dart';
 import 'todo_remote_ds.dart';
 
 class TodoRemoteDataSourceImpl implements TodoRemoteDataSource {

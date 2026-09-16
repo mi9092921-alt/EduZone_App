@@ -1,4 +1,4 @@
-import '../../domain/entities/todo_item.dart';
+import '../../../../shared/models/todo_item.dart';
 
 abstract class TodoRemoteDataSource {
   Future<List<TodoItem>> fetchTodos(String userId);

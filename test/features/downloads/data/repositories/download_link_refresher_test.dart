@@ -2,7 +2,7 @@ import 'package:app/features/downloads/data/datasources/download_local_ds.dart';
 import 'package:app/features/downloads/data/datasources/download_remote_ds.dart';
 import 'package:app/features/downloads/data/models/video_info.dart';
 import 'package:app/features/downloads/data/repositories/download_link_refresher.dart';
-import 'package:app/features/downloads/domain/entities/download_enums.dart';
+import 'package:app/shared/models/download_enums.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 

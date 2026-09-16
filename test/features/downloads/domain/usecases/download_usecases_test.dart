@@ -1,5 +1,3 @@
-import 'package:app/features/downloads/domain/entities/download_enums.dart';
-import 'package:app/features/downloads/domain/entities/downloaded_lesson.dart';
 import 'package:app/features/downloads/domain/repositories/download_repository.dart';
 import 'package:app/features/downloads/domain/usecases/cancel_download_usecase.dart';
 import 'package:app/features/downloads/domain/usecases/cleanup_expired_downloads_usecase.dart';
@@ -7,6 +5,8 @@ import 'package:app/features/downloads/domain/usecases/delete_download_usecase.d
 import 'package:app/features/downloads/domain/usecases/pause_download_usecase.dart';
 import 'package:app/features/downloads/domain/usecases/resume_download_usecase.dart';
 import 'package:app/features/downloads/domain/usecases/start_download_usecase.dart';
+import 'package:app/shared/models/download_enums.dart';
+import 'package:app/shared/models/downloaded_lesson.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:mocktail/mocktail.dart';

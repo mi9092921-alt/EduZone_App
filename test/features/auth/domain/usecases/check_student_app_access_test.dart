@@ -1,7 +1,7 @@
-import 'package:app/features/auth/domain/entities/user_access.dart';
-import 'package:app/features/auth/domain/enums/account_status.dart';
 import 'package:app/features/auth/domain/repositories/auth_repository.dart';
 import 'package:app/features/auth/domain/usecases/check_student_app_access.dart';
+import 'package:app/shared/models/account_status.dart';
+import 'package:app/shared/models/user_access.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 

@@ -2,9 +2,9 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/error/failures.dart';
 import '../../../../core/providers/storage_provider.dart';
+import '../../../../shared/models/course.dart';
 import '../../data/datasources/courses_remote_ds_impl.dart';
 import '../../data/repositories/courses_repo_impl.dart';
-import '../../domain/entities/course.dart';
 import '../../domain/entities/course_enrollment.dart';
 import '../../domain/entities/course_progress_summary.dart';
 import '../../domain/entities/lesson_content.dart';

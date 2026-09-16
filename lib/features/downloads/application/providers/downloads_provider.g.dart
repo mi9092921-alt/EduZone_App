@@ -211,7 +211,7 @@ final class DownloadRemoteDataSourceProvider
 }
 
 String _$downloadRemoteDataSourceHash() =>
-    r'91755d1467168c353e9b1ddc9c5b2709cd4b662c';
+    r'e87b4115d7444dffe44b882d3e95826dec7f2729';
 
 /// Provides the DownloadRepository instance.
 ///

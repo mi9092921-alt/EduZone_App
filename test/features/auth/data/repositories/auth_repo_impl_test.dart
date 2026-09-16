@@ -1,9 +1,9 @@
 import 'package:app/features/auth/data/datasources/auth_remote_ds.dart';
 import 'package:app/features/auth/data/repositories/auth_repo_impl.dart';
-import 'package:app/features/auth/domain/entities/app_user.dart';
 import 'package:app/features/auth/domain/entities/bind_device_result.dart';
-import 'package:app/features/auth/domain/entities/user_access.dart';
-import 'package:app/features/auth/domain/enums/account_status.dart';
+import 'package:app/shared/models/account_status.dart';
+import 'package:app/shared/models/app_user.dart';
+import 'package:app/shared/models/user_access.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 

@@ -3,7 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
-import '../../domain/entities/course.dart';
+import '../../../../shared/models/course.dart';
 import '../utils/course_format_utils.dart';
 
 class CourseCurriculumPreview extends StatelessWidget {

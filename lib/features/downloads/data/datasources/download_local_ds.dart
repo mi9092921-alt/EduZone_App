@@ -6,9 +6,9 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../../../core/utils/device_info_helper.dart';
+import '../../../../shared/models/downloaded_lesson.dart';
 import '../../domain/entities/download_chunk.dart';
 import '../../domain/entities/download_session.dart';
-import '../../domain/entities/downloaded_lesson.dart';
 
 /// Local data source for download operations.
 ///

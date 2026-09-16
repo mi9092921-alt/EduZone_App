@@ -1,7 +1,7 @@
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 
-import '../../domain/entities/todo_item.dart';
+import '../../../../shared/models/todo_item.dart';
 
 extension TodoUIX on TodoItem {
   bool isOverdue(DateTime now) {

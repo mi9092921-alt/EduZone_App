@@ -2,7 +2,7 @@ import 'package:app/core/utils/text_direction_detector.dart';
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 
-import '../../../domain/entities/todo_item.dart';
+import '../../../../../shared/models/todo_item.dart';
 import '../../extensions/todo_ui_extension.dart';
 import '../components/todo_card_base.dart';
 import '../components/todo_checkbox.dart';

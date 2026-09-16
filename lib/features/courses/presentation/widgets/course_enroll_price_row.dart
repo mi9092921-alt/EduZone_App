@@ -4,7 +4,7 @@ import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
 import '../../../../shared/components/course/course_price_block.dart';
 import '../../../../shared/components/course/enroll_action_button.dart';
-import '../../domain/entities/course.dart';
+import '../../../../shared/models/course.dart';
 
 /// The price + "Enroll" row shown to non-enrolled users at the bottom of a
 /// course screen.

@@ -1,6 +1,6 @@
-import '../entities/app_user.dart';
+import '../../../../shared/models/app_user.dart';
+import '../../../../shared/models/user_access.dart';
 import '../entities/bind_device_result.dart';
-import '../entities/user_access.dart';
 
 /// Auth repository contract — defines all authentication operations.
 ///

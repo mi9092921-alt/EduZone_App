@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/l10n/arb/app_localizations.dart';
 import '../../../design_system/design_system.dart';
-import '../../../features/courses/domain/entities/course.dart';
+import '../../models/course.dart';
 import '../../widgets/app_network_image.dart';
 
 class InstructorCard extends StatelessWidget {

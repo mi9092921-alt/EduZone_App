@@ -8,7 +8,6 @@ import '../../core/constants/app_constants.dart';
 import '../../core/l10n/arb/app_localizations.dart';
 import '../../core/navigation/app_page_transition.dart';
 import '../../core/security/security_service.dart';
-import '../../features/auth/domain/entities/auth_state.dart';
 import '../../features/auth/presentation/screens/banned_screen.dart';
 import '../../features/auth/presentation/screens/force_update_screen.dart';
 import '../../features/auth/presentation/screens/locked_screen.dart';
@@ -32,6 +31,7 @@ import '../../features/video_player/presentation/screens/video_player_screen.dar
 import '../../features/video_player/presentation/widgets/modern_player_wrapper.dart';
 import '../../features/video_player/presentation/widgets/player4_wrapper.dart';
 import '../../features/video_player/presentation/widgets/youtube_player_wrapper.dart';
+import '../../shared/models/auth_state.dart';
 import '../state/app_state_provider.dart';
 import 'main_shell.dart';
 

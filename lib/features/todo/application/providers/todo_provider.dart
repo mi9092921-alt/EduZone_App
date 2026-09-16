@@ -5,11 +5,11 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/logging/domain/app_event.dart';
 import '../../../../core/logging/logging_providers.dart';
+import '../../../../shared/models/auth_state.dart';
+import '../../../../shared/models/todo_item.dart';
 import '../../../auth/application/providers/auth_provider.dart';
-import '../../../auth/domain/entities/auth_state.dart';
 import '../../data/datasources/todo_remote_ds_impl.dart';
 import '../../data/repositories/todo_repo_impl.dart';
-import '../../domain/entities/todo_item.dart';
 import '../../domain/repositories/todo_repository.dart';
 import '../../domain/usecases/add_todo.dart';
 import '../../domain/usecases/delete_todo.dart';

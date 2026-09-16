@@ -2,7 +2,7 @@ import 'package:fpdart/fpdart.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/storage_service.dart';
-import '../../domain/entities/course.dart';
+import '../../../../shared/models/course.dart';
 import '../../domain/entities/course_enrollment.dart';
 import '../../domain/entities/course_progress_summary.dart';
 import '../../domain/entities/lesson_content.dart';

@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/components/lesson_tile.dart';
 import '../../../../shared/cross_feature/courses_shared.dart';
-import '../../../courses/domain/entities/course.dart';
+import '../../../../shared/models/course.dart';
 
 class LessonsSidebar extends ConsumerWidget {
   final Course course;

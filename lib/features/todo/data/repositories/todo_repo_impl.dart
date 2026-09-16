@@ -2,7 +2,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/network/supabase_client.dart';
-import '../../domain/entities/todo_item.dart';
+import '../../../../shared/models/todo_item.dart';
 import '../../domain/repositories/todo_repository.dart';
 import '../datasources/todo_remote_ds.dart';
 

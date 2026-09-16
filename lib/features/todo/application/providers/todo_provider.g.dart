@@ -55,7 +55,7 @@ final class TodoRemoteDataSourceProvider
 }
 
 String _$todoRemoteDataSourceHash() =>
-    r'3b219ea6a52a11307bce22cb66f54df7bffd3a77';
+    r'26e11bd42df9c39376cb715286f9c7b6ebe70b15';
 
 @ProviderFor(todoRepository)
 final todoRepositoryProvider = TodoRepositoryProvider._();

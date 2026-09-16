@@ -1,4 +1,4 @@
-import '../entities/user_access.dart';
+import '../../../../shared/models/user_access.dart';
 import '../repositories/auth_repository.dart';
 
 /// Calls `check_student_app_access()` RPC to determine current account status.

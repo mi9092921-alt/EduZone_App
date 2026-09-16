@@ -1,6 +1,6 @@
 import 'package:app/features/auth/application/services/update_service.dart';
 import 'package:app/features/auth/data/datasources/update_remote_ds.dart';
-import 'package:app/features/auth/domain/entities/update_info.dart';
+import 'package:app/shared/models/update_info.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 

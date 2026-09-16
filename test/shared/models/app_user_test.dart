@@ -1,4 +1,4 @@
-import 'package:app/features/auth/domain/entities/app_user.dart';
+import 'package:app/shared/models/app_user.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -1,11 +1,11 @@
 import 'package:app/core/error/failures.dart';
-import 'package:app/features/courses/domain/entities/course.dart';
 import 'package:app/features/home/data/datasources/home_remote_datasource.dart';
 import 'package:app/features/home/data/repositories/home_repo_impl.dart';
 import 'package:app/features/home/domain/entities/home_course_summary.dart';
 import 'package:app/features/home/domain/entities/home_todo_summary.dart';
 import 'package:app/features/home/domain/entities/resume_lesson.dart';
-import 'package:app/features/todo/domain/entities/todo_item.dart';
+import 'package:app/shared/models/course.dart';
+import 'package:app/shared/models/todo_item.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:mocktail/mocktail.dart';

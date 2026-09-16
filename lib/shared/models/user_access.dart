@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 
-import '../enums/account_status.dart';
-import '../enums/user_role.dart';
+import 'account_status.dart';
+import 'user_role.dart';
 
 /// Represents the result of a `check_student_app_access()` RPC call.
 ///

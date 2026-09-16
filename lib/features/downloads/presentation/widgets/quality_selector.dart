@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
+import '../../../../shared/models/download_enums.dart';
 import '../../data/models/video_info.dart';
-import '../../domain/entities/download_enums.dart';
 import '../../domain/entities/download_progress.dart';
 
 /// Dialog for selecting video quality before download.

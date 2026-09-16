@@ -1,7 +1,7 @@
 import 'package:fpdart/fpdart.dart';
 
 import '../../../../core/error/failures.dart';
-import '../entities/course.dart';
+import '../../../../shared/models/course.dart';
 import '../entities/course_enrollment.dart';
 import '../entities/course_progress_summary.dart';
 import '../entities/lesson_content.dart';

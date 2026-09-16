@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import '../enums/account_status.dart';
+import 'account_status.dart';
 import 'app_user.dart';
 import 'update_info.dart';
 import 'user_access.dart';

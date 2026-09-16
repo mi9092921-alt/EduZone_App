@@ -1,5 +1,5 @@
 import 'package:app/design_system/design_system.dart';
-import 'package:app/features/downloads/domain/entities/download_enums.dart';
+import 'package:app/shared/models/download_enums.dart';
 import 'package:flutter/material.dart';
 
 /// The circular status icon shown at the start of a [DownloadTile] row.

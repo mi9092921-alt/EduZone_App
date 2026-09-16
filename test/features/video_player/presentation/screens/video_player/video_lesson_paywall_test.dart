@@ -1,6 +1,6 @@
 import 'package:app/core/l10n/arb/app_localizations.dart';
-import 'package:app/features/courses/domain/entities/lesson.dart';
 import 'package:app/features/video_player/presentation/screens/video_player/video_lesson_paywall.dart';
+import 'package:app/shared/models/lesson.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

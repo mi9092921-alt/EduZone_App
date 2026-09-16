@@ -8,7 +8,7 @@ import '../../../../core/logging/infrastructure/event_bus.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/encryption_service.dart';
 import '../../../../core/utils/device_info_helper.dart';
-import '../../domain/entities/download_enums.dart';
+import '../../../../shared/models/download_enums.dart';
 import '../../domain/entities/download_progress.dart';
 import '../../domain/entities/download_session.dart';
 import '../datasources/download_local_ds.dart';

@@ -1,7 +1,7 @@
-import 'package:app/features/courses/domain/entities/course.dart';
-import 'package:app/features/courses/domain/entities/lesson.dart';
-import 'package:app/features/courses/domain/entities/section.dart';
 import 'package:app/features/video_player/presentation/screens/video_player/lesson_lookup.dart';
+import 'package:app/shared/models/course.dart';
+import 'package:app/shared/models/lesson.dart';
+import 'package:app/shared/models/section.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

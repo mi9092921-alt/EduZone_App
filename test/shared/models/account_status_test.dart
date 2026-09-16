@@ -1,4 +1,4 @@
-import 'package:app/features/auth/domain/enums/account_status.dart';
+import 'package:app/shared/models/account_status.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

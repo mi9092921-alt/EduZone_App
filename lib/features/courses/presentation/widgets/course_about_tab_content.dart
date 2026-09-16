@@ -4,7 +4,7 @@ import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
 import '../../../../shared/components/course/course_meta_row.dart';
 import '../../../../shared/components/course/instructor_card.dart';
-import '../../domain/entities/course.dart';
+import '../../../../shared/models/course.dart';
 import '../utils/course_format_utils.dart';
 import 'course_bullet_point.dart';
 import 'course_description_section.dart';

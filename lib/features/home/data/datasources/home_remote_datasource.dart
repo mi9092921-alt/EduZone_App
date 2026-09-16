@@ -1,5 +1,5 @@
-import '../../../courses/domain/entities/course.dart';
-import '../../../todo/domain/entities/todo_item.dart';
+import '../../../../shared/models/course.dart';
+import '../../../../shared/models/todo_item.dart';
 import '../../domain/entities/resume_lesson.dart';
 
 abstract class HomeRemoteDataSource {

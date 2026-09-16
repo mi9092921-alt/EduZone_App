@@ -1,6 +1,6 @@
-import '../../domain/entities/app_user.dart';
+import '../../../../shared/models/app_user.dart';
+import '../../../../shared/models/user_access.dart';
 import '../../domain/entities/bind_device_result.dart';
-import '../../domain/entities/user_access.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_remote_ds.dart';
 

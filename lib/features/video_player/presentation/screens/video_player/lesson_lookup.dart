@@ -1,6 +1,6 @@
-import 'package:app/features/courses/domain/entities/course.dart';
-import 'package:app/features/courses/domain/entities/lesson.dart';
-import 'package:app/features/courses/domain/entities/section.dart';
+import 'package:app/shared/models/course.dart';
+import 'package:app/shared/models/lesson.dart';
+import 'package:app/shared/models/section.dart';
 
 /// Finds the [Lesson] with [lessonId] anywhere in [course]'s sections.
 ///

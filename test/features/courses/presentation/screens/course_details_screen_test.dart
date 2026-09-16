@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
-import 'package:app/features/courses/domain/entities/course.dart';
 import 'package:app/features/courses/domain/entities/course_enrollment.dart';
 import 'package:app/features/courses/presentation/screens/course_details_screen.dart';
+import 'package:app/shared/models/course.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

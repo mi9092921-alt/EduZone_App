@@ -1,8 +1,8 @@
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/design_system/tokens/app_theme.dart';
 import 'package:app/features/auth/application/providers/auth_provider.dart';
-import 'package:app/features/auth/domain/entities/auth_state.dart';
 import 'package:app/features/auth/presentation/screens/login_screen.dart';
+import 'package:app/shared/models/auth_state.dart';
 import 'package:app/shared/utils/app_snackbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

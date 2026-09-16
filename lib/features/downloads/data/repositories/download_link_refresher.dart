@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-import '../../domain/entities/download_enums.dart';
+import '../../../../shared/models/download_enums.dart';
 import '../datasources/download_local_ds.dart';
 import '../datasources/download_remote_ds.dart';
 import 'download_format_selector.dart';

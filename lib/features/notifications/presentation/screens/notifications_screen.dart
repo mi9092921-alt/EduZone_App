@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../shared/models/auth_state.dart';
 import '../../../../shared/utils/error_handler.dart';
 import '../../../auth/application/providers/auth_provider.dart';
-import '../../../auth/domain/entities/auth_state.dart';
 import '../../application/providers/notifications_provider.dart';
 import '../../domain/entities/app_notification.dart';
 import '../widgets/notification_tile.dart';

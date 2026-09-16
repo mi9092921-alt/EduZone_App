@@ -1,6 +1,6 @@
 import 'package:fpdart/fpdart.dart';
 import '../../../../core/error/failures.dart';
-import '../entities/todo_item.dart';
+import '../../../../shared/models/todo_item.dart';
 
 abstract class TodoRepository {
   Future<Either<Failure, List<TodoItem>>> fetchTodos();

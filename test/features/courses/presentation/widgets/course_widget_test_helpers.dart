@@ -1,5 +1,5 @@
 import 'package:app/core/l10n/arb/app_localizations.dart';
-import 'package:app/features/courses/domain/entities/course.dart';
+import 'package:app/shared/models/course.dart';
 import 'package:flutter/material.dart';
 
 /// Wraps [child] with the localization + theme scaffolding every course

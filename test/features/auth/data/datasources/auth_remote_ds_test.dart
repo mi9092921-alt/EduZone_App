@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:app/core/error/exceptions.dart';
 import 'package:app/features/auth/data/datasources/auth_remote_ds.dart';
 import 'package:app/features/auth/domain/entities/bind_device_result.dart';
-import 'package:app/features/auth/domain/enums/account_status.dart';
+import 'package:app/shared/models/account_status.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';

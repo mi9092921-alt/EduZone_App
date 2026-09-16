@@ -1,12 +1,12 @@
 import 'package:app/core/error/failures.dart';
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
-import 'package:app/features/courses/domain/entities/lesson.dart';
-import 'package:app/features/courses/domain/entities/section.dart';
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
 import 'package:app/features/courses/presentation/widgets/sections_accordion.dart';
 import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:app/features/downloads/domain/repositories/download_repository.dart';
+import 'package:app/shared/models/lesson.dart';
+import 'package:app/shared/models/section.dart';
 import 'package:app/shared/utils/app_snackbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

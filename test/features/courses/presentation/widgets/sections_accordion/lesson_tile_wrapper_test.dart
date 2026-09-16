@@ -1,8 +1,8 @@
-import 'package:app/features/courses/domain/entities/lesson.dart';
 import 'package:app/features/courses/presentation/widgets/sections_accordion/lesson_tile_wrapper.dart';
-import 'package:app/features/downloads/domain/entities/download_enums.dart';
-import 'package:app/features/downloads/domain/entities/downloaded_lesson.dart';
 import 'package:app/shared/cross_feature/downloads_shared.dart';
+import 'package:app/shared/models/download_enums.dart';
+import 'package:app/shared/models/downloaded_lesson.dart';
+import 'package:app/shared/models/lesson.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'sections_accordion_test_helpers.dart';

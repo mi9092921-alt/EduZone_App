@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:fpdart/fpdart.dart';
 
 import '../../../../core/error/failures.dart';
-import '../../domain/entities/download_enums.dart';
-import '../../domain/entities/downloaded_lesson.dart';
+import '../../../../shared/models/download_enums.dart';
+import '../../../../shared/models/downloaded_lesson.dart';
 import '../datasources/download_local_ds.dart';
 
 /// Handles all **read-only** queries against the local downloads database.

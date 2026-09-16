@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../shared/components/course_card.dart';
-import '../../domain/entities/course.dart';
+import '../../../../shared/models/course.dart';
 import '../../domain/entities/course_enrollment.dart';
 
 /// A wrapper for CourseCard specifically for "My Courses" preview.

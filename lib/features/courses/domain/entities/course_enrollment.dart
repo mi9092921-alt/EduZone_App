@@ -1,5 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'course.dart';
+import '../../../../shared/models/course.dart';
 
 part 'course_enrollment.freezed.dart';
 part 'course_enrollment.g.dart';

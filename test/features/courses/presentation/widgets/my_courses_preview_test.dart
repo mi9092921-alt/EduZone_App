@@ -1,8 +1,8 @@
 import 'package:app/core/l10n/arb/app_localizations.dart';
-import 'package:app/features/courses/domain/entities/course.dart';
 import 'package:app/features/courses/domain/entities/course_enrollment.dart';
 import 'package:app/features/courses/presentation/widgets/my_courses_preview.dart';
 import 'package:app/shared/components/course_card.dart';
+import 'package:app/shared/models/course.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';

@@ -1,6 +1,6 @@
-import 'package:app/features/downloads/domain/entities/download_enums.dart';
-import 'package:app/features/downloads/domain/entities/downloaded_lesson.dart';
 import 'package:app/features/downloads/presentation/screens/downloads_screen.dart';
+import 'package:app/shared/models/download_enums.dart';
+import 'package:app/shared/models/downloaded_lesson.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../shared/components/lesson_tile.dart';
 import '../../../../../shared/cross_feature/downloads_shared.dart';
-import '../../../../downloads/domain/entities/download_enums.dart';
-import '../../../../downloads/domain/entities/downloaded_lesson.dart';
-import '../../../domain/entities/lesson.dart';
+import '../../../../../shared/models/download_enums.dart';
+import '../../../../../shared/models/downloaded_lesson.dart';
+import '../../../../../shared/models/lesson.dart';
 
 /// Wires a [Lesson] + its live download status (from [downloadsProvider] /
 /// [downloadProgressProvider]) into a [LessonTile].

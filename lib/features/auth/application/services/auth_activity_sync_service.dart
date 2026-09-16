@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/services/device_service.dart';
+import '../../../../shared/models/app_user.dart';
 import '../../data/datasources/auth_remote_ds.dart';
-import '../../domain/entities/app_user.dart';
 import '../../domain/usecases/bind_device.dart';
 
 /// Refreshes device-binding, activity, and session tracking after a login

@@ -2,7 +2,7 @@ import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/l10n/arb/app_localizations.dart';
-import '../../features/auth/domain/enums/account_status.dart';
+import '../models/account_status.dart';
 
 /// Per-status foreground color only.
 /// The background is derived at runtime as foreground.withOpacity(0.12),

@@ -1,6 +1,6 @@
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/design_system/design_system.dart';
-import 'package:app/features/courses/domain/entities/lesson.dart';
+import 'package:app/shared/models/lesson.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 

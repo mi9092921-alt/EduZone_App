@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../shared/models/todo_item.dart';
 import '../../../../shared/utils/app_snackbar.dart';
 import '../../../../shared/utils/error_handler.dart';
 import '../../application/providers/todo_provider.dart';
-import '../../domain/entities/todo_item.dart';
 import '../widgets/add_todo_bottom_sheet.dart';
 import '../widgets/variants/todo_list_tile.dart';
 

@@ -1,4 +1,4 @@
-import '../entities/app_user.dart';
+import '../../../../shared/models/app_user.dart';
 import '../repositories/auth_repository.dart';
 
 /// Returns the currently authenticated user, or null if not signed in.

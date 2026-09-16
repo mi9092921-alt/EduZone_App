@@ -1,10 +1,10 @@
 import 'package:app/app/state/app_state_provider.dart';
 import 'package:app/features/auth/application/providers/auth_provider.dart';
-import 'package:app/features/auth/domain/entities/app_user.dart';
-import 'package:app/features/auth/domain/entities/auth_state.dart';
-import 'package:app/features/auth/domain/entities/update_info.dart';
-import 'package:app/features/auth/domain/entities/user_access.dart';
-import 'package:app/features/auth/domain/enums/account_status.dart';
+import 'package:app/shared/models/account_status.dart';
+import 'package:app/shared/models/app_user.dart';
+import 'package:app/shared/models/auth_state.dart';
+import 'package:app/shared/models/update_info.dart';
+import 'package:app/shared/models/user_access.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 

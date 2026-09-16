@@ -1,9 +1,9 @@
 import 'package:fpdart/fpdart.dart';
 
 import '../../../../core/error/failures.dart';
-import '../entities/download_enums.dart';
+import '../../../../shared/models/download_enums.dart';
+import '../../../../shared/models/downloaded_lesson.dart';
 import '../entities/download_progress.dart';
-import '../entities/downloaded_lesson.dart';
 
 /// Repository contract for download operations.
 ///

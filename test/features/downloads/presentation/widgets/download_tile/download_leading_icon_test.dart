@@ -1,5 +1,5 @@
-import 'package:app/features/downloads/domain/entities/download_enums.dart';
 import 'package:app/features/downloads/presentation/widgets/download_tile/download_leading_icon.dart';
+import 'package:app/shared/models/download_enums.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

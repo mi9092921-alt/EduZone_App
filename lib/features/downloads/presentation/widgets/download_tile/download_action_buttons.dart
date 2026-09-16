@@ -1,6 +1,6 @@
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/design_system/design_system.dart';
-import 'package:app/features/downloads/domain/entities/download_enums.dart';
+import 'package:app/shared/models/download_enums.dart';
 import 'package:app/shared/utils/app_snackbar.dart';
 import 'package:app/shared/utils/error_handler.dart';
 import 'package:flutter/material.dart';

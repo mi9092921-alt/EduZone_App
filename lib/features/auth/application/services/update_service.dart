@@ -3,8 +3,8 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/utils/version_comparator.dart';
+import '../../../../shared/models/update_info.dart';
 import '../../data/datasources/update_remote_ds.dart';
-import '../../domain/entities/update_info.dart';
 
 /// Orchestrates the full update check flow.
 ///
