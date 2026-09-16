@@ -9,6 +9,7 @@ import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/components/course_card.dart';
 import '../../../../shared/models/course.dart';
 import '../../../../shared/utils/error_handler.dart';
+import '../../../../shared/widgets/error_state.dart';
 import '../../application/providers/courses_provider.dart';
 
 class DiscoverScreen extends ConsumerStatefulWidget {
@@ -367,11 +368,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         SliverFillRemaining(
           hasScrollBody: false,
           // Audit P1 (M3): retryable error state instead of a bare message.
-          child: AppEmptyState(
-            icon: Icons.error_outline_rounded,
-            title: ErrorHandler.getMessage(context, error),
-            actionLabel: AppLocalizations.of(context)!.retryButton,
-            onActionPressed: () => ref.invalidate(publicCoursesProvider),
+          child: ErrorState(
+            message: ErrorHandler.getMessage(context, error),
+            onRetry: () => ref.invalidate(publicCoursesProvider),
           ),
         ),
       ],

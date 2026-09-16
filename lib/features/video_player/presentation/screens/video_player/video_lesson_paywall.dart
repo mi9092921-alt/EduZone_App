@@ -53,11 +53,9 @@ class VideoLessonPaywall extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.xl2),
-              ElevatedButton(
+              AppButton(
+                label: AppLocalizations.of(context)!.viewEnrollmentOptions,
                 onPressed: () => context.pop(),
-                child: Text(
-                  AppLocalizations.of(context)!.viewEnrollmentOptions,
-                ),
               ),
             ],
           ),

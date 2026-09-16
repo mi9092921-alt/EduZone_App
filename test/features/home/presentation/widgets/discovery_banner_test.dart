@@ -53,7 +53,7 @@ void main() {
       // exact Arabic marketing copy is verified via the ARB source of truth
       // rather than hardcoded here, to avoid this test drifting out of sync
       // with future copy changes.
-      expect(find.byType(ElevatedButton), findsOneWidget);
+      expect(find.byType(OutlinedButton), findsOneWidget);
       expect(find.byIcon(Icons.auto_stories_rounded), findsOneWidget);
     });
   });

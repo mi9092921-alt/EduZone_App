@@ -99,7 +99,7 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
                         color: Colors.white,
                         size: 18,
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: AppSpacing.md),
                       Expanded(
                         child: Builder(
                           builder: (ctx) {
@@ -118,7 +118,7 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
                           },
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppSpacing.sm),
                       // Dismiss button — lets the student close the banner
                       // while still offline (e.g. watching a downloaded
                       // video). It reappears next time the connection

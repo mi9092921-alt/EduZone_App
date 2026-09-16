@@ -7,6 +7,7 @@ import '../../../../shared/components/notification_tile.dart';
 import '../../../../shared/models/app_notification.dart';
 import '../../../../shared/models/auth_state.dart';
 import '../../../../shared/utils/error_handler.dart';
+import '../../../../shared/widgets/error_state.dart';
 import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/notifications_provider.dart';
 
@@ -140,11 +141,9 @@ class NotificationsScreen extends ConsumerWidget {
         SliverFillRemaining(
           hasScrollBody: false,
           // Audit P1 (M3): retryable error state instead of a bare message.
-          child: AppEmptyState(
-            icon: Icons.error_outline_rounded,
-            title: ErrorHandler.getMessage(context, e),
-            actionLabel: AppLocalizations.of(context)!.retryButton,
-            onActionPressed: () => ref.invalidate(notificationsProvider),
+          child: ErrorState(
+            message: ErrorHandler.getMessage(context, e),
+            onRetry: () => ref.invalidate(notificationsProvider),
           ),
         ),
       ],

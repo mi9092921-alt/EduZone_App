@@ -34,7 +34,7 @@ class CourseCurriculumPreview extends StatelessWidget {
             color: ds.textPrimary,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: AppSpacing.xs2),
         Text(
           '${course.sections?.length ?? 0} ${l10n.sectionsLabel} • ${l10n.lessonsCount(course.totalLessons ?? course.computedTotalLessons)} • ${formatCourseDuration(course.totalDurationMinutes, l10n)}',
           style: AppTextStyles.bodySmall.copyWith(color: ds.textSecondary),

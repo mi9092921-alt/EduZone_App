@@ -54,7 +54,7 @@ class InstructorCard extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: AppSpacing.hairline),
                 Text(
                   '${l10n.instructorLabel} • ${course.studentsLabel} ${l10n.studentsLabel}',
                   style: AppTextStyles.labelSmall.copyWith(

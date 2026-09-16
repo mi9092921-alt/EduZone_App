@@ -42,28 +42,11 @@ class Player4ErrorView extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpacing.lg),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ds.surface2,
-                foregroundColor: ds.primary,
-                elevation: 0,
-                side: BorderSide(color: ds.primary.withValues(alpha: 0.4)),
-                shape: const RoundedRectangleBorder(
-                  borderRadius: AppRadius.mdBorder,
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                  vertical: AppSpacing.md,
-                ),
-              ),
+            AppButton(
+              label: l10n.retryLoading,
               onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded, size: 16),
-              label: Text(
-                l10n.retryLoading,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              variant: AppButtonVariant.secondary,
+              leadingIcon: Icons.refresh_rounded,
             ),
           ],
         ),

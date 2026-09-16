@@ -107,7 +107,7 @@ class FeedbackService {
         child: Row(
           children: [
             Icon(style.icon, color: style.text),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Text(
                 message,
@@ -118,7 +118,7 @@ class FeedbackService {
               ),
             ),
             if (action != null) ...[
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.sm),
               TextButton(
                 onPressed: () {
                   messengerKey.currentState?.hideCurrentSnackBar();
@@ -248,7 +248,7 @@ class _ToastWidgetState extends State<_ToastWidget>
               child: Row(
                 children: [
                   Icon(widget.style.icon, color: widget.style.text, size: 20),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: Text(
                       widget.message,

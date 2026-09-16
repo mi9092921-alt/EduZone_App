@@ -205,7 +205,7 @@ class DiscoverCourseCard extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 12, color: colors.textMuted),
-        const SizedBox(width: 3),
+        const SizedBox(width: AppSpacing.xs2),
         Text(
           label,
           style: AppTextStyles.labelSmall.copyWith(

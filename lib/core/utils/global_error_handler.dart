@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import '../../design_system/design_system.dart';
 import '../error/exceptions.dart';
 import '../network/network_exception_mapper.dart';
 
@@ -136,7 +137,7 @@ class AppProductionErrorScreen extends StatelessWidget {
                   size: 80,
                   color: Colors.redAccent,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.xl),
                 const Text( // check-ignore -- see class doc
                   'حدث خطأ غير متوقع',
                   style: TextStyle( // check-ignore -- see class doc
@@ -146,13 +147,13 @@ class AppProductionErrorScreen extends StatelessWidget {
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.md),
                 const Text( // check-ignore -- see class doc
                   'لا تقلق، فريقنا الفني سيعمل على إصلاح المشكلة في أسرع وقت. يرجى المحاولة مرة أخرى.',
                   style: TextStyle(fontSize: 14, color: Colors.black54), // check-ignore -- see class doc
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: AppSpacing.xl2),
                 if (kDebugMode)
                   Container(
                     padding: const EdgeInsets.all(12), // check-ignore -- see class doc

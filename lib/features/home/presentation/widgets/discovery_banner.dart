@@ -75,24 +75,10 @@ class DiscoveryBanner extends StatelessWidget {
   }
 
   Widget _buildExploreButton(BuildContext context, AppLocalizations l10n) {
-    return ElevatedButton(
+    return AppButton(
+      label: l10n.exploreMore,
       onPressed: () => context.go(AppRoutes.discover),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: AppColors.primary,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-        ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg,
-          vertical: AppSpacing.sm,
-        ),
-      ),
-      child: Text(
-        l10n.exploreMore,
-        style: AppTextStyles.label.copyWith(fontWeight: FontWeight.bold),
-      ),
+      variant: AppButtonVariant.secondary,
     );
   }
 

@@ -36,6 +36,7 @@ import '../../features/video_player/presentation/widgets/player4_wrapper.dart';
 import '../../features/video_player/presentation/widgets/youtube_player_wrapper.dart';
 import '../../shared/models/auth_state.dart';
 import '../../shared/utils/error_handler.dart';
+import '../../shared/widgets/error_state.dart';
 import '../state/app_state_provider.dart';
 import 'main_shell.dart';
 
@@ -558,12 +559,7 @@ class _VideoLessonError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppScreen(
-      child: AppEmptyState(
-        icon: Icons.error_outline_rounded,
-        title: message,
-        actionLabel: AppLocalizations.of(context)!.retryButton,
-        onActionPressed: onRetry,
-      ),
+      child: ErrorState(message: message, onRetry: onRetry),
     );
   }
 }

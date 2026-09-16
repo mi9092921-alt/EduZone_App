@@ -299,11 +299,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: AppSpacing.lg),
-          ElevatedButton(
+          AppButton(
+            label: l10n.downloadsRetry,
             onPressed: () {
               ref.read(downloadsProvider.notifier).refresh();
             },
-            child: Text(l10n.downloadsRetry),
           ),
         ],
       ),

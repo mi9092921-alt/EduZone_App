@@ -163,7 +163,7 @@ class _EditProfileBottomSheetState
           Material(
             color: ds.border,
             borderRadius: AppRadius.hairlineBorder,
-            child: const SizedBox(width: 40, height: 4),
+            child: const SizedBox(width: AppSpacing.xl3, height: AppSpacing.xs2),
           ),
 
           const SizedBox(height: AppSpacing.xl),

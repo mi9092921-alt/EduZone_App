@@ -46,7 +46,7 @@ class TodoPriorityIndicator extends StatelessWidget {
                   letterSpacing: 0,
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: AppSpacing.xs2),
               Text(
                 _getPriorityText(context),
                 style: AppTextStyles.labelTiny.copyWith(color: color),

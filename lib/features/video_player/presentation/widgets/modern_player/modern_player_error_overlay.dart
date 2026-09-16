@@ -26,7 +26,7 @@ class ModernPlayerErrorOverlay extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.bolt_rounded, color: Colors.amber, size: 36),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               l10n.videoLoadErrorCode(errorCode),
               style: AppTextStyles.bodySmall.copyWith(color: Colors.white70),

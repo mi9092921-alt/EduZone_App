@@ -11,6 +11,7 @@ import '../../../../shared/models/course.dart';
 import '../../../../shared/utils/error_handler.dart';
 import '../../../../shared/widgets/app_course_thumbnail.dart';
 import '../../../../shared/widgets/collapsing_tab_bar_delegate.dart';
+import '../../../../shared/widgets/error_state.dart';
 import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/courses_provider.dart';
 import '../../domain/entities/course_enrollment.dart';
@@ -152,11 +153,9 @@ class _CoursePreviewScreenState extends ConsumerState<CoursePreviewScreen>
           child: _buildContent(context, Course.skeleton(), l10n, ds),
         ),
         // Audit P1 (M3): retryable error state instead of bare text+icon.
-        error: (err, _) => AppEmptyState(
-          icon: Icons.error_outline_rounded,
-          title: ErrorHandler.getMessage(context, err),
-          actionLabel: l10n.retryButton,
-          onActionPressed: () =>
+        error: (err, _) => ErrorState(
+          message: ErrorHandler.getMessage(context, err),
+          onRetry: () =>
               ref.invalidate(courseDetailsProvider(widget.courseId)),
         ),
       ),

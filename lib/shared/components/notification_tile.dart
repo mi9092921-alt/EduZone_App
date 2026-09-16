@@ -47,7 +47,7 @@ class NotificationTile extends StatelessWidget {
                       child: Material(
                         color: ds.border.withValues(alpha: 0.5),
                         borderRadius: AppRadius.hairlineBorder,
-                        child: const SizedBox(width: 40, height: 4),
+                        child: const SizedBox(width: AppSpacing.xl3, height: AppSpacing.xs2),
                       ),
                     ),
                   ),
@@ -98,21 +98,10 @@ class NotificationTile extends StatelessWidget {
                     textAlign: TextAlign.end,
                   ),
                   const SizedBox(height: AppSpacing.xl),
-                  ElevatedButton(
+                  AppButton(
+                    label: AppLocalizations.of(context)!.closeButton,
                     onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ds.surface2,
-                      foregroundColor: ds.textPrimary,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.md,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: AppRadius.mdBorder,
-                        side: BorderSide(color: ds.border),
-                      ),
-                    ),
-                    child: Text(AppLocalizations.of(context)!.closeButton),
+                    variant: AppButtonVariant.secondary,
                   ),
                 ],
               ),

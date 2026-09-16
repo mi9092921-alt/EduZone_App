@@ -41,7 +41,7 @@ Future<void> showSettingPicker<T>({
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(option.icon, size: 18),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSpacing.sm),
                   Text(option.label),
                 ],
               ),

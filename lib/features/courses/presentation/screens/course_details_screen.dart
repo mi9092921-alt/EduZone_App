@@ -13,6 +13,7 @@ import '../../../../shared/utils/error_handler.dart';
 import '../../../../shared/widgets/app_course_thumbnail.dart';
 import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/collapsing_tab_bar_delegate.dart';
+import '../../../../shared/widgets/error_state.dart';
 import '../../application/providers/courses_provider.dart';
 import '../widgets/course_about_tab_content.dart';
 import '../widgets/course_enroll_price_row.dart';
@@ -70,11 +71,9 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
           loading: () => AppSkeleton(
             child: _buildContent(context, Course.skeleton(), ref, l10n, ds),
           ),
-          error: (err, stack) => AppEmptyState(
-            icon: Icons.error_outline_rounded,
-            title: ErrorHandler.getMessage(context, err),
-            actionLabel: l10n.retryButton,
-            onActionPressed: () {
+          error: (err, stack) => ErrorState(
+            message: ErrorHandler.getMessage(context, err),
+            onRetry: () {
               ref.invalidate(courseDetailsProvider(widget.courseId));
             },
           ),
@@ -361,7 +360,7 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: AppSpacing.hairline),
                     Text(
                       l10n.lessonsCompleted(
                         enrollment.completedLessons,
@@ -372,7 +371,7 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
                       ),
                     ),
                     if (enrollment.lastWatchedAt != null) ...[
-                      const SizedBox(height: 2),
+                      const SizedBox(height: AppSpacing.hairline),
                       Text(
                         l10n.lastWatched(
                           timeago.format(

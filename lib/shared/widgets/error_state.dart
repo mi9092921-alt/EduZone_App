@@ -12,6 +12,9 @@ class ErrorState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    // When the mapped error message equals the generic title (common with
+    // non-domain errors), render it once — showing both is redundant.
+    final showDetailMessage = message != l10n.errorGeneric;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -23,11 +26,14 @@ class ErrorState extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.lg),
           Text(l10n.errorGeneric, style: AppTextStyles.h2),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            message,
-            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textMuted),
-          ),
+          if (showDetailMessage) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              message,
+              style:
+                  AppTextStyles.bodyMedium.copyWith(color: AppColors.textMuted),
+            ),
+          ],
           if (onRetry != null) ...[
             const SizedBox(height: AppSpacing.xl),
             AppButton(

@@ -43,7 +43,7 @@ class Player4CenterControls extends StatelessWidget {
             semanticLabel: l10n.rewindButtonTooltip,
             onPressed: onRewind,
           ),
-          const SizedBox(width: 32),
+          const SizedBox(width: AppSpacing.xl2),
           StreamBuilder<bool>(
             stream: playingStream,
             initialData: initialPlaying,
@@ -66,7 +66,7 @@ class Player4CenterControls extends StatelessWidget {
               );
             },
           ),
-          const SizedBox(width: 32),
+          const SizedBox(width: AppSpacing.xl2),
           AppIconButton(
             icon: Icons.forward_10_rounded,
             color: Colors.white,

@@ -52,7 +52,7 @@ class DeviceInfoWidget extends StatelessWidget {
                         .w500, // Slight weight increase for "pale" issue
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: AppSpacing.hairline),
                 Text(
                   DeviceInfoHelper.deviceModel,
                   style: AppTextStyles.bodyMedium.copyWith(
@@ -82,7 +82,7 @@ class DeviceInfoWidget extends StatelessWidget {
                   size: 14,
                   color: AppColors.success,
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: AppSpacing.xs2),
                 Text(
                   l10n.verifiedDevice,
                   style: AppTextStyles.label.copyWith(

@@ -40,7 +40,7 @@ class CourseMetaRow extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.star_rounded, color: AppColors.warning, size: 18),
-            const SizedBox(width: 4),
+            const SizedBox(width: AppSpacing.xs2),
             Text(
               course.ratingLabel,
               style: AppTextStyles.bodyMedium.copyWith(
@@ -62,7 +62,7 @@ class CourseMetaRow extends StatelessWidget {
                 color: ds.textSecondary,
                 size: 16,
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: AppSpacing.xs2),
               Text(
                 course.studentsLabel,
                 style: AppTextStyles.bodySmall.copyWith(
@@ -80,7 +80,7 @@ class CourseMetaRow extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.access_time_rounded, color: ds.textSecondary, size: 16),
-              const SizedBox(width: 4),
+              const SizedBox(width: AppSpacing.xs2),
               Text(
                 duration!,
                 style: AppTextStyles.bodySmall.copyWith(color: ds.textSecondary),
@@ -99,7 +99,7 @@ class CourseMetaRow extends StatelessWidget {
               color: ds.textSecondary,
               size: 16,
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: AppSpacing.xs2),
             Text(
               course.levelLocalized(l10n),
               style: AppTextStyles.bodySmall.copyWith(
@@ -119,7 +119,7 @@ class CourseMetaRow extends StatelessWidget {
                 color: ds.textSecondary,
                 size: 16,
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: AppSpacing.xs2),
               Text(
                 course.language!.toUpperCase(),
                 style: AppTextStyles.bodySmall.copyWith(

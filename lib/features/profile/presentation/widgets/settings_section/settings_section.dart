@@ -351,29 +351,12 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
 
             return SizedBox(
               width: double.infinity,
-              child: OutlinedButton.icon(
+              child: AppButton(
+                label: isLoggingOut ? l10n.loggingOut : l10n.logout,
                 onPressed: isLoggingOut ? null : _handleLogout,
-                icon: isLoggingOut
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.error,
-                        ),
-                      )
-                    : const Icon(AppIcons.logout, size: 18),
-                label: Text(isLoggingOut ? l10n.loggingOut : l10n.logout),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.error,
-                  side: const BorderSide(color: AppColors.error),
-                  padding: const EdgeInsets.symmetric(
-                    vertical: AppSpacing.md,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                ),
+                variant: AppButtonVariant.dangerOutline,
+                leadingIcon: AppIcons.logout,
+                isLoading: isLoggingOut,
               ),
             );
           },

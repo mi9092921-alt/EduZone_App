@@ -58,7 +58,7 @@ class Player4TopBar extends StatelessWidget {
                 semanticLabel: l10n.exitFullScreenButtonTooltip,
                 onPressed: onExitFullScreen,
               )
-            : const SizedBox(width: 40),
+            : const SizedBox(width: AppSpacing.xl3),
         Row(
           children: [
             // Mute/Unmute
@@ -134,7 +134,7 @@ class Player4TopBar extends StatelessWidget {
                             if (isSelected)
                               Icon(Icons.check_rounded, color: ds.primary, size: 16)
                             else
-                              const SizedBox(width: 16),
+                              const SizedBox(width: AppSpacing.lg),
                             Text(
                               targetLabel,
                               style: AppTextStyles.bodyMedium.copyWith(
