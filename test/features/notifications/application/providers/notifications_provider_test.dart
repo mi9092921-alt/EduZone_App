@@ -131,7 +131,7 @@ container = ProviderContainer(
 
       const failure = ServerFailure('boom');
       when(() => repository.getNotifications(any()))
-          .thenAnswer((_) async => Left(failure));
+          .thenAnswer((_) async => const Left(failure));
 
       // NOTE: `expectLater(container.read(...future), throwsA(...))`
       // deadlocks here — a known Riverpod edge case where an autoDispose
