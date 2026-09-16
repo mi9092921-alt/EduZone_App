@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 import '../../../../core/logging/data/log_remote_ds.dart';
-import '../../../../core/network/supabase_client.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../../../shared/cross_feature/courses_shared.dart';
 import '../../../../shared/utils/error_handler.dart';
+import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/video_provider.dart';
 import 'youtube_player_widget.dart';
 
@@ -131,7 +131,7 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
   /// Supabase call out of the presentation layer; the datasource already
   /// applies the telemetry timeout and swallows failures.
   Future<void> _logLessonStarted() async {
-    final userId = SupabaseService.client.auth.currentUser?.id;
+    final userId = ref.read(currentUserIdProvider);
     if (userId == null) return;
     await _activityLogger.logLessonStarted(
       userId: userId,

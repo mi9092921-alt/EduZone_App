@@ -916,3 +916,20 @@ class Auth extends _$Auth {
     invalidateAllUserScopedProviders(ref);
   }
 }
+
+// ─── Current user id (reactive, auth-state derived) ─────────────────────────
+
+/// The signed-in user's id from the auth state machine, or null.
+///
+/// Presentation code and other features' providers must watch this instead
+/// of reaching into `SupabaseService.client.auth.currentUser` directly:
+/// the raw session read bypassed the auth state machine and was
+/// non-reactive (it never updated on login/logout/forced sign-out).
+@riverpod
+String? currentUserId(Ref ref) {
+  final authState = ref.watch(authProvider);
+  return switch (authState) {
+    AuthAuthenticated(:final user) => user.id,
+    _ => null,
+  };
+}

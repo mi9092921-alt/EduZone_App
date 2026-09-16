@@ -1,6 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import '../../../../core/network/supabase_client.dart';
+import '../../../auth/application/providers/auth_provider.dart';
 import '../../data/datasources/notifications_remote_ds.dart';
 import '../../data/repositories/notifications_repo_impl.dart';
 import '../../domain/entities/app_notification.dart';
@@ -32,7 +32,7 @@ MarkAsRead markAsRead(Ref ref) {
 
 @riverpod
 Future<List<AppNotification>> notifications(Ref ref) async {
-  final userId = SupabaseService.client.auth.currentUser?.id;
+  final userId = ref.watch(currentUserIdProvider);
   if (userId == null) {
     return [];
   }
@@ -58,7 +58,7 @@ class NotificationFilter extends _$NotificationFilter {
 
 @riverpod
 Stream<void> notificationsChanges(Ref ref) {
-  final userId = SupabaseService.client.auth.currentUser?.id;
+  final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return const Stream<void>.empty();
   return ref.watch(notificationsRepositoryProvider).watchChanges(userId);
 }

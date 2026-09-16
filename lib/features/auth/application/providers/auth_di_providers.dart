@@ -1,7 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
-import '../../../../core/network/supabase_client.dart';
+import '../../../../core/network/supabase_client_provider.dart';
 import '../../../../core/services/device_service.dart';
 import '../../data/datasources/auth_remote_ds.dart';
 import '../../data/datasources/update_remote_ds.dart';
@@ -15,6 +14,11 @@ import '../../domain/usecases/logout_user.dart';
 import '../../domain/usecases/validate_device_exists.dart';
 import '../services/auth_activity_sync_service.dart';
 import '../services/update_service.dart';
+
+// supabaseClientProvider moved to core/network/supabase_client_provider.dart
+// (the layer that owns Supabase); re-exported here so the existing auth
+// provider/test imports keep resolving to the same provider object.
+export '../../../../core/network/supabase_client_provider.dart';
 
 part 'auth_di_providers.g.dart';
 
@@ -31,9 +35,6 @@ part 'auth_di_providers.g.dart';
 // auth_notifier_test.dart already does) transparently flows through to
 // authRepositoryProvider and every use case below — no test changes
 // required by this split.
-
-@Riverpod(keepAlive: true)
-SupabaseClient supabaseClient(Ref ref) => SupabaseService.client;
 
 @Riverpod(keepAlive: true)
 AuthRemoteDataSource authRemoteDataSource(Ref ref) =>

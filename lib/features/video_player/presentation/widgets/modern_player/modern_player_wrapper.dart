@@ -8,11 +8,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../core/logging/data/log_remote_ds.dart';
-import '../../../../../core/network/supabase_client.dart';
 import '../../../../../core/utils/device_info_helper.dart';
 import '../../../../../design_system/design_system.dart';
 import '../../../../../shared/cross_feature/courses_shared.dart';
 import '../../../../../shared/utils/error_handler.dart';
+import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/video_provider.dart';
 import 'modern_player_error_overlay.dart';
 import 'modern_player_fullscreen_exit_button.dart';
@@ -161,7 +161,7 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
   /// attempt, matching the previous retry semantics.
   Future<void> _logLessonStarted() async {
     if (_logged) return;
-    final userId = SupabaseService.client.auth.currentUser?.id;
+    final userId = ref.read(currentUserIdProvider);
     if (userId == null) return;
     final accepted = await _activityLogger.logLessonStarted(
       userId: userId,

@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../core/network/supabase_client.dart';
 import '../../../../shared/cross_feature/auth_shared.dart';
 import '../../../../shared/utils/app_snackbar.dart';
 import '../../../auth/domain/entities/auth_state.dart';
@@ -47,14 +46,15 @@ class _AddTodoBottomSheetState extends ConsumerState<AddTodoBottomSheet> {
     final l10n = AppLocalizations.of(context)!;
     if (_titleController.text.trim().isEmpty) return;
 
-    // Improved ID retrieval with logging for debugging
+    // The auth state machine is the single source of truth for the active
+    // session; by the time this sheet can be opened, it has settled on
+    // AuthAuthenticated (cold start holds splash until it does).
     final authState = ref.read(authProvider);
     final authUser = switch (authState) {
       AuthAuthenticated(:final user) => user,
       _ => null,
     };
-    final userId =
-        authUser?.id ?? SupabaseService.client.auth.currentUser?.id ?? '';
+    final userId = authUser?.id ?? '';
     final tenantId = authUser?.tenantId ?? '';
 
     if (userId.isEmpty || tenantId.isEmpty) {

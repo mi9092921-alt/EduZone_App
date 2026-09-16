@@ -234,7 +234,7 @@ final class NotificationsProvider
   }
 }
 
-String _$notificationsHash() => r'09823f47abf4f89150f6dcda8e1e7287467ec238';
+String _$notificationsHash() => r'f1823ecfcaefddd772ca802e88fe13255346e506';
 
 @ProviderFor(NotificationFilter)
 final notificationFilterProvider = NotificationFilterProvider._();
@@ -321,7 +321,7 @@ final class NotificationsChangesProvider
 }
 
 String _$notificationsChangesHash() =>
-    r'779b427ae4cd0aa251c4defd51c16e64a17a1165';
+    r'd9d5dac051b4066b816b1a1321db2ac730d48cad';
 
 @ProviderFor(unreadCount)
 final unreadCountProvider = UnreadCountProvider._();

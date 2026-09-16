@@ -7,10 +7,10 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../core/logging/data/log_remote_ds.dart';
-import '../../../../../core/network/supabase_client.dart';
 import '../../../../../core/utils/device_info_helper.dart';
 import '../../../../../design_system/design_system.dart';
 import '../../../../../shared/cross_feature/courses_shared.dart';
+import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/player4_provider.dart';
 import '../../../application/providers/video_provider.dart';
 import '../../../data/models/streaming_video_info.dart';
@@ -411,7 +411,7 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
   void _logLessonStartedOnce() async {
     if (_loggedStarted) return;
     _loggedStarted = true;
-    final userId = SupabaseService.client.auth.currentUser?.id;
+    final userId = ref.read(currentUserIdProvider);
     if (userId == null) return;
     await _activityLogger.logLessonStarted(
       userId: userId,
