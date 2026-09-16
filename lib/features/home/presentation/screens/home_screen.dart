@@ -18,6 +18,7 @@ import '../../../../shared/models/auth_state.dart';
 import '../../../../shared/models/todo_item.dart';
 import '../../../../shared/models/update_info.dart';
 import '../../../../shared/utils/error_handler.dart';
+import '../../../../shared/widgets/error_state.dart';
 import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/home_provider.dart';
 import '../../domain/entities/home_course_summary.dart';
@@ -283,12 +284,9 @@ class _RecentCoursesSection extends ConsumerWidget {
               itemBuilder: (_, index) =>
                   const SizedBox(width: 180, child: RecentCourseCardShimmer()),
             ),
-            error: (err, _) => AppEmptyState(
-              isFullPage: false,
-              icon: Icons.error_outline_rounded,
-              title: ErrorHandler.getMessage(context, err),
-              actionLabel: l10n.retryButton,
-              onActionPressed: () => ref.invalidate(recentCoursesProvider),
+            error: (err, _) => ErrorState(
+              message: ErrorHandler.getMessage(context, err),
+              onRetry: () => ref.invalidate(recentCoursesProvider),
             ),
           ),
         ),
@@ -376,12 +374,9 @@ class _DailyTasksSection extends ConsumerWidget {
               },
             ),
           ),
-          error: (err, _) => AppEmptyState(
-            isFullPage: false,
-            icon: Icons.error_outline_rounded,
-            title: ErrorHandler.getMessage(context, err),
-            actionLabel: l10n.retryButton,
-            onActionPressed: () {
+          error: (err, _) => ErrorState(
+            message: ErrorHandler.getMessage(context, err),
+            onRetry: () {
               ref.invalidate(recentTodosProvider);
             },
           ),
