@@ -2,9 +2,9 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-import '../../core/network/network_config.dart';
-import '../../core/network/supabase_client.dart';
-import '../../core/utils/device_info_helper.dart';
+import '../network/network_config.dart';
+import '../network/supabase_client.dart';
+import '../utils/device_info_helper.dart';
 import '../utils/global_error_handler.dart';
 
 /// Shared authenticated push-token lifecycle for auth and FCM.

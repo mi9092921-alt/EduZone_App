@@ -5,7 +5,7 @@ import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/network_exception_mapper.dart';
 import '../../../../core/network/network_guard.dart';
 import '../../../../core/network/supabase_client.dart';
-import '../../../../shared/utils/global_error_handler.dart';
+import '../../../../core/utils/global_error_handler.dart';
 import '../../../courses/domain/entities/course.dart';
 import '../../../todo/domain/entities/todo_item.dart';
 import '../../domain/entities/resume_lesson.dart';

@@ -5,7 +5,7 @@ import 'app/app_initializer.dart';
 import 'app/main_app.dart';
 import 'core/feature_flags/feature_flags_provider.dart';
 import 'core/services/sentry_service.dart';
-import 'shared/utils/global_error_handler.dart';
+import 'core/utils/global_error_handler.dart';
 
 Future<void> main() async {
   // SentryFlutter.init creates its own runZonedGuarded, which

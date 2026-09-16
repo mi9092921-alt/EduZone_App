@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
-import '../../core/error/exceptions.dart';
-import '../../core/network/network_exception_mapper.dart';
+import '../error/exceptions.dart';
+import '../network/network_exception_mapper.dart';
 
 /// Centralized error management system for the EduZone app.
 ///

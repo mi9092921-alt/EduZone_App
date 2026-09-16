@@ -5,8 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/network/request_cancellation_manager.dart';
-import '../../../../shared/services/push_token_registration_service.dart';
-import '../../../../shared/utils/global_error_handler.dart';
+import '../../../../core/services/push_token_registration_service.dart';
+import '../../../../core/utils/global_error_handler.dart';
 import '../../data/datasources/auth_remote_ds.dart';
 import '../models/logout_result.dart';
 

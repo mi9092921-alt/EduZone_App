@@ -5,7 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/network_exception_mapper.dart';
-import '../../../../shared/utils/global_error_handler.dart';
+import '../../../../core/utils/global_error_handler.dart';
 import '../../data/datasources/auth_remote_ds.dart';
 import '../../domain/entities/user_access.dart';
 import '../../domain/enums/account_status.dart';

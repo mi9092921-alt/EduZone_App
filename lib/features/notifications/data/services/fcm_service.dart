@@ -6,8 +6,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
-import '../../../../shared/services/push_token_registration_service.dart';
-import '../../../../shared/utils/global_error_handler.dart';
+import '../../../../core/services/push_token_registration_service.dart';
+import '../../../../core/utils/global_error_handler.dart';
 
 class FcmService {
   static final _localNotificationsPlugin = FlutterLocalNotificationsPlugin();

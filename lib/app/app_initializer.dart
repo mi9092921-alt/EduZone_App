@@ -13,13 +13,13 @@ import '../core/security/secure_storage_config.dart';
 import '../core/security/security_service.dart';
 import '../core/services/storage_service.dart';
 import '../core/utils/device_info_helper.dart';
+import '../core/utils/global_error_handler.dart';
 import '../features/downloads/application/services/offline_crash_recovery.dart';
 import '../features/downloads/data/datasources/download_local_ds.dart';
 import '../features/downloads/data/services/cleanup_scheduler.dart';
 import '../features/downloads/data/services/download_manager.dart';
 import '../features/downloads/data/services/download_recovery_service.dart';
 import '../features/notifications/data/services/fcm_service.dart';
-import '../shared/utils/global_error_handler.dart';
 
 class AppInitializer {
   static late final SharedPreferences prefs;

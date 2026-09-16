@@ -33,7 +33,7 @@ import '../../../../core/services/encryption_service.dart'
         encryptChunkBatch,
         planChunkLayout,
         totalEncryptedSizeForPlan;
-import '../../../../shared/utils/global_error_handler.dart';
+import '../../../../core/utils/global_error_handler.dart';
 import '../../data/datasources/download_remote_ds.dart';
 import '../../domain/entities/download_enums.dart';
 import 'chunk_scheduler.dart';
