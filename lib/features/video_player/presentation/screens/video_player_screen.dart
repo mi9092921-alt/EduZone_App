@@ -7,17 +7,33 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../shared/cross_feature/courses_shared.dart';
-import '../../../../shared/utils/error_handler.dart';
+import '../../../../shared/models/course.dart';
+import '../../../../shared/models/lesson_content.dart';
 import '../../application/providers/video_provider.dart';
 import '../widgets/lessons_sidebar.dart';
 import 'video_player/lesson_lookup.dart';
 import 'video_player/player_switch_sheet.dart';
 import 'video_player/player_type.dart';
 import 'video_player/video_lesson_paywall.dart';
-import 'video_player/video_player_skeleton.dart';
 
 export 'video_player/player_type.dart';
+
+/// The player widget handed to [VideoPlayerScreen], built once per frame by
+/// the route composition layer with the already-resolved lesson content.
+typedef PlayerWidgetBuilder = Widget Function(
+  BuildContext context,
+  bool isFullScreen,
+  VoidCallback toggleFullScreen,
+  bool isVertical,
+);
+
+/// Factory used by `app_router.dart` to bind the resolved lesson content
+/// into the concrete player widget for the selected player type.
+typedef VideoPlayerBuilderFactory = PlayerWidgetBuilder Function(
+  String courseId,
+  String lessonId,
+  LessonContent content,
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // مشغّل الدروس الموحّد (Universal Video Player Screen)
@@ -40,19 +56,27 @@ export 'video_player/player_type.dart';
 class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String courseId;
   final String lessonId;
-  final Widget Function(
-    BuildContext context,
-    bool isFullScreen,
-    VoidCallback toggleFullScreen,
-    bool isVertical,
-  )
-  playerBuilder;
+
+  /// Resolved course + lesson content, passed down by the route builder in
+  /// `app_router.dart` (which watches the courses providers) so this screen
+  /// does not import courses feature internals. Loading and error states are
+  /// handled by that route builder before this screen is constructed.
+  final Course course;
+  final LessonContent lessonContent;
+
+  /// Backend-verified enrollment for [course], resolved by the route
+  /// composition layer from the courses feature's `isEnrolledProvider`.
+  final bool isEnrolled;
+  final PlayerWidgetBuilder playerBuilder;
   final PlayerType playerType;
 
   const VideoPlayerScreen({
     super.key,
     required this.courseId,
     required this.lessonId,
+    required this.course,
+    required this.lessonContent,
+    required this.isEnrolled,
     required this.playerBuilder,
     this.playerType = PlayerType.youtube,
   });
@@ -118,185 +142,153 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final courseAsync = ref.watch(courseDetailsProvider(widget.courseId));
-    final lessonContentAsync = ref.watch(
-      lessonContentProvider(widget.lessonId),
-    );
+    final course = widget.course;
+    final content = widget.lessonContent;
     final ds = AppColors.of(context);
 
-    return courseAsync.when(
-      data: (course) {
-        final currentLesson = findLessonById(course, widget.lessonId);
+    final currentLesson = findLessonById(course, widget.lessonId);
 
-        if (currentLesson == null) {
-          return AppScreen(
-            appBar: AppBar(elevation: 0),
-            child: Center(
-              child: Text(
-                AppLocalizations.of(context)!.lessonNotFound,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: ds.textSecondary,
-                ),
-              ),
-            ),
-          );
-        }
-
-        return lessonContentAsync.when(
-          data: (content) {
-            if (!content.hasAccess) {
-              return VideoLessonPaywall(lesson: currentLesson);
-            }
-
-            final playerWidget = KeyedSubtree(
-              key: _playerKey,
-              child: widget.playerBuilder(
-                context,
-                _isFullScreen,
-                _toggleFullScreen,
-                _isVertical,
-              ),
-            );
-
-            if (_isFullScreen) {
-              return Scaffold(
-                backgroundColor: Colors.black,
-                body: playerWidget,
-              );
-            }
-
-            final videoState = ref.watch(
-              videoProgressProvider(widget.courseId, widget.lessonId),
-            );
-
-            return AppScreen(
-              scrollable: false,
-              appBar: AppBar(
-                elevation: 0,
-                title: Text(currentLesson.title, style: AppTextStyles.h3),
-                actions: [
-                  PlayerSwitchButton(
-                    courseId: widget.courseId,
-                    lessonId: widget.lessonId,
-                    playerType: widget.playerType,
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ─── مشغّل الفيديو (Injected) ───────────────────────────
-                  playerWidget,
-
-                  if (videoState.progressPct > 0)
-                    LinearProgressIndicator(
-                      value: videoState.progressPct / 100,
-                      backgroundColor: ds.border,
-                      color: videoState.isCompleted ? ds.success : ds.primary,
-                      minHeight: 4,
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                      vertical: AppSpacing.xs,
-                    ),
-                    child: Row(
-                      children: [
-                        // زر تغيير الابعاد 9:16 , 16:9 للفيديوهات العمودية
-                        AppIconButton(
-                          icon: _isVertical
-                              ? Icons.crop_portrait_rounded
-                              : Icons.crop_landscape_rounded,
-                          semanticLabel: _isVertical
-                              ? AppLocalizations.of(context)!.videoOrientationLandscape
-                              : AppLocalizations.of(context)!.videoOrientationPortrait,
-                          iconSize: 18,
-                          onPressed: () {
-                            setState(() {
-                              _isVertical = !_isVertical;
-                            });
-                          },
-                          style: IconButton.styleFrom(
-                            backgroundColor: ds.surface2,
-                            padding: const EdgeInsets.all(AppSpacing.xs),
-                            minimumSize: const Size(32, 32),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        // زر ملء الشاشة
-                        AppIconButton(
-                          icon: Icons.fullscreen_rounded,
-                          semanticLabel: AppLocalizations.of(context)!.videoEnterFullscreen,
-                          iconSize: 18,
-                          onPressed: _toggleFullScreen,
-                          style: IconButton.styleFrom(
-                            backgroundColor: ds.surface2,
-                            padding: const EdgeInsets.all(AppSpacing.xs),
-                            minimumSize: const Size(32, 32),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                        ),
-                        if (videoState.isCompleted) ...[
-                          const Spacer(),
-                          Icon(
-                            Icons.check_circle_rounded,
-                            color: ds.success,
-                            size: 20,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  Divider(height: 1, color: ds.border),
-
-                  // ─── قائمة الدروس الجانبية ───────────────────────────────
-                  Expanded(
-                    child: LessonsSidebar(
-                      course: course,
-                      currentLessonId: widget.lessonId,
-                      onLessonTap: (newId) {
-                        if (newId != widget.lessonId) {
-                          final route = widget.playerType == PlayerType.modern
-                              ? 'lesson3'
-                              : widget.playerType == PlayerType.player4
-                              ? 'lesson4'
-                              : 'lesson';
-                          context.replace(
-                            '${AppRoutes.courses}/${widget.courseId}/$route/$newId',
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-          loading: () => const AppSkeleton(child: VideoPlayerSkeleton()),
-          error: (e, _) => AppScreen(
-            // Audit P1 (M3): retryable error state.
-            child: AppEmptyState(
-              icon: Icons.error_outline_rounded,
-              title: ErrorHandler.getMessage(context, e),
-              actionLabel: AppLocalizations.of(context)!.retryButton,
-              onActionPressed: () => ref.invalidate(
-                lessonContentProvider(widget.lessonId),
-              ),
+    if (currentLesson == null) {
+      return AppScreen(
+        appBar: AppBar(elevation: 0),
+        child: Center(
+          child: Text(
+            AppLocalizations.of(context)!.lessonNotFound,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: ds.textSecondary,
             ),
           ),
-        );
-      },
-      loading: () => const AppSkeleton(child: VideoPlayerSkeleton()),
-      error: (e, _) => AppScreen(
-        // Audit P1 (M3): retryable error state.
-        child: AppEmptyState(
-          icon: Icons.error_outline_rounded,
-          title: ErrorHandler.getMessage(context, e),
-          actionLabel: AppLocalizations.of(context)!.retryButton,
-          onActionPressed: () =>
-              ref.invalidate(courseDetailsProvider(widget.courseId)),
         ),
+      );
+    }
+
+    if (!content.hasAccess) {
+      return VideoLessonPaywall(lesson: currentLesson);
+    }
+
+    final playerWidget = KeyedSubtree(
+      key: _playerKey,
+      child: widget.playerBuilder(
+        context,
+        _isFullScreen,
+        _toggleFullScreen,
+        _isVertical,
+      ),
+    );
+
+    if (_isFullScreen) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: playerWidget,
+      );
+    }
+
+    final videoState = ref.watch(
+      videoProgressProvider(widget.courseId, widget.lessonId),
+    );
+
+    return AppScreen(
+      scrollable: false,
+      appBar: AppBar(
+        elevation: 0,
+        title: Text(currentLesson.title, style: AppTextStyles.h3),
+        actions: [
+          PlayerSwitchButton(
+            courseId: widget.courseId,
+            lessonId: widget.lessonId,
+            playerType: widget.playerType,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ─── مشغّل الفيديو (Injected) ───────────────────────────
+          playerWidget,
+
+          if (videoState.progressPct > 0)
+            LinearProgressIndicator(
+              value: videoState.progressPct / 100,
+              backgroundColor: ds.border,
+              color: videoState.isCompleted ? ds.success : ds.primary,
+              minHeight: 4,
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.xs,
+            ),
+            child: Row(
+              children: [
+                // زر تغيير الابعاد 9:16 , 16:9 للفيديوهات العمودية
+                AppIconButton(
+                  icon: _isVertical
+                      ? Icons.crop_portrait_rounded
+                      : Icons.crop_landscape_rounded,
+                  semanticLabel: _isVertical
+                      ? AppLocalizations.of(context)!.videoOrientationLandscape
+                      : AppLocalizations.of(context)!.videoOrientationPortrait,
+                  iconSize: 18,
+                  onPressed: () {
+                    setState(() {
+                      _isVertical = !_isVertical;
+                    });
+                  },
+                  style: IconButton.styleFrom(
+                    backgroundColor: ds.surface2,
+                    padding: const EdgeInsets.all(AppSpacing.xs),
+                    minimumSize: const Size(32, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                // زر ملء الشاشة
+                AppIconButton(
+                  icon: Icons.fullscreen_rounded,
+                  semanticLabel: AppLocalizations.of(context)!.videoEnterFullscreen,
+                  iconSize: 18,
+                  onPressed: _toggleFullScreen,
+                  style: IconButton.styleFrom(
+                    backgroundColor: ds.surface2,
+                    padding: const EdgeInsets.all(AppSpacing.xs),
+                    minimumSize: const Size(32, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+                if (videoState.isCompleted) ...[
+                  const Spacer(),
+                  Icon(
+                    Icons.check_circle_rounded,
+                    color: ds.success,
+                    size: 20,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Divider(height: 1, color: ds.border),
+
+          // ─── قائمة الدروس الجانبية ───────────────────────────────
+          Expanded(
+            child: LessonsSidebar(
+              course: course,
+              currentLessonId: widget.lessonId,
+              isEnrolled: widget.isEnrolled,
+              onLessonTap: (newId) {
+                if (newId != widget.lessonId) {
+                  final route = widget.playerType == PlayerType.modern
+                      ? 'lesson3'
+                      : widget.playerType == PlayerType.player4
+                      ? 'lesson4'
+                      : 'lesson';
+                  context.replace(
+                    '${AppRoutes.courses}/${widget.courseId}/$route/$newId',
+                  );
+                }
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,9 +1,0 @@
-/// Cross-feature facade for `features/downloads`.
-///
-/// `courses`' lesson list needs download state (progress, quality picker)
-/// per lesson row. See `auth_shared.dart` for the full rationale.
-library;
-
-export '../../features/downloads/application/providers/downloads_provider.dart';
-export '../../features/downloads/application/services/offline_account_guard.dart';
-export '../components/quality_selector.dart';

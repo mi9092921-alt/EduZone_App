@@ -1,5 +1,5 @@
 import 'package:app/features/courses/presentation/widgets/sections_accordion/lesson_tile_wrapper.dart';
-import 'package:app/shared/cross_feature/downloads_shared.dart';
+import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:app/shared/models/download_enums.dart';
 import 'package:app/shared/models/downloaded_lesson.dart';
 import 'package:app/shared/models/lesson.dart';

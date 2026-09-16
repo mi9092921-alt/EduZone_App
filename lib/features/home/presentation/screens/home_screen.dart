@@ -6,14 +6,19 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
+// Documented architecture debt (5c): the home dashboard refreshes the
+// notifications list after realtime pushes; there is no event/shared-model
+// representation of that list, so this remains a direct provider import
+// (same debt class as the WorkManager isolate in the downloads feature).
+import '../../../../features/notifications/application/providers/notifications_provider.dart'; // check-ignore: home dashboard refresh needs the notifications list (documented debt)
 import '../../../../shared/components/course_card.dart';
-import '../../../../shared/cross_feature/auth_shared.dart';
-import '../../../../shared/cross_feature/notifications_shared.dart';
-import '../../../../shared/cross_feature/todo_shared.dart';
+import '../../../../shared/components/optional_update_dialog.dart';
+import '../../../../shared/components/todo/todo_preview_tile.dart';
 import '../../../../shared/models/auth_state.dart';
 import '../../../../shared/models/todo_item.dart';
 import '../../../../shared/models/update_info.dart';
 import '../../../../shared/utils/error_handler.dart';
+import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/home_provider.dart';
 import '../../domain/entities/home_course_summary.dart';
 import '../../domain/entities/home_todo_summary.dart';

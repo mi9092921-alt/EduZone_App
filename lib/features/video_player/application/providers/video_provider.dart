@@ -4,8 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import '../../../../shared/cross_feature/courses_shared.dart';
-import '../../../../shared/cross_feature/home_shared.dart';
+import '../../../../core/logging/domain/app_event.dart';
+import '../../../../core/logging/logging_providers.dart';
 import '../../data/datasources/video_player_remote_ds.dart';
 import '../../data/repositories/video_player_repo_impl.dart';
 import '../../domain/entities/lesson_progress_sync_item.dart';
@@ -179,7 +179,7 @@ class VideoProgress extends _$VideoProgress {
       _syncTimer?.cancel();
       _queueSync(courseId, lessonId, flushNow: true);
       _logCompletion(courseId, lessonId);
-      _refreshDownstreamProgressProviders(courseId);
+      _notifyDownstreamProgressChanged(courseId, lessonId);
     } else {
       _scheduleDebouncedSync(courseId, lessonId);
     }
@@ -194,7 +194,7 @@ class VideoProgress extends _$VideoProgress {
       _syncTimer?.cancel();
       _queueSync(courseId, lessonId, flushNow: true);
       _logCompletion(courseId, lessonId);
-      _refreshDownstreamProgressProviders(courseId);
+      _notifyDownstreamProgressChanged(courseId, lessonId);
     }
   }
 
@@ -231,17 +231,27 @@ class VideoProgress extends _$VideoProgress {
   }
 
   /// Audit P1 (M1): lesson completion used to update nothing downstream —
-  /// [courseProgressProvider] (keepAlive) and Home's resume/recent
+  /// courses' [courseProgressProvider] (keepAlive) and Home's resume/recent
   /// providers kept stale data until a manual pull-to-refresh, and
   /// MainShell's IndexedStack keeps those branches alive. Completion is a
   /// rare event, so the refetch cost is negligible next to showing wrong
-  /// progress. The providers come from the cross_feature seams —
-  /// video_player must not import courses/home internals directly.
-  void _refreshDownstreamProgressProviders(String courseId) {
-    ref.invalidate(courseProgressProvider(courseId));
-    ref.invalidate(myCoursesProvider);
-    ref.invalidate(resumeLessonsProvider);
-    ref.invalidate(recentCoursesProvider);
+  /// progress.
+  ///
+  /// Cross-feature decoupling: instead of importing courses/home provider
+  /// internals, emit [LessonProgressChangedEvent] on the event bus
+  /// (telemetry-silent `ui` category) — the courses and home features each
+  /// run their own refresh listener (subscribed eagerly via
+  /// `lib/app/app_listeners.dart`) and invalidate their own providers.
+  void _notifyDownstreamProgressChanged(String courseId, String lessonId) {
+    ref
+        .read(eventBusProvider)
+        .emit(
+          LessonProgressChangedEvent(
+            timestamp: DateTime.now(),
+            courseId: courseId,
+            lessonId: lessonId,
+          ),
+        );
   }
 
   /// Does NOT use `ref` or `state` — safe to call from onDispose or after disposal.

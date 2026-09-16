@@ -1,17 +1,11 @@
 import 'package:app/core/l10n/arb/app_localizations.dart';
-import 'package:app/features/courses/application/providers/courses_provider.dart';
-import 'package:app/features/courses/domain/entities/course_enrollment.dart';
-import 'package:app/features/courses/domain/repositories/courses_repository.dart';
 import 'package:app/features/video_player/presentation/widgets/lessons_sidebar.dart';
 import 'package:app/shared/components/lesson_tile.dart';
 import 'package:app/shared/models/course.dart';
 import 'package:app/shared/models/lesson.dart';
 import 'package:app/shared/models/section.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fpdart/fpdart.dart';
-import 'package:mocktail/mocktail.dart';
 
 // Regression coverage for the lock icon that always rendered in the video
 // player's lesson sidebar (`lib/shared/components/lesson_tile.dart`'s
@@ -28,12 +22,11 @@ import 'package:mocktail/mocktail.dart';
 // `Lesson.hasAccess` silently defaults to `false` for every lesson on every
 // real course payload. `SectionsAccordion` (the courses-feature equivalent)
 // never had this bug because it takes `isEnrolled` as an explicit
-// caller-supplied parameter backed by `isEnrolledProvider`; this suite
-// deliberately never sets `hasAccess: true` on any fixture, to match what
-// production payloads actually look like, and asserts the sidebar now
-// follows the same `isEnrolledProvider` pattern instead.
-
-class MockCoursesRepository extends Mock implements CoursesRepository {}
+// caller-supplied parameter; this suite deliberately never sets
+// `hasAccess: true` on any fixture, to match what production payloads
+// actually look like, and asserts the sidebar follows the same
+// caller-supplied-`isEnrolled` pattern (resolved by the route composition
+// layer from the courses feature's `isEnrolledProvider`).
 
 const _courseId = 'course-1';
 const _previewLessonId = 'lesson-preview';
@@ -72,49 +65,30 @@ const _course = Course(
 );
 
 Widget _wrap({
-  required CoursesRepository coursesRepository,
+  required bool isEnrolled,
   String currentLessonId = _lockedLessonId,
 }) {
-  return ProviderScope(
-    overrides: [coursesRepositoryProvider.overrideWithValue(coursesRepository)],
-    child: MaterialApp(
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: Scaffold(
-        body: LessonsSidebar(
-          course: _course,
-          currentLessonId: currentLessonId,
-          onLessonTap: (_) {},
-        ),
+  return MaterialApp(
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    home: Scaffold(
+      body: LessonsSidebar(
+        course: _course,
+        currentLessonId: currentLessonId,
+        isEnrolled: isEnrolled,
+        onLessonTap: (_) {},
       ),
     ),
   );
 }
 
 void main() {
-  late MockCoursesRepository coursesRepository;
-
-  setUp(() {
-    coursesRepository = MockCoursesRepository();
-  });
-
   group('LessonsSidebar — lock state (regression for always-locked bug)', () {
     testWidgets(
         'an enrolled user sees NO lock icon on a non-preview lesson, even '
         'though Lesson.hasAccess is never populated by the real course-outline '
         'payload', (tester) async {
-      when(() => coursesRepository.getMyCourses()).thenAnswer(
-        (_) async => const Right([
-          CourseEnrollment(
-            id: 'enrollment-1',
-            userId: 'user-1',
-            courseId: _courseId,
-            tenantId: 'tenant-1',
-          ),
-        ]),
-      );
-
-      await tester.pumpWidget(_wrap(coursesRepository: coursesRepository));
+      await tester.pumpWidget(_wrap(isEnrolled: true));
       await tester.pumpAndSettle();
 
       expect(find.text('Advanced Topic'), findsOneWidget);
@@ -129,10 +103,7 @@ void main() {
     testWidgets(
         'an unenrolled user still sees the lock icon on a non-preview lesson',
         (tester) async {
-      when(() => coursesRepository.getMyCourses())
-          .thenAnswer((_) async => const Right([]));
-
-      await tester.pumpWidget(_wrap(coursesRepository: coursesRepository));
+      await tester.pumpWidget(_wrap(isEnrolled: false));
       await tester.pumpAndSettle();
 
       expect(find.text('Advanced Topic'), findsOneWidget);
@@ -141,14 +112,8 @@ void main() {
 
     testWidgets('a preview lesson is never locked, enrolled or not',
         (tester) async {
-      when(() => coursesRepository.getMyCourses())
-          .thenAnswer((_) async => const Right([]));
-
       await tester.pumpWidget(
-        _wrap(
-          coursesRepository: coursesRepository,
-          currentLessonId: _previewLessonId,
-        ),
+        _wrap(isEnrolled: false, currentLessonId: _previewLessonId),
       );
       await tester.pumpAndSettle();
 

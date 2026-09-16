@@ -3,7 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../shared/cross_feature/notifications_shared.dart';
+// Documented architecture debt (5c): home reads the notifications list for
+// its dashboard preview; there is no event/shared-model representation of
+// that list, so this remains a direct provider import (same debt class as
+// the WorkManager isolate in the downloads feature).
+import '../../../../features/notifications/application/providers/notifications_provider.dart'; // check-ignore: home dashboard preview reads the notifications list (documented debt)
+import '../../../../shared/components/notification_tile.dart';
 
 class NotificationsPreview extends ConsumerWidget {
   const NotificationsPreview({super.key});

@@ -3,9 +3,9 @@ import '../../../../core/error/failures.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../../../shared/models/course.dart';
+import '../../../../shared/models/lesson_content.dart';
 import '../../domain/entities/course_enrollment.dart';
 import '../../domain/entities/course_progress_summary.dart';
-import '../../domain/entities/lesson_content.dart';
 import '../../domain/repositories/courses_repository.dart';
 import '../datasources/courses_remote_ds.dart';
 

@@ -1,7 +1,7 @@
 import '../../../../shared/models/course.dart';
+import '../../../../shared/models/lesson_content.dart';
 import '../../domain/entities/course_enrollment.dart';
 import '../../domain/entities/course_progress_summary.dart';
-import '../../domain/entities/lesson_content.dart';
 
 abstract class CoursesRemoteDataSource {
   Future<List<CourseEnrollment>> getMyCourses();

@@ -1,6 +1,7 @@
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -15,6 +16,7 @@ import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/maintenance_screen.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/auth/presentation/screens/suspended_screen.dart';
+import '../../features/courses/application/providers/courses_provider.dart';
 import '../../features/courses/presentation/screens/course_details_screen.dart';
 import '../../features/courses/presentation/screens/course_preview_screen.dart';
 import '../../features/courses/presentation/screens/discover_screen.dart';
@@ -27,11 +29,13 @@ import '../../features/notifications/presentation/screens/notifications_screen.d
 import '../../features/profile/presentation/screens/legal_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/todo/presentation/screens/todo_screen.dart';
+import '../../features/video_player/presentation/screens/video_player/video_player_skeleton.dart';
 import '../../features/video_player/presentation/screens/video_player_screen.dart';
 import '../../features/video_player/presentation/widgets/modern_player_wrapper.dart';
 import '../../features/video_player/presentation/widgets/player4_wrapper.dart';
 import '../../features/video_player/presentation/widgets/youtube_player_wrapper.dart';
 import '../../shared/models/auth_state.dart';
+import '../../shared/utils/error_handler.dart';
 import '../state/app_state_provider.dart';
 import 'main_shell.dart';
 
@@ -343,13 +347,16 @@ GoRouter router(Ref ref) {
                         parentNavigatorKey: _rootNavigatorKey,
                         pageBuilder: (context, state) => buildTransitionPage(
                           state: state,
-                          child: VideoPlayerScreen(
+                          child: _VideoLessonRoute(
                             courseId: state.pathParameters['courseId']!,
                             lessonId: state.pathParameters['lessonId']!,
-                            playerBuilder: (context, isFS, toggleFS, isVertical) =>
-                                YoutubePlayerWrapper(
-                              courseId: state.pathParameters['courseId']!,
-                              lessonId: state.pathParameters['lessonId']!,
+                            playerType: PlayerType.youtube,
+                            playerBuilder: (courseId, lessonId, content) =>
+                                (context, isFS, toggleFS, isVertical) =>
+                                    YoutubePlayerWrapper(
+                              courseId: courseId,
+                              lessonId: lessonId,
+                              lessonContent: content,
                               isFullScreen: isFS,
                               onToggleFullScreen: toggleFS,
                               isVertical: isVertical,
@@ -362,14 +369,16 @@ GoRouter router(Ref ref) {
                         parentNavigatorKey: _rootNavigatorKey,
                         pageBuilder: (context, state) => buildTransitionPage(
                           state: state,
-                          child: VideoPlayerScreen(
+                          child: _VideoLessonRoute(
                             courseId: state.pathParameters['courseId']!,
                             lessonId: state.pathParameters['lessonId']!,
                             playerType: PlayerType.modern,
-                            playerBuilder: (context, isFS, toggleFS, isVertical) =>
-                                ModernPlayerWrapper(
-                              courseId: state.pathParameters['courseId']!,
-                              lessonId: state.pathParameters['lessonId']!,
+                            playerBuilder: (courseId, lessonId, content) =>
+                                (context, isFS, toggleFS, isVertical) =>
+                                    ModernPlayerWrapper(
+                              courseId: courseId,
+                              lessonId: lessonId,
+                              lessonContent: content,
                               isFullScreen: isFS,
                               onToggleFullScreen: toggleFS,
                               isVertical: isVertical,
@@ -382,14 +391,16 @@ GoRouter router(Ref ref) {
                         parentNavigatorKey: _rootNavigatorKey,
                         pageBuilder: (context, state) => buildTransitionPage(
                           state: state,
-                          child: VideoPlayerScreen(
+                          child: _VideoLessonRoute(
                             courseId: state.pathParameters['courseId']!,
                             lessonId: state.pathParameters['lessonId']!,
                             playerType: PlayerType.player4,
-                            playerBuilder: (context, isFS, toggleFS, isVertical) =>
-                                Player4Wrapper(
-                              courseId: state.pathParameters['courseId']!,
-                              lessonId: state.pathParameters['lessonId']!,
+                            playerBuilder: (courseId, lessonId, content) =>
+                                (context, isFS, toggleFS, isVertical) =>
+                                    Player4Wrapper(
+                              courseId: courseId,
+                              lessonId: lessonId,
+                              lessonContent: content,
                               isFullScreen: isFS,
                               onToggleFullScreen: toggleFS,
                               isVertical: isVertical,
@@ -477,5 +488,82 @@ class _RouteNotFoundScreen extends StatelessWidget {
 class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(Ref ref) {
     ref.listen(appStateProvider, (_, _) => notifyListeners());
+  }
+}
+
+/// Route composition for the video lesson player.
+///
+/// Watches the courses providers (course details + lesson content) here —
+/// in the app's composition layer — and hands the resolved data down to
+/// [VideoPlayerScreen] and the player wrappers as constructor parameters.
+/// This keeps video_player free of imports from the courses feature: the
+/// feature widgets accept plain data, and loading/error states (including
+/// provider invalidation retries) live in this single wrapper.
+class _VideoLessonRoute extends ConsumerWidget {
+  final String courseId;
+  final String lessonId;
+  final PlayerType playerType;
+  final VideoPlayerBuilderFactory playerBuilder;
+
+  const _VideoLessonRoute({
+    required this.courseId,
+    required this.lessonId,
+    required this.playerType,
+    required this.playerBuilder,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final courseAsync = ref.watch(courseDetailsProvider(courseId));
+    final lessonContentAsync = ref.watch(lessonContentProvider(lessonId));
+    final isEnrolled = ref
+        .watch(isEnrolledProvider(courseId))
+        .when(data: (v) => v, loading: () => false, error: (_, _) => false);
+
+    return courseAsync.when(
+      data: (course) {
+        return lessonContentAsync.when(
+          data: (content) => VideoPlayerScreen(
+            courseId: courseId,
+            lessonId: lessonId,
+            course: course,
+            lessonContent: content,
+            isEnrolled: isEnrolled,
+            playerType: playerType,
+            playerBuilder: playerBuilder(courseId, lessonId, content),
+          ),
+          loading: () => const AppSkeleton(child: VideoPlayerSkeleton()),
+          error: (e, _) => _VideoLessonError(
+            message: ErrorHandler.getMessage(context, e),
+            onRetry: () => ref.invalidate(lessonContentProvider(lessonId)),
+          ),
+        );
+      },
+      loading: () => const AppSkeleton(child: VideoPlayerSkeleton()),
+      error: (e, _) => _VideoLessonError(
+        message: ErrorHandler.getMessage(context, e),
+        onRetry: () => ref.invalidate(courseDetailsProvider(courseId)),
+      ),
+    );
+  }
+}
+
+/// Retryable error state for the video lesson route (Audit P1 (M3)).
+class _VideoLessonError extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _VideoLessonError({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScreen(
+      child: AppEmptyState(
+        icon: Icons.error_outline_rounded,
+        title: message,
+        actionLabel: AppLocalizations.of(context)!.retryButton,
+        onActionPressed: onRetry,
+      ),
+    );
   }
 }

@@ -8,9 +8,17 @@ import '../../../../../core/constants/app_constants.dart';
 import '../../../../../core/feature_flags/feature_flag_keys.dart';
 import '../../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../../shared/cross_feature/downloads_shared.dart';
+// Documented architecture debt (5c): the lesson list needs per-lesson
+// download state (progress, video info for the quality picker). There is no
+// event/shared-model representation of download state, so this remains a
+// direct provider import (same debt class as the WorkManager isolate in the
+// downloads feature); playback of un-owned downloads is still enforced
+// server-side and by OfflinePolicyEngine.
+import '../../../../../features/downloads/application/providers/downloads_provider.dart'; // check-ignore: download state has no shared-model representation (documented debt)
+import '../../../../../shared/components/quality_selector.dart';
 import '../../../../../shared/models/download_enums.dart';
 import '../../../../../shared/models/lesson.dart';
+import '../../../../../shared/models/lesson_content.dart';
 import '../../../../../shared/models/section.dart';
 import '../../../../../shared/providers/download_network_policy_provider.dart';
 import '../../../../../shared/utils/app_snackbar.dart';
@@ -18,7 +26,6 @@ import '../../../../../shared/utils/error_handler.dart';
 import '../../../../../shared/widgets/confirm_dialog.dart';
 import '../../../application/providers/courses_provider.dart';
 import '../../../data/services/watched_lessons_service.dart';
-import '../../../domain/entities/lesson_content.dart';
 import 'enrollment_required_dialog.dart';
 import 'lesson_tile_wrapper.dart';
 import 'player_choice_sheet.dart';

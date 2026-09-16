@@ -6,10 +6,10 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../shared/cross_feature/auth_shared.dart';
 import '../../../../shared/models/auth_state.dart';
 import '../../../../shared/models/todo_item.dart';
 import '../../../../shared/utils/app_snackbar.dart';
+import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/todo_provider.dart';
 
 class AddTodoBottomSheet extends ConsumerStatefulWidget {

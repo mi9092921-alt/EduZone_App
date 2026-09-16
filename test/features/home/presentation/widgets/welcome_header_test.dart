@@ -1,11 +1,12 @@
-import 'dart:async';
-
 import 'package:app/core/l10n/arb/app_localizations.dart';
+import 'package:app/features/auth/application/providers/auth_provider.dart';
 import 'package:app/features/home/presentation/widgets/welcome_header.dart';
 import 'package:app/features/notifications/application/providers/notifications_provider.dart';
-import 'package:app/features/profile/application/providers/profile_provider.dart';
-import 'package:app/features/profile/domain/entities/student_profile.dart';
+import 'package:app/shared/models/account_status.dart';
 import 'package:app/shared/models/app_notification.dart';
+import 'package:app/shared/models/app_user.dart';
+import 'package:app/shared/models/auth_state.dart';
+import 'package:app/shared/models/user_access.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,11 +17,10 @@ void main() {
   // content only and do not tap that icon — see the same note in
   // discovery_banner_test.dart.
   //
-  // `child` is expected to already be wrapped in its own `ProviderScope`
-  // (with whatever overrides that test needs) by the caller — this avoids
-  // needing to name the `Override` type explicitly here, which keeps this
-  // helper compatible regardless of exactly how a given Riverpod version
-  // exports/names that type.
+  // WelcomeHeader reads the signed-in user's name from `authProvider`
+  // (AppUser) — NOT from the profile feature — so these tests seed an
+  // authenticated auth state directly via `overrideWithValue` and never
+  // touch Supabase.
   Widget buildTestableWidget(Widget child) {
     return MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -36,21 +36,25 @@ void main() {
         createdAt: DateTime(2024),
       );
 
-  group('WelcomeHeader', () {
-    testWidgets('greets the user with their first name when profile loads',
-        (WidgetTester tester) async {
-      const profile = StudentProfile(
-        id: 'u1',
-        email: 'jane.doe@example.com',
-        firstName: 'Jane',
-        lastName: 'Doe',
+  AuthAuthenticated authenticatedUser({String? firstName}) =>
+      AuthAuthenticated(
+        user: AppUser(
+          id: 'u1',
+          email: 'jane.doe@example.com',
+          firstName: firstName,
+        ),
+        access: const UserAccess(status: AccountStatus.active),
       );
 
+  group('WelcomeHeader', () {
+    testWidgets('greets the user with their first name when signed in',
+        (WidgetTester tester) async {
       await tester.pumpWidget(
         buildTestableWidget(
           ProviderScope(
             overrides: [
-              profileProvider.overrideWith((ref) async => profile),
+              authProvider
+                  .overrideWithValue(authenticatedUser(firstName: 'Jane')),
               notificationsProvider.overrideWith((ref) async => []),
             ],
             child: const WelcomeHeader(),
@@ -63,47 +67,14 @@ void main() {
       expect(find.text('What do you want to learn today?'), findsOneWidget);
     });
 
-    testWidgets('falls back to the default name while the profile is loading',
-        (WidgetTester tester) async {
-      // An uncompleted Completer (rather than Future.delayed) keeps the
-      // provider in the "loading" state indefinitely without registering a
-      // Timer — Future.delayed here would leave a pending Timer that
-      // flutter_test flags as a leak/failure at teardown since it never
-      // fires within the test.
-      final neverCompletes = Completer<StudentProfile>();
-      addTearDown(() {
-        if (!neverCompletes.isCompleted) {
-          neverCompletes.complete(const StudentProfile(id: 'u1', email: 'a@b.com'));
-        }
-      });
-
-      await tester.pumpWidget(
-        buildTestableWidget(
-          ProviderScope(
-            overrides: [
-              profileProvider.overrideWith((ref) => neverCompletes.future),
-              notificationsProvider.overrideWith((ref) async => []),
-            ],
-            child: const WelcomeHeader(),
-          ),
-        ),
-      );
-      // Deliberately do not pumpAndSettle — we want to observe the loading
-      // frame before the completer ever resolves.
-      await tester.pump();
-
-      expect(find.text('Welcome, Student 👋'), findsOneWidget);
-    });
-
-    testWidgets('falls back to the default name when the profile fails to load',
+    testWidgets(
+        'falls back to the email prefix when the user has no first name',
         (WidgetTester tester) async {
       await tester.pumpWidget(
         buildTestableWidget(
           ProviderScope(
             overrides: [
-              profileProvider.overrideWith(
-                (ref) async => throw Exception('profile fetch failed'),
-              ),
+              authProvider.overrideWithValue(authenticatedUser()),
               notificationsProvider.overrideWith((ref) async => []),
             ],
             child: const WelcomeHeader(),
@@ -112,7 +83,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Welcome, Student 👋'), findsOneWidget);
+      expect(find.text('Welcome, jane.doe 👋'), findsOneWidget);
     });
 
     testWidgets('shows no badge when there are no unread notifications',
@@ -121,10 +92,8 @@ void main() {
         buildTestableWidget(
           ProviderScope(
             overrides: [
-              profileProvider.overrideWith(
-                (ref) async =>
-                    const StudentProfile(id: 'u1', email: 'a@b.com', firstName: 'Sam'),
-              ),
+              authProvider
+                  .overrideWithValue(authenticatedUser(firstName: 'Sam')),
               notificationsProvider.overrideWith((ref) async => []),
             ],
             child: const WelcomeHeader(),
@@ -142,10 +111,8 @@ void main() {
         buildTestableWidget(
           ProviderScope(
             overrides: [
-              profileProvider.overrideWith(
-                (ref) async =>
-                    const StudentProfile(id: 'u1', email: 'a@b.com', firstName: 'Sam'),
-              ),
+              authProvider
+                  .overrideWithValue(authenticatedUser(firstName: 'Sam')),
               notificationsProvider.overrideWith(
                 (ref) async => [unreadNotification('n1'), unreadNotification('n2')],
               ),
@@ -169,10 +136,8 @@ void main() {
         buildTestableWidget(
           ProviderScope(
             overrides: [
-              profileProvider.overrideWith(
-                (ref) async =>
-                    const StudentProfile(id: 'u1', email: 'a@b.com', firstName: 'Sam'),
-              ),
+              authProvider
+                  .overrideWithValue(authenticatedUser(firstName: 'Sam')),
               notificationsProvider.overrideWith((ref) async => manyNotifications),
             ],
             child: const WelcomeHeader(),

@@ -11,9 +11,9 @@ import '../../data/datasources/download_local_ds.dart';
 /// [OfflinePolicyEngine] already denies *playback* of another account's
 /// downloads, and `StorageService.getDownloadedLessons` already hides them
 /// from the downloads list. This guard goes one step further and reclaims
-/// the disk space by deleting the files, key, and row outright — called
-/// from `features/auth` right after a successful login (via
-/// `shared/cross_feature/downloads_shared.dart`, see `auth_provider.dart`).
+/// the disk space by deleting the files, key, and row outright — invoked
+/// via the downloads feature's `OfflineAccountPurgeListener`, which reacts
+/// to the `AuthLoginEvent` emitted by `auth_provider.dart` on the event bus.
 ///
 /// Rows with `user_id IS NULL` (pre-account-binding legacy downloads) are
 /// intentionally left alone by [purgeDownloadsForOtherAccounts] — see the

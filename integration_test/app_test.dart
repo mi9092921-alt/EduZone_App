@@ -30,12 +30,12 @@ import 'package:app/features/courses/presentation/screens/my_courses_screen.dart
 import 'package:app/features/home/application/providers/home_provider.dart';
 import 'package:app/features/home/presentation/screens/home_screen.dart';
 import 'package:app/features/notifications/application/providers/notifications_provider.dart';
-import 'package:app/features/notifications/domain/entities/app_notification.dart';
 import 'package:app/features/notifications/domain/repositories/notifications_repository.dart';
 import 'package:app/features/notifications/presentation/screens/notifications_screen.dart';
 import 'package:app/features/profile/application/providers/profile_provider.dart';
 import 'package:app/features/profile/domain/entities/student_profile.dart';
 import 'package:app/shared/models/account_status.dart';
+import 'package:app/shared/models/app_notification.dart';
 import 'package:app/shared/models/app_user.dart';
 import 'package:app/shared/models/auth_state.dart';
 import 'package:app/shared/models/course.dart';

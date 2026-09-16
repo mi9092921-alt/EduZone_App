@@ -4,8 +4,7 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 import '../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../core/utils/device_info_helper.dart';
-import '../../../../shared/cross_feature/courses_shared.dart';
-import '../../../../shared/utils/error_handler.dart';
+import '../../../../shared/models/lesson_content.dart';
 import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/video_provider.dart';
 import 'youtube_player_widget.dart';
@@ -13,6 +12,11 @@ import 'youtube_player_widget.dart';
 class YoutubePlayerWrapper extends ConsumerStatefulWidget {
   final String courseId;
   final String lessonId;
+
+  /// Resolved lesson content, passed down by the route builder in
+  /// `app_router.dart` (which watches the courses provider) so this widget
+  /// does not import courses feature internals.
+  final LessonContent lessonContent;
   final bool isFullScreen;
   final bool isVertical;
   final VoidCallback onToggleFullScreen;
@@ -21,6 +25,7 @@ class YoutubePlayerWrapper extends ConsumerStatefulWidget {
     super.key,
     required this.courseId,
     required this.lessonId,
+    required this.lessonContent,
     required this.isFullScreen,
     required this.isVertical,
     required this.onToggleFullScreen,
@@ -150,31 +155,21 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    final lessonContentAsync = ref.watch(lessonContentProvider(widget.lessonId));
+    final youtubeUrl = widget.lessonContent.videoUrl;
+    final videoId = (youtubeUrl == null || youtubeUrl.isEmpty)
+        ? null
+        : YoutubePlayer.convertUrlToId(youtubeUrl);
+    if (videoId != null && videoId != _lastVideoId) {
+      _scheduleControllerSwap(videoId);
+    }
 
-    return lessonContentAsync.when(
-      data: (content) {
-        final youtubeUrl = content.videoUrl;
-        final videoId = (youtubeUrl == null || youtubeUrl.isEmpty)
-            ? null
-            : YoutubePlayer.convertUrlToId(youtubeUrl);
-        if (videoId != null && videoId != _lastVideoId) {
-          _scheduleControllerSwap(videoId);
-        }
+    if (_controller == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-        if (_controller == null) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        return CustomYoutubePlayer(
-          controller: _controller!,
-          isVertical: widget.isVertical,
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-        child: Text(ErrorHandler.getMessage(context, e)),
-      ),
+    return CustomYoutubePlayer(
+      controller: _controller!,
+      isVertical: widget.isVertical,
     );
   }
 }

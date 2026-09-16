@@ -5,8 +5,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../shared/cross_feature/notifications_shared.dart';
-import '../../../../shared/cross_feature/profile_shared.dart';
+// Documented architecture debt (5c): home legitimately renders the
+// notifications unread badge, which is owned by the notifications feature's
+// provider. There is no event/shared-model representation of an unread
+// count, so this remains a direct provider import (same debt class as the
+// WorkManager isolate in the downloads feature) instead of a fake seam.
+import '../../../../features/notifications/application/providers/notifications_provider.dart'; // check-ignore: unread badge needs unreadCountProvider (documented debt)
+import '../../../../shared/models/auth_state.dart';
+import '../../../auth/application/providers/auth_provider.dart';
 
 /// Welcome header showing personalized greeting + notification badge.
 class WelcomeHeader extends ConsumerWidget {
@@ -14,16 +20,19 @@ class WelcomeHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profile = ref.watch(profileProvider);
+    final authState = ref.watch(authProvider);
     final unreadCount = ref.watch(unreadCountProvider);
     final l10n = AppLocalizations.of(context)!;
     final ds = AppColors.of(context);
 
-    final displayName = profile.when(
-      data: (p) => p.displayName.split(' ').first,
-      loading: () => l10n.defaultUserName,
-      error: (_, _) => l10n.defaultUserName,
-    );
+    String displayName = l10n.defaultUserName;
+    if (authState is AuthAuthenticated) {
+      final user = authState.user;
+      final name = user.firstName != null && user.lastName != null
+          ? '${user.firstName} ${user.lastName}'
+          : user.firstName ?? user.email.split('@').first;
+      displayName = name.split(' ').first;
+    }
 
     return Padding(
       padding: const EdgeInsetsDirectional.fromSTEB(

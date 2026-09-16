@@ -2,9 +2,9 @@ import 'package:fpdart/fpdart.dart';
 
 import '../../../../core/error/failures.dart';
 import '../../../../shared/models/course.dart';
+import '../../../../shared/models/lesson_content.dart';
 import '../entities/course_enrollment.dart';
 import '../entities/course_progress_summary.dart';
-import '../entities/lesson_content.dart';
 
 abstract class CoursesRepository {
   /// Fetch the current user's course enrollments, joining course details

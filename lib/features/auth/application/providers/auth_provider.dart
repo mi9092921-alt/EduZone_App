@@ -21,7 +21,6 @@ import '../../../../core/services/location_service.dart';
 import '../../../../core/services/push_token_registration_service.dart';
 import '../../../../core/services/sentry_service.dart';
 import '../../../../core/utils/global_error_handler.dart';
-import '../../../../shared/cross_feature/downloads_shared.dart';
 import '../../../../shared/models/account_status.dart';
 import '../../../../shared/models/app_user.dart';
 import '../../../../shared/models/auth_state.dart';
@@ -515,24 +514,10 @@ class Auth extends _$Auth {
 
         openUserProgressSession(ref);
 
-        // Offline downloads account isolation (P6.20): purge any local
-        // download files/keys left behind by a *different* account that
-        // was previously signed into this device, so this login can never
-        // inherit or see that account's offline content. Best-effort,
-        // fire-and-forget — must never block or fail login. (Playback of
-        // another account's downloads is already independently denied by
-        // OfflinePolicyEngine even if this purge is delayed or fails.)
-        unawaited(
-          OfflineAccountGuard(
-            localDataSource: ref.read(downloadLocalDataSourceProvider),
-            encryptionService: ref.read(encryptionServiceProvider),
-          ).purgeDownloadsForOtherAccounts(appUser.id).catchError((e) {
-            debugPrint(
-              '[Auth] Offline downloads purge failed: ${e.runtimeType}',
-            );
-            return 0;
-          }),
-        );
+        // Offline downloads account isolation (P6.20) is handled by the
+        // downloads feature's OfflineAccountPurgeListener, which reacts to
+        // the AuthLoginEvent emitted below — auth never touches downloads
+        // internals directly.
 
         // Track activity and session in the background (skip bindDevice — already done above).
         // This IS a genuinely fresh login, so a sessions row must be recorded

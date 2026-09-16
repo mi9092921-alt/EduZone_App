@@ -5,7 +5,7 @@ import 'package:crypto/crypto.dart' show md5;
 
 enum EventRiskLevel { low, medium, high, critical }
 
-enum EventCategory { auth, course, video, todo, navigation, system, download }
+enum EventCategory { auth, course, video, todo, navigation, system, download, ui }
 
 // ─── Base Event (Sealed) ─────────────────────────────────────────────────────
 
@@ -430,6 +430,37 @@ class TodoCompletedEvent extends AppEvent {
   String get entityId => todoId;
   @override
   Map<String, dynamic> get details => {'todo_id': todoId};
+}
+
+// ─── UI Refresh Signals ──────────────────────────────────────────────────────
+
+/// Internal cross-feature refresh signal, not telemetry.
+///
+/// No handler accepts [EventCategory.ui] (ActivityHandler and AuditHandler
+/// both filter by category and exclude it), so emitting this event never
+/// writes to the activity log or audit trail — it exists purely so one
+/// feature can tell others "this data changed, invalidate your providers"
+/// without importing their internals. Current producer: video_player on
+/// lesson completion; consumers: courses and home refresh listeners.
+class LessonProgressChangedEvent extends AppEvent {
+  final String courseId;
+  final String lessonId;
+
+  const LessonProgressChangedEvent({
+    required super.timestamp,
+    super.userId,
+    super.tenantId,
+    super.deviceId,
+    required this.courseId,
+    required this.lessonId,
+  });
+
+  @override
+  String get activityType => 'ui.lesson_progress_changed';
+  @override
+  EventCategory get category => EventCategory.ui;
+  @override
+  String get entityId => lessonId;
 }
 
 // ─── Navigation Events ──────────────────────────────────────────────────────

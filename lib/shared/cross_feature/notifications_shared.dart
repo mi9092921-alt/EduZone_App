@@ -1,9 +1,0 @@
-/// Cross-feature facade for `features/notifications`.
-///
-/// `home` reads the notifications list/count for its dashboard preview.
-/// See `auth_shared.dart` for the full rationale — this is the same
-/// import-indirection pattern applied to notifications.
-library;
-
-export '../../features/notifications/application/providers/notifications_provider.dart';
-export '../components/notification_tile.dart';

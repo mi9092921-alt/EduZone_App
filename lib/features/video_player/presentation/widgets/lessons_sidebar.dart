@@ -1,26 +1,32 @@
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/components/lesson_tile.dart';
-import '../../../../shared/cross_feature/courses_shared.dart';
 import '../../../../shared/models/course.dart';
 
-class LessonsSidebar extends ConsumerWidget {
+class LessonsSidebar extends StatelessWidget {
   final Course course;
   final String currentLessonId;
+
+  /// Backend-verified enrollment for [course], resolved by the route
+  /// composition layer (`app_router.dart`) from the courses feature's
+  /// `isEnrolledProvider` — see the note on the field in
+  /// `course_details_screen` for why this must not be derived from
+  /// `Lesson.hasAccess`.
+  final bool isEnrolled;
   final void Function(String lessonId) onLessonTap;
 
   const LessonsSidebar({
     super.key,
     required this.course,
     required this.currentLessonId,
+    required this.isEnrolled,
     required this.onLessonTap,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final allSections = course.sections ?? [];
 
     // تصفية الأقسام لعرض القسم الذي يحتوي على الدرس الحالي فقط
@@ -43,18 +49,12 @@ class LessonsSidebar extends ConsumerWidget {
       );
     }
 
-    // NOTE: Do NOT derive enrollment from `Lesson.hasAccess` here — that field
-    // is only ever populated by the `get_course_lessons_with_access` RPC,
-    // which nothing in this app currently calls. `getCourseOutline()` (the
-    // query that actually feeds this screen's `course`) never returns
-    // `has_access`, so `Lesson.hasAccess` silently defaults to `false` for
-    // every lesson, which made every non-preview lesson show as locked
-    // regardless of real enrollment. Use the same backend-verified
-    // `isEnrolledProvider` that `SectionsAccordion`/`course_details_screen`
-    // already rely on instead.
-    final isEnrolled = ref
-        .watch(isEnrolledProvider(course.id))
-        .when(data: (v) => v, loading: () => false, error: (_, _) => false);
+    // NOTE: `isEnrolled` is resolved upstream by the route composition layer
+    // from the courses feature's backend-verified `isEnrolledProvider` — do
+    // NOT derive it from `Lesson.hasAccess` here: that field is only ever
+    // populated by the `get_course_lessons_with_access` RPC, which nothing
+    // in this app currently calls, so it silently defaults to `false` and
+    // would lock every non-preview lesson regardless of real enrollment.
 
     return ListView.builder(
       key: const PageStorageKey('lessons_sidebar_list'),

@@ -8,6 +8,7 @@ import '../features/notifications/data/services/fcm_service.dart';
 import '../features/notifications/presentation/widgets/realtime_notification_handler.dart';
 import '../shared/utils/app_snackbar.dart';
 import '../shared/widgets/network_banner.dart';
+import 'app_listeners.dart';
 import 'app_providers.dart';
 import 'router/app_router.dart';
 
@@ -25,6 +26,10 @@ class EduZoneApp extends ConsumerWidget {
 
     // Bootstraps the enterprise logging system pipeline
     ref.watch(eventDispatcherProvider);
+
+    // Subscribes the app-lifetime event-bus listeners (offline account
+    // purge, courses/home progress refresh) — see app_listeners.dart.
+    ref.watch(appListenersProvider);
 
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,

@@ -1,6 +1,6 @@
-import 'package:app/features/courses/domain/entities/lesson_content.dart';
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
 import 'package:app/features/courses/domain/usecases/get_lesson_content.dart';
+import 'package:app/shared/models/lesson_content.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:mocktail/mocktail.dart';

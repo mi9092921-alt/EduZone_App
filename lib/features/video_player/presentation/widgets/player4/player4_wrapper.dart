@@ -9,7 +9,7 @@ import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../../core/utils/device_info_helper.dart';
 import '../../../../../design_system/design_system.dart';
-import '../../../../../shared/cross_feature/courses_shared.dart';
+import '../../../../../shared/models/lesson_content.dart';
 import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/player4_provider.dart';
 import '../../../application/providers/video_provider.dart';
@@ -35,6 +35,11 @@ import 'player4_youtube_id.dart';
 class Player4Wrapper extends ConsumerStatefulWidget {
   final String courseId;
   final String lessonId;
+
+  /// Resolved lesson content, passed down by the route builder in
+  /// `app_router.dart` (which watches the courses provider) so this widget
+  /// does not import courses feature internals.
+  final LessonContent lessonContent;
   final bool isFullScreen;
   final bool isVertical;
   final VoidCallback onToggleFullScreen;
@@ -43,6 +48,7 @@ class Player4Wrapper extends ConsumerStatefulWidget {
     super.key,
     required this.courseId,
     required this.lessonId,
+    required this.lessonContent,
     required this.isFullScreen,
     required this.isVertical,
     required this.onToggleFullScreen,
@@ -542,38 +548,29 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
 
   @override
   Widget build(BuildContext context) {
-    final lessonContentAsync = ref.watch(lessonContentProvider(widget.lessonId));
+    final content = widget.lessonContent;
+    final videoId = extractYoutubeVideoId(content.videoUrl);
+    if (videoId == null || videoId.isEmpty) {
+      return Center(
+        child: Text(
+          AppLocalizations.of(context)!.invalidVideoUrl,
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.of(context).error,
+          ),
+        ),
+      );
+    }
 
-    return lessonContentAsync.when(
-      data: (content) {
-        final videoId = extractYoutubeVideoId(content.videoUrl);
-        if (videoId == null || videoId.isEmpty) {
-          return Center(
-            child: Text(
-              AppLocalizations.of(context)!.invalidVideoUrl,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.of(context).error,
-              ),
-            ),
-          );
-        }
+    if (_loadedVideoId != videoId) {
+      _loadedVideoId = videoId;
+      _retryCount = 0;
+      _lastFailedVideoId = null;
+      _loggedStarted = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_refreshAndPlay(videoId, seekToCurrent: false));
+      });
+    }
 
-        if (_loadedVideoId != videoId) {
-          _loadedVideoId = videoId;
-          _retryCount = 0;
-          _lastFailedVideoId = null;
-          _loggedStarted = false;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            unawaited(_refreshAndPlay(videoId, seekToCurrent: false));
-          });
-        }
-
-        return _buildPlayerUI();
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-        child: Text(mapPlayer4ErrorToMessage(AppLocalizations.of(context)!, e)),
-      ),
-    );
+    return _buildPlayerUI();
   }
 }

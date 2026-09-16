@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+// Documented architecture debt (5c): the lesson list needs per-lesson
+// download status; there is no event/shared-model representation of
+// download state, so this remains a direct provider import (same debt
+// class as the WorkManager isolate in the downloads feature).
+import '../../../../../features/downloads/application/providers/downloads_provider.dart'; // check-ignore: download state has no shared-model representation (documented debt)
 import '../../../../../shared/components/lesson_tile.dart';
-import '../../../../../shared/cross_feature/downloads_shared.dart';
 import '../../../../../shared/models/download_enums.dart';
 import '../../../../../shared/models/downloaded_lesson.dart';
 import '../../../../../shared/models/lesson.dart';

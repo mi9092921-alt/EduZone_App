@@ -1,12 +1,9 @@
-import 'dart:async';
-
 import 'package:app/core/l10n/arb/app_localizations.dart';
-import 'package:app/features/courses/application/providers/courses_provider.dart';
-import 'package:app/features/courses/domain/entities/lesson_content.dart';
 import 'package:app/features/video_player/application/providers/video_provider.dart';
 import 'package:app/features/video_player/presentation/screens/video_player_screen.dart';
 import 'package:app/shared/models/course.dart';
 import 'package:app/shared/models/lesson.dart';
+import 'package:app/shared/models/lesson_content.dart';
 import 'package:app/shared/models/section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -52,9 +49,23 @@ const _course = Course(
   ],
 );
 
+/// Lesson content used by the data-driven tests (granted access).
+const _grantedContent = LessonContent(
+  lessonId: _lessonId,
+  courseId: _courseId,
+  hasAccess: true,
+);
+
+/// Lesson content used by the paywall test (no access).
+const _lockedContent = LessonContent(
+  lessonId: _lessonId,
+  courseId: _courseId,
+);
+
 Future<void> pumpVideoPlayer(
   WidgetTester tester, {
-  required List<Override> overrides,
+  List<Override> overrides = const [],
+  LessonContent lessonContent = _grantedContent,
   Widget Function(BuildContext, bool, VoidCallback, bool)? playerBuilder,
 }) {
   return tester.pumpWidget(
@@ -66,6 +77,9 @@ Future<void> pumpVideoPlayer(
         home: VideoPlayerScreen(
           courseId: _courseId,
           lessonId: _lessonId,
+          course: _course,
+          lessonContent: lessonContent,
+          isEnrolled: true,
           playerBuilder:
               playerBuilder ?? (context, isFullScreen, toggle, isVertical) =>
                   const Text('PLAYER_STUB'),
@@ -94,28 +108,6 @@ void main() {
         .setMockMethodCallHandler(SystemChannels.platform, null);
   });
 
-  group('VideoPlayerScreen — loading state', () {
-    testWidgets('shows a skeleton while the course is loading', (
-      tester,
-    ) async {
-      await pumpVideoPlayer(
-        tester,
-        overrides: [
-          courseDetailsProvider(_courseId).overrideWith(
-            (ref) => Completer<Course>().future,
-          ),
-          lessonContentProvider(_lessonId).overrideWith(
-            (ref) => Completer<LessonContent>().future,
-          ),
-        ],
-      );
-      await tester.pump();
-
-      expect(tester.takeException(), isNull);
-      expect(find.text('PLAYER_STUB'), findsNothing);
-    });
-  });
-
   group('VideoPlayerScreen — lesson not found', () {
     testWidgets(
         'shows a localized "lesson not found" message instead of crashing '
@@ -133,15 +125,22 @@ void main() {
         ],
       );
 
-      await pumpVideoPlayer(
-        tester,
-        overrides: [
-          courseDetailsProvider(_courseId)
-              .overrideWith((ref) async => courseWithoutLesson),
-          lessonContentProvider(_lessonId).overrideWith(
-            (ref) => Completer<LessonContent>().future,
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: VideoPlayerScreen(
+              courseId: _courseId,
+              lessonId: _lessonId,
+              course: courseWithoutLesson,
+              lessonContent: _grantedContent,
+              isEnrolled: true,
+              playerBuilder: (context, isFullScreen, toggle, isVertical) =>
+                  const Text('PLAYER_STUB'),
+            ),
           ),
-        ],
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -155,18 +154,7 @@ void main() {
     testWidgets(
         'shows the enrollment paywall instead of the player when the '
         'lesson content reports hasAccess == false', (tester) async {
-      await pumpVideoPlayer(
-        tester,
-        overrides: [
-          courseDetailsProvider(_courseId).overrideWith((ref) async => _course),
-          lessonContentProvider(_lessonId).overrideWith(
-            (ref) async => const LessonContent(
-              lessonId: _lessonId,
-              courseId: _courseId,
-            ),
-          ),
-        ],
-      );
+      await pumpVideoPlayer(tester, lessonContent: _lockedContent);
       await tester.pumpAndSettle();
 
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
@@ -182,14 +170,6 @@ void main() {
       await pumpVideoPlayer(
         tester,
         overrides: [
-          courseDetailsProvider(_courseId).overrideWith((ref) async => _course),
-          lessonContentProvider(_lessonId).overrideWith(
-            (ref) async => const LessonContent(
-              lessonId: _lessonId,
-              courseId: _courseId,
-              hasAccess: true,
-            ),
-          ),
           videoProgressProvider(_courseId, _lessonId).overrideWith(
             () => _FixedVideoProgress(
               VideoState(
@@ -213,14 +193,6 @@ void main() {
       await pumpVideoPlayer(
         tester,
         overrides: [
-          courseDetailsProvider(_courseId).overrideWith((ref) async => _course),
-          lessonContentProvider(_lessonId).overrideWith(
-            (ref) async => const LessonContent(
-              lessonId: _lessonId,
-              courseId: _courseId,
-              hasAccess: true,
-            ),
-          ),
           videoProgressProvider(_courseId, _lessonId).overrideWith(
             () => _FixedVideoProgress(
               VideoState(
@@ -247,14 +219,6 @@ void main() {
       await pumpVideoPlayer(
         tester,
         overrides: [
-          courseDetailsProvider(_courseId).overrideWith((ref) async => _course),
-          lessonContentProvider(_lessonId).overrideWith(
-            (ref) async => const LessonContent(
-              lessonId: _lessonId,
-              courseId: _courseId,
-              hasAccess: true,
-            ),
-          ),
           videoProgressProvider(_courseId, _lessonId).overrideWith(
             () => _FixedVideoProgress(
               VideoState(progressPct: 0, watchTimeSec: 0, isCompleted: false),

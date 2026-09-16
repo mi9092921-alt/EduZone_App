@@ -10,8 +10,7 @@ import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../../core/utils/device_info_helper.dart';
 import '../../../../../design_system/design_system.dart';
-import '../../../../../shared/cross_feature/courses_shared.dart';
-import '../../../../../shared/utils/error_handler.dart';
+import '../../../../../shared/models/lesson_content.dart';
 import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/video_provider.dart';
 import 'modern_player_error_overlay.dart';
@@ -39,6 +38,11 @@ final RegExp _safeVideoIdPattern = RegExp(r'^[A-Za-z0-9_-]{11}$');
 class ModernPlayerWrapper extends ConsumerStatefulWidget {
   final String courseId;
   final String lessonId;
+
+  /// Resolved lesson content, passed down by the route builder in
+  /// `app_router.dart` (which watches the courses provider) so this widget
+  /// does not import courses feature internals.
+  final LessonContent lessonContent;
   final bool isFullScreen;
   final bool isVertical;
   final VoidCallback onToggleFullScreen;
@@ -47,6 +51,7 @@ class ModernPlayerWrapper extends ConsumerStatefulWidget {
     super.key,
     required this.courseId,
     required this.lessonId,
+    required this.lessonContent,
     required this.isFullScreen,
     required this.isVertical,
     required this.onToggleFullScreen,
@@ -279,92 +284,82 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final lessonContentAsync = ref.watch(lessonContentProvider(widget.lessonId));
     final ds = AppColors.of(context);
+    final content = widget.lessonContent;
 
-    return lessonContentAsync.when(
-      data: (content) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _logLessonStarted());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _logLessonStarted());
 
-        final videoId = extractModernPlayerVideoId(content.videoUrl);
-        if (videoId == null || videoId.isEmpty) {
-          return Center(
-            child: Text(
-              AppLocalizations.of(context)!.invalidVideoUrl,
-              style: AppTextStyles.bodyMedium.copyWith(color: ds.error),
-            ),
-          );
-        }
+    final videoId = extractModernPlayerVideoId(content.videoUrl);
+    if (videoId == null || videoId.isEmpty) {
+      return Center(
+        child: Text(
+          AppLocalizations.of(context)!.invalidVideoUrl,
+          style: AppTextStyles.bodyMedium.copyWith(color: ds.error),
+        ),
+      );
+    }
 
-        if (_dynamicUA.isEmpty) {
-          return const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
-          );
-        }
-
-        // Switch video if lessonId changes
-        if (_lastVideoId != null && _lastVideoId != videoId) {
-          WidgetsBinding.instance.addPostFrameCallback((_) => _switchVideo(videoId));
-        }
-
-        final playerWidget = AspectRatio(
-          aspectRatio: widget.isVertical ? 9 / 16 : 16 / 9,
-          child: Stack(
-            children: [
-              _buildWebView(videoId),
-              if (_isLoading)
-                const Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: LinearProgressIndicator(
-                    backgroundColor: Colors.transparent,
-                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                    minHeight: 3,
-                  ),
-                ),
-              if (_hasError)
-                ModernPlayerErrorOverlay(
-                  errorCode: _errorCode,
-                  onRetry: () {
-                    setState(() {
-                      _isLoading = true;
-                      _hasError = false;
-                    });
-                    _webViewController?.reload();
-                  },
-                ),
-            ],
-          ),
-        );
-
-        if (widget.isFullScreen) {
-          return Stack(
-            children: [
-              Center(child: playerWidget),
-              Positioned(
-                top: 16,
-                left: 16,
-                child: SafeArea(
-                  child: ModernPlayerFullscreenExitButton(
-                    tooltip: AppLocalizations.of(context)!.exitFullScreenButtonTooltip,
-                    onPressed: widget.onToggleFullScreen,
-                  ),
-                ),
-              ),
-            ],
-          );
-        }
-
-        return playerWidget;
-      },
-      loading: () => const Center(
+    if (_dynamicUA.isEmpty) {
+      return const Center(
         child: CircularProgressIndicator(color: AppColors.primary),
-      ),
-      error: (e, _) => Center(
-        child: Text(ErrorHandler.getMessage(context, e)),
+      );
+    }
+
+    // Switch video if lessonId changes
+    if (_lastVideoId != null && _lastVideoId != videoId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _switchVideo(videoId));
+    }
+
+    final playerWidget = AspectRatio(
+      aspectRatio: widget.isVertical ? 9 / 16 : 16 / 9,
+      child: Stack(
+        children: [
+          _buildWebView(videoId),
+          if (_isLoading)
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: LinearProgressIndicator(
+                backgroundColor: Colors.transparent,
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                minHeight: 3,
+              ),
+            ),
+          if (_hasError)
+            ModernPlayerErrorOverlay(
+              errorCode: _errorCode,
+              onRetry: () {
+                setState(() {
+                  _isLoading = true;
+                  _hasError = false;
+                });
+                _webViewController?.reload();
+              },
+            ),
+        ],
       ),
     );
+
+    if (widget.isFullScreen) {
+      return Stack(
+        children: [
+          Center(child: playerWidget),
+          Positioned(
+            top: 16,
+            left: 16,
+            child: SafeArea(
+              child: ModernPlayerFullscreenExitButton(
+                tooltip: AppLocalizations.of(context)!.exitFullScreenButtonTooltip,
+                onPressed: widget.onToggleFullScreen,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return playerWidget;
   }
 
   // ─── WebView ─────────────────────────────────────────────────────────────────

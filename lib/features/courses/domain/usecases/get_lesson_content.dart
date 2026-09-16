@@ -1,6 +1,6 @@
 import 'package:fpdart/fpdart.dart';
 import '../../../../core/error/failures.dart';
-import '../entities/lesson_content.dart';
+import '../../../../shared/models/lesson_content.dart';
 import '../repositories/courses_repository.dart';
 
 class GetLessonContent {
