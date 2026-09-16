@@ -1163,17 +1163,3 @@ class _MockRpcBuilder extends Mock
 /// Makes `await supabase.rpc('check_student_app_access')` resolve to a fixed
 /// map, so [CheckStudentAppAccessService._check] (started automatically after
 /// login/session-restore) behaves deterministically instead of throwing.
-class _FakeCheckAccessRpcBuilder extends Fake
-    implements PostgrestFilterBuilder<dynamic> {
-  _FakeCheckAccessRpcBuilder(this._value);
-
-  final Map<String, dynamic> _value;
-
-  @override
-  Future<U> then<U>(
-    FutureOr<U> Function(dynamic value) onValue, {
-    Function? onError,
-  }) {
-    return Future<dynamic>.value(_value).then(onValue, onError: onError);
-  }
-}
