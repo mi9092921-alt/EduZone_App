@@ -53,7 +53,18 @@ class NotificationsPreview extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
               child: Column(
                 children: unreadNotifications
-                    .map((n) => NotificationTile(notification: n))
+                    .map((n) => NotificationTile(
+                          notification: n,
+                          onMarkAsRead: () async {
+                            final result = await ref
+                                .read(markAsReadProvider)
+                                .call(n.id, n.userId);
+                            result.fold(
+                              (_) {},
+                              (_) => ref.invalidate(notificationsProvider),
+                            );
+                          },
+                        ))
                     .toList(),
               ),
             ),

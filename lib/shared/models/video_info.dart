@@ -1,4 +1,4 @@
-import '../../../../shared/models/download_enums.dart';
+import 'download_enums.dart';
 
 class VideoInfo {
   final String title;

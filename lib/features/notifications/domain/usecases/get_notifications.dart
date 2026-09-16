@@ -1,6 +1,6 @@
 import 'package:fpdart/fpdart.dart';
 import '../../../../core/error/failures.dart';
-import '../../domain/entities/app_notification.dart';
+import '../../../../shared/models/app_notification.dart';
 import '../repositories/notifications_repository.dart';
 
 class GetNotifications {

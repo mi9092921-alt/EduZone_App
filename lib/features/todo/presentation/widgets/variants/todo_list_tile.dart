@@ -3,15 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../../shared/components/todo/todo_card_base.dart';
+import '../../../../../shared/components/todo/todo_checkbox.dart';
+import '../../../../../shared/components/todo/todo_priority_indicator.dart';
+import '../../../../../shared/components/todo/todo_ui_extension.dart';
+import '../../../../../shared/components/todo/todo_ui_mapper.dart';
 import '../../../../../shared/models/todo_item.dart';
-import '../../extensions/todo_ui_extension.dart';
-import '../components/todo_card_base.dart';
-import '../components/todo_checkbox.dart';
 import '../components/todo_content.dart';
 import '../components/todo_meta_info.dart';
-import '../components/todo_priority_indicator.dart';
 import '../components/todo_swipe_background.dart';
-import '../core/todo_ui_mapper.dart';
 
 class TodoListTile extends StatelessWidget {
   final TodoItem todo;

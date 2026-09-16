@@ -2,12 +2,12 @@ import 'package:app/core/utils/text_direction_detector.dart';
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 
-import '../../../../../shared/models/todo_item.dart';
-import '../../extensions/todo_ui_extension.dart';
-import '../components/todo_card_base.dart';
-import '../components/todo_checkbox.dart';
-import '../components/todo_priority_indicator.dart';
-import '../core/todo_ui_mapper.dart';
+import '../../models/todo_item.dart';
+import 'todo_card_base.dart';
+import 'todo_checkbox.dart';
+import 'todo_priority_indicator.dart';
+import 'todo_ui_extension.dart';
+import 'todo_ui_mapper.dart';
 
 class TodoPreviewTile extends StatelessWidget {
   final TodoItem? todo;

@@ -1,5 +1,5 @@
 import 'package:app/design_system/design_system.dart';
-import 'package:app/features/todo/presentation/extensions/todo_ui_extension.dart';
+import 'package:app/shared/components/todo/todo_ui_extension.dart';
 import 'package:app/shared/models/todo_item.dart';
 import 'package:flutter_test/flutter_test.dart';
 

@@ -9,7 +9,7 @@ import '../../../../core/network/network_config.dart';
 import '../../../../core/network/network_exception_mapper.dart';
 import '../../../../core/network/network_guard.dart';
 import '../../../../core/utils/device_info_helper.dart';
-import '../../data/models/video_info.dart';
+import '../../../../shared/models/video_info.dart';
 
 /// Remote data source for download-related operations.
 ///

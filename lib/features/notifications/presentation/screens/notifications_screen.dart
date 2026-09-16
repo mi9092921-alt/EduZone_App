@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../shared/components/notification_tile.dart';
+import '../../../../shared/models/app_notification.dart';
 import '../../../../shared/models/auth_state.dart';
 import '../../../../shared/utils/error_handler.dart';
 import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/notifications_provider.dart';
-import '../../domain/entities/app_notification.dart';
-import '../widgets/notification_tile.dart';
 
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
@@ -63,6 +63,20 @@ class NotificationsScreen extends ConsumerWidget {
     );
   }
 
+  /// Marks a single notification as read and refreshes the list on success.
+  /// Lives here (not in the shared NotificationTile) so the shared component
+  /// stays provider-free — the tile calls back into the owning feature.
+  Future<void> _markAsRead(WidgetRef ref, AppNotification notification) async {
+    if (notification.isRead) return;
+    final result = await ref
+        .read(markAsReadProvider)
+        .call(notification.id, notification.userId);
+    result.fold(
+      (_) {},
+      (_) => ref.invalidate(notificationsProvider),
+    );
+  }
+
   List<Widget> _buildContentSlivers(
     BuildContext context,
     WidgetRef ref,
@@ -108,6 +122,7 @@ class NotificationsScreen extends ConsumerWidget {
                   return NotificationTile(
                     key: ValueKey(notification.id),
                     notification: notification,
+                    onMarkAsRead: () => _markAsRead(ref, notification),
                   );
                 },
                 childCount: filteredList.isEmpty

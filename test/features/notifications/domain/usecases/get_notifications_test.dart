@@ -1,6 +1,6 @@
-import 'package:app/features/notifications/domain/entities/app_notification.dart';
 import 'package:app/features/notifications/domain/repositories/notifications_repository.dart';
 import 'package:app/features/notifications/domain/usecases/get_notifications.dart';
+import 'package:app/shared/models/app_notification.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:mocktail/mocktail.dart';

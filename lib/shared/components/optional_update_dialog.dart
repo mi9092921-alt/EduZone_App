@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../../core/constants/app_constants.dart';
-import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../shared/models/update_info.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/l10n/arb/app_localizations.dart';
+import '../models/update_info.dart';
 
 /// Shows a non-blocking update dialog once per version.
 ///

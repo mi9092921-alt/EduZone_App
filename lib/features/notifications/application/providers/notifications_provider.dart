@@ -1,9 +1,9 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../../../shared/models/app_notification.dart';
 import '../../../auth/application/providers/auth_provider.dart';
 import '../../data/datasources/notifications_remote_ds.dart';
 import '../../data/repositories/notifications_repo_impl.dart';
-import '../../domain/entities/app_notification.dart';
 import '../../domain/repositories/notifications_repository.dart';
 import '../../domain/usecases/get_notifications.dart';
 import '../../domain/usecases/mark_as_read.dart';

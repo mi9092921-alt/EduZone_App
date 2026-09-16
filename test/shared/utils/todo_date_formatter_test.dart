@@ -1,5 +1,5 @@
 import 'package:app/core/l10n/arb/app_localizations_en.dart';
-import 'package:app/features/todo/presentation/utils/todo_date_formatter.dart';
+import 'package:app/shared/utils/todo_date_formatter.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';

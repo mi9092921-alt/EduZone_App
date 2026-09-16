@@ -1,7 +1,7 @@
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 
-import '../../../../../core/l10n/arb/app_localizations.dart';
+import '../../../core/l10n/arb/app_localizations.dart';
 
 enum TodoPriorityStyle { dot, strip, pill }
 

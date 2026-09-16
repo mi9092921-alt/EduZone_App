@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../design_system/design_system.dart';
-import '../../../../shared/models/download_enums.dart';
-import '../../data/models/video_info.dart';
-import '../../domain/entities/download_progress.dart';
+import '../../core/l10n/arb/app_localizations.dart';
+import '../../design_system/design_system.dart';
+import '../models/download_enums.dart';
+import '../models/video_info.dart';
 
 /// Dialog for selecting video quality before download.
 class QualitySelector extends ConsumerWidget {
@@ -114,7 +113,7 @@ class _QualityOption extends StatelessWidget {
             ),
             Text(
               size > 0
-                  ? '${isActualSize ? '' : '~'}${DownloadProgressExtension.formatBytes(size)}'
+                  ? '${isActualSize ? '' : '~'}${_formatBytes(size)}'
                   : '',
               style: AppTextStyles.bodySmall.copyWith(
                 color: ds.textSecondary,
@@ -125,6 +124,18 @@ class _QualityOption extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Formats bytes to a human-readable string (same rule as
+/// `DownloadProgressExtension.formatBytes`, mirrored here so this shared
+/// component does not import the downloads feature's domain entities).
+String _formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  if (bytes < 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
 }
 
 /// Shows the quality selector dialog.

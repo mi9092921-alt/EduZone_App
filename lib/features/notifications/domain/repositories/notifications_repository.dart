@@ -1,6 +1,6 @@
 import 'package:fpdart/fpdart.dart';
 import '../../../../core/error/failures.dart';
-import '../entities/app_notification.dart';
+import '../../../../shared/models/app_notification.dart';
 
 abstract class NotificationsRepository {
   Future<Either<Failure, List<AppNotification>>> getNotifications(String userId);

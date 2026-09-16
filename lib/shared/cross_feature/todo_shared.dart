@@ -5,4 +5,4 @@
 /// See `auth_shared.dart` for the full rationale.
 library;
 
-export '../../features/todo/presentation/widgets/variants/todo_preview_tile.dart';
+export '../components/todo/todo_preview_tile.dart';

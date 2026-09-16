@@ -1,6 +1,6 @@
-import 'package:app/features/downloads/data/models/video_info.dart';
 import 'package:app/features/downloads/data/repositories/download_format_selector.dart';
 import 'package:app/shared/models/download_enums.dart';
+import 'package:app/shared/models/video_info.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

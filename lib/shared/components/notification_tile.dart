@@ -1,32 +1,26 @@
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
-import '../../../../core/l10n/arb/app_localizations.dart';
-import '../../application/providers/notifications_provider.dart';
-import '../../domain/entities/app_notification.dart';
+import '../../core/l10n/arb/app_localizations.dart';
+import '../models/app_notification.dart';
 
-class NotificationTile extends ConsumerWidget {
+class NotificationTile extends StatelessWidget {
   final AppNotification notification;
 
-  const NotificationTile({super.key, required this.notification});
+  /// Called when the user taps the tile, before the details sheet opens.
+  /// Injected by the owning feature (which owns the mark-as-read use case)
+  /// so this shared component stays provider-free. Null for skeleton tiles.
+  final Future<void> Function()? onMarkAsRead;
 
-  Future<void> _markAsRead(WidgetRef ref) async {
-    if (!notification.isRead) {
-      final result = await ref
-          .read(markAsReadProvider)
-          .call(notification.id, notification.userId);
+  const NotificationTile({
+    super.key,
+    required this.notification,
+    this.onMarkAsRead,
+  });
 
-      result.fold(
-        (_) {},
-        (_) => ref.invalidate(notificationsProvider),
-      );
-    }
-  }
-
-  Future<void> _showDetails(BuildContext context, WidgetRef ref) async {
-    await _markAsRead(ref);
+  Future<void> _showDetails(BuildContext context) async {
+    await onMarkAsRead?.call();
     if (!context.mounted) return;
 
     final ds = AppColors.of(context);
@@ -130,7 +124,7 @@ class NotificationTile extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final ds = AppColors.of(context);
     final languageCode = Localizations.localeOf(context).languageCode;
     final l10n = AppLocalizations.of(context)!;
@@ -166,7 +160,7 @@ class NotificationTile extends ConsumerWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: AppSpacing.md),
         child: InkWell(
-          onTap: () => _showDetails(context, ref),
+          onTap: () => _showDetails(context),
           borderRadius: AppRadius.mdBorder,
           child: Container(
             padding: const EdgeInsets.all(AppSpacing.md),

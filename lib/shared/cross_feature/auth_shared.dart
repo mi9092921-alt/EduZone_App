@@ -20,4 +20,4 @@
 library;
 
 export '../../features/auth/application/providers/auth_provider.dart';
-export '../../features/auth/presentation/widgets/optional_update_dialog.dart';
+export '../components/optional_update_dialog.dart';

@@ -6,4 +6,4 @@
 library;
 
 export '../../features/notifications/application/providers/notifications_provider.dart';
-export '../../features/notifications/presentation/widgets/notification_tile.dart';
+export '../components/notification_tile.dart';

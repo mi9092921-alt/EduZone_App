@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../../shared/models/todo_item.dart';
-import '../../extensions/todo_ui_extension.dart';
+
+import '../../../core/l10n/arb/app_localizations.dart';
+import '../../models/todo_item.dart';
 import '../../utils/todo_date_formatter.dart';
+import 'todo_ui_extension.dart';
 
 class TodoUiMapper {
   static String getFormattedDate({

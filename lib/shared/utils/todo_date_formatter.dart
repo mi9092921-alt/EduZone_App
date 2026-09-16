@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
-import '../../../../core/l10n/arb/app_localizations.dart';
+import '../../core/l10n/arb/app_localizations.dart';
 
 /// Production-grade date formatter for Todo items.
 /// Decoupled from the UI layer and extensions to ensure pure functional formatting.
