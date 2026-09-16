@@ -6,8 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../network/supabase_client.dart';
 import '../utils/device_info_helper.dart';
 
 part 'location_service.g.dart';
@@ -145,7 +145,7 @@ class LocationService {
       // NOTE: Do NOT send a client timestamp — the server uses NOW() so it
       // can't be manipulated by clock drift or timezone changes on the device.
       final source = _sourceFromPosition(position);
-      final client = Supabase.instance.client;
+      final client = SupabaseService.client;
       final result = await client.rpc(
         'log_app_open_location',
         params: {

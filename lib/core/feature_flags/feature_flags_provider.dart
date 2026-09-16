@@ -6,15 +6,16 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../network/network_exception_mapper.dart';
+import 'data/feature_flag_remote_ds.dart';
 import 'feature_flag_cache.dart';
 import 'feature_flag_keys.dart';
-import 'feature_flag_repository.dart';
 import 'feature_flag_snapshot.dart';
 
 part 'feature_flags_provider.g.dart';
 
 @Riverpod(keepAlive: true)
-FeatureFlagRepository featureFlagRepository(Ref ref) => FeatureFlagRepository();
+FeatureFlagRemoteDataSource featureFlagRepository(Ref ref) =>
+    FeatureFlagRemoteDataSource();
 
 @Riverpod(keepAlive: true)
 FeatureFlagCache featureFlagCache(Ref ref) =>

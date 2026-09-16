@@ -8,6 +8,7 @@ import 'package:installed_apps/installed_apps.dart';
 import 'package:package_info_plus/package_info_plus.dart' as pip;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../network/supabase_client.dart';
 import '../utils/device_info_helper.dart';
 import 'guards/lifecycle_guard.dart';
 import 'guards/screenshot_guard.dart';
@@ -153,7 +154,7 @@ class SecurityService with WidgetsBindingObserver {
 
     // Fire-and-forget: we do not await or block execution.
     try {
-      final client = Supabase.instance.client;
+      final client = SupabaseService.client;
       pip.PackageInfo.fromPlatform().then((packageInfo) {
         payload['app_version'] = packageInfo.version;
         payload['app_build_number'] = packageInfo.buildNumber;

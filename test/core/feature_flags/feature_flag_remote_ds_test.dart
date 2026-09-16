@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:app/core/error/exceptions.dart';
+import 'package:app/core/feature_flags/data/feature_flag_remote_ds.dart';
 import 'package:app/core/feature_flags/feature_flag_keys.dart';
-import 'package:app/core/feature_flags/feature_flag_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -21,7 +21,7 @@ void main() {
   late MockSupabaseClient mockClient;
   late MockGoTrueClient mockAuth;
   late MockRpcBuilder builder;
-  late FeatureFlagRepository repository;
+  late FeatureFlagRemoteDataSource repository;
 
   // Stubs rpc('evaluate_feature_flags', params: {...}) to resolve with
   // [value] when awaited. NetworkGuard.read calls .timeout() on the
@@ -56,7 +56,7 @@ void main() {
     mockAuth = MockGoTrueClient();
     builder = MockRpcBuilder();
     when(() => mockClient.auth).thenReturn(mockAuth);
-    repository = FeatureFlagRepository(client: mockClient);
+    repository = FeatureFlagRemoteDataSource(client: mockClient);
   });
 
   group('evaluate', () {

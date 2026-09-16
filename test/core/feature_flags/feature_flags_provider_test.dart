@@ -1,8 +1,8 @@
 import 'dart:async';
 
+import 'package:app/core/feature_flags/data/feature_flag_remote_ds.dart';
 import 'package:app/core/feature_flags/feature_flag_cache.dart';
 import 'package:app/core/feature_flags/feature_flag_keys.dart';
-import 'package:app/core/feature_flags/feature_flag_repository.dart';
 import 'package:app/core/feature_flags/feature_flag_snapshot.dart';
 import 'package:app/core/feature_flags/feature_flags_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,7 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class MockFeatureFlagRepository extends Mock implements FeatureFlagRepository {}
+class MockFeatureFlagRemoteDataSource extends Mock
+    implements FeatureFlagRemoteDataSource {}
 
 class MockFeatureFlagCache extends Mock implements FeatureFlagCache {}
 
@@ -33,7 +34,7 @@ void main() {
     ),
   ];
 
-  late MockFeatureFlagRepository repository;
+  late MockFeatureFlagRemoteDataSource repository;
   late MockFeatureFlagCache cache;
   late DateTime Function() clock;
   late ProviderContainer container;
@@ -51,7 +52,7 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    repository = MockFeatureFlagRepository();
+    repository = MockFeatureFlagRemoteDataSource();
     cache = MockFeatureFlagCache();
     clock = () => baseTime;
 

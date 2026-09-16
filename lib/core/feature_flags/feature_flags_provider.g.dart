@@ -15,11 +15,11 @@ final featureFlagRepositoryProvider = FeatureFlagRepositoryProvider._();
 final class FeatureFlagRepositoryProvider
     extends
         $FunctionalProvider<
-          FeatureFlagRepository,
-          FeatureFlagRepository,
-          FeatureFlagRepository
+          FeatureFlagRemoteDataSource,
+          FeatureFlagRemoteDataSource,
+          FeatureFlagRemoteDataSource
         >
-    with $Provider<FeatureFlagRepository> {
+    with $Provider<FeatureFlagRemoteDataSource> {
   FeatureFlagRepositoryProvider._()
     : super(
         from: null,
@@ -36,26 +36,26 @@ final class FeatureFlagRepositoryProvider
 
   @$internal
   @override
-  $ProviderElement<FeatureFlagRepository> $createElement(
+  $ProviderElement<FeatureFlagRemoteDataSource> $createElement(
     $ProviderPointer pointer,
   ) => $ProviderElement(pointer);
 
   @override
-  FeatureFlagRepository create(Ref ref) {
+  FeatureFlagRemoteDataSource create(Ref ref) {
     return featureFlagRepository(ref);
   }
 
   /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(FeatureFlagRepository value) {
+  Override overrideWithValue(FeatureFlagRemoteDataSource value) {
     return $ProviderOverride(
       origin: this,
-      providerOverride: $SyncValueProvider<FeatureFlagRepository>(value),
+      providerOverride: $SyncValueProvider<FeatureFlagRemoteDataSource>(value),
     );
   }
 }
 
 String _$featureFlagRepositoryHash() =>
-    r'72b5bfba159f2ff09943258fdb0f430fe5bdbc1d';
+    r'6387483d0ba203481dbf0c9b45aba6553d4e5b4e';
 
 @ProviderFor(featureFlagCache)
 final featureFlagCacheProvider = FeatureFlagCacheProvider._();

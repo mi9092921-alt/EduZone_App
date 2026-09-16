@@ -6,9 +6,9 @@ import 'package:app/app/router/app_router.dart';
 import 'package:app/app/router/main_shell.dart';
 import 'package:app/core/constants/app_constants.dart';
 import 'package:app/core/error/failures.dart';
+import 'package:app/core/feature_flags/data/feature_flag_remote_ds.dart';
 import 'package:app/core/feature_flags/feature_flag_cache.dart';
 import 'package:app/core/feature_flags/feature_flag_keys.dart';
-import 'package:app/core/feature_flags/feature_flag_repository.dart';
 import 'package:app/core/feature_flags/feature_flag_snapshot.dart';
 import 'package:app/core/feature_flags/feature_flags_provider.dart';
 import 'package:app/core/l10n/arb/app_localizations_ar.dart';
@@ -120,9 +120,11 @@ const _courseWithLesson = Course(
   ],
 );
 
-/// Stand-in for [FeatureFlagRepository] at the external backend boundary:
-/// returns configurable evaluator verdicts without touching Supabase.
-class _FakeFeatureFlagRepository implements FeatureFlagRepository {
+/// Stand-in for [FeatureFlagRemoteDataSource] at the external backend
+/// boundary: returns configurable evaluator verdicts without touching
+/// Supabase.
+class _FakeFeatureFlagRemoteDataSource
+    implements FeatureFlagRemoteDataSource {
   List<FeatureFlagEvaluation> verdicts = const [];
 
   @override
@@ -624,7 +626,7 @@ void main() {
     group('feature flags (core/feature_flags)', () {
       Future<ProviderContainer> pumpFlaggedApp(
         WidgetTester tester, {
-        required _FakeFeatureFlagRepository flagRepository,
+        required _FakeFeatureFlagRemoteDataSource flagRepository,
         bool refreshAfterPump = true,
         bool disableCache = false,
       }) async {
@@ -701,7 +703,7 @@ void main() {
         // No verdicts at all — exactly what the canonical evaluator returns
         // when `player.direct_player` has no row registered yet. The app
         // must behave as it did before feature flags existed.
-        final flagRepository = _FakeFeatureFlagRepository()
+        final flagRepository = _FakeFeatureFlagRemoteDataSource()
           ..verdicts = const [];
         final container = await pumpFlaggedApp(
           tester,
@@ -722,7 +724,7 @@ void main() {
           'server kill switch (enabled=false) removes the direct-player '
           'option from the real sheet, and a refresh restores it',
           (tester) async {
-        final flagRepository = _FakeFeatureFlagRepository()
+        final flagRepository = _FakeFeatureFlagRemoteDataSource()
           ..verdicts = const [
             FeatureFlagEvaluation(
               key: FeatureFlagKey.playerDirectPlayer,
@@ -767,7 +769,7 @@ void main() {
           'flags provider in the real app tree starts from safe defaults '
           'synchronously and reflects the server verdict after refresh',
           (tester) async {
-        final flagRepository = _FakeFeatureFlagRepository()
+        final flagRepository = _FakeFeatureFlagRemoteDataSource()
           ..verdicts = const [
             FeatureFlagEvaluation(
               key: FeatureFlagKey.playerDirectPlayer,

@@ -1,9 +1,9 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../network/network_guard.dart';
-import '../network/supabase_client.dart';
-import 'feature_flag_keys.dart';
-import 'feature_flag_snapshot.dart';
+import '../../network/network_guard.dart';
+import '../../network/supabase_client.dart';
+import '../feature_flag_keys.dart';
+import '../feature_flag_snapshot.dart';
 
 /// Data access to the canonical server-side feature-flag evaluator.
 ///
@@ -20,8 +20,8 @@ import 'feature_flag_snapshot.dart';
 ///
 /// All user-visible/security-relevant behavior stays enforced server-side;
 /// this repository only relays the evaluator's verdict.
-class FeatureFlagRepository {
-  FeatureFlagRepository({SupabaseClient? client}) : _clientOverride = client;
+class FeatureFlagRemoteDataSource {
+  FeatureFlagRemoteDataSource({SupabaseClient? client}) : _clientOverride = client;
 
   /// Test/client override; resolved lazily (see [_client]).
   final SupabaseClient? _clientOverride;
