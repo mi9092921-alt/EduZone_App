@@ -20,7 +20,6 @@ void main() {
     id: 'user-1',
     email: 'test@example.com',
     tenantId: 'tenant-1',
-    regionId: 'region-1',
   );
 
   late MockAuthRemoteDataSource mockRemoteDataSource;
@@ -52,10 +51,7 @@ void main() {
 
     when(
       () => mockRemoteDataSource.recordSession(
-        userId: any(named: 'userId'),
-        tenantId: any(named: 'tenantId'),
         deviceFingerprint: any(named: 'deviceFingerprint'),
-        regionId: any(named: 'regionId'),
         userAgent: any(named: 'userAgent'),
       ),
     ).thenAnswer((_) async {});
@@ -87,10 +83,7 @@ void main() {
 
         verifyNever(
           () => mockRemoteDataSource.recordSession(
-            userId: any(named: 'userId'),
-            tenantId: any(named: 'tenantId'),
             deviceFingerprint: any(named: 'deviceFingerprint'),
-            regionId: any(named: 'regionId'),
             userAgent: any(named: 'userAgent'),
           ),
         );
@@ -122,10 +115,7 @@ void main() {
 
           verify(
             () => mockRemoteDataSource.recordSession(
-              userId: tUser.id,
-              tenantId: tUser.tenantId,
               deviceFingerprint: 'fp-123',
-              regionId: tUser.regionId,
               userAgent: 'android: Pixel 8',
             ),
           ).called(1);
@@ -146,10 +136,7 @@ void main() {
 
         verify(
           () => mockRemoteDataSource.recordSession(
-            userId: tUser.id,
-            tenantId: tUser.tenantId,
             deviceFingerprint: 'fp-123',
-            regionId: tUser.regionId,
             userAgent: 'android: Unknown',
           ),
         ).called(1);
@@ -178,10 +165,7 @@ void main() {
 
         verify(
           () => mockRemoteDataSource.recordSession(
-            userId: tUser.id,
-            tenantId: tUser.tenantId,
             deviceFingerprint: 'fp-123',
-            regionId: tUser.regionId,
             userAgent: 'android: Pixel 8',
           ),
         ).called(1);

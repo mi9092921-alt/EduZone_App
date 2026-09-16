@@ -14,7 +14,6 @@ class AppUser extends Equatable {
   final String? avatarUrl;
   final UserRole primaryRole;
   final String tenantId;
-  final String regionId;
   final AccountStatus accountStatus;
   final int tokenVersion;
   final String? phone;
@@ -33,7 +32,6 @@ class AppUser extends Equatable {
     this.avatarUrl,
     this.primaryRole = UserRole.student,
     this.tenantId = '',
-    this.regionId = '',
     this.accountStatus = AccountStatus.active,
     this.tokenVersion = 0,
     this.phone,
@@ -71,7 +69,6 @@ class AppUser extends Equatable {
     String? avatarUrl,
     UserRole? primaryRole,
     String? tenantId,
-    String? regionId,
     AccountStatus? accountStatus,
     int? tokenVersion,
     String? phone,
@@ -90,7 +87,6 @@ class AppUser extends Equatable {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       primaryRole: primaryRole ?? this.primaryRole,
       tenantId: tenantId ?? this.tenantId,
-      regionId: regionId ?? this.regionId,
       accountStatus: accountStatus ?? this.accountStatus,
       tokenVersion: tokenVersion ?? this.tokenVersion,
       phone: phone ?? this.phone,
@@ -112,7 +108,6 @@ class AppUser extends Equatable {
     avatarUrl,
     primaryRole,
     tenantId,
-    regionId,
     accountStatus,
     tokenVersion,
     phone,

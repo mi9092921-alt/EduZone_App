@@ -156,49 +156,38 @@ class AuthRemoteDataSource {
     }
   }
 
-  /// Records a new session entry.
+  /// Records a new session entry via the `record_current_session()` RPC.
   ///
-  /// Best-effort (every failure is already swallowed below), but
-  /// previously had no timeout on either call, so a stalled connection
-  /// left this hanging indefinitely instead of failing fast like the
-  /// surrounding `catch` implies. See Section 13 ("Networking
-  /// Reliability") of the project instructions.
+  /// The RPC is SECURITY DEFINER: it derives identity/tenant from the JWT,
+  /// resolves the internal device id from [deviceFingerprint], takes
+  /// region_id from the authoritative users row, and captures the client IP
+  /// server-side from request headers — a client-supplied value would be
+  /// trivially spoofable. Only meaningful on a genuinely fresh login (see
+  /// `AuthActivitySyncService.recordSession`).
+  ///
+  /// Routed through `NetworkGuard.write` (bounded timeout, never
+  /// auto-retried): this is a mutation with server-side side effects
+  /// (inserts a sessions row), so blindly retrying a client-perceived
+  /// timeout could double-insert. Failures still stay best-effort — the
+  /// calling service swallows them so session tracking can never block or
+  /// fail the login flow. See Section 13 ("Networking Reliability").
   Future<void> recordSession({
-    required String userId,
-    required String tenantId,
     String? deviceFingerprint,
-    String? regionId,
-    String? ipAddress,
     String? userAgent,
   }) async {
-    try {
-      // Get internal device ID if fingerprint exists
-      String? internalDeviceId;
-      if (deviceFingerprint != null) {
-        final device = await _client
-            .from('devices')
-            .select('id')
-            .eq('user_id', userId)
-            .eq('device_id', deviceFingerprint)
-            .maybeSingle()
-            .timeout(NetworkConfig.telemetryTimeout);
-        internalDeviceId = device?['id'] as String?;
+    return NetworkGuard.write(() async {
+      try {
+        await _client.rpc(
+          'record_current_session',
+          params: {
+            'p_device_fingerprint': deviceFingerprint,
+            'p_user_agent': userAgent,
+          },
+        );
+      } on PostgrestException catch (e) {
+        throw _mapRpcException(e);
       }
-
-      await _client.from('sessions').insert({
-        'user_id': userId,
-        'tenant_id': tenantId,
-        'device_id': internalDeviceId,
-        'region_id': regionId,
-        'ip_address': ipAddress,
-        'user_agent': userAgent,
-        'is_active': true,
-        'started_at': DateTime.now().toIso8601String(),
-        'updated_at': DateTime.now().toIso8601String(),
-      }).timeout(NetworkConfig.telemetryTimeout);
-    } catch (e) {
-      debugPrint('[Auth] Record session error: ${e.runtimeType}');
-    }
+    });
   }
 
   // ─── Bind Device ──────────────────────────────────────────────

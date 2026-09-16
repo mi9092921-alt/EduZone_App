@@ -384,6 +384,48 @@ void main() {
     });
   });
 
+  group('recordSession', () {
+    test('calls record_current_session RPC with device fingerprint and agent',
+        () async {
+      stubRpc('record_current_session', 'session-uuid-1', withParams: true);
+
+      await dataSource.recordSession(
+        deviceFingerprint: 'fp-123',
+        userAgent: 'android: Pixel 8',
+      );
+
+      verify(
+        () => mockClient.rpc(
+          'record_current_session',
+          params: {
+            'p_device_fingerprint': 'fp-123',
+            'p_user_agent': 'android: Pixel 8',
+          },
+        ),
+      ).called(1);
+    });
+
+    test('maps AUTH_REQUIRED PostgrestException to a typed exception',
+        () async {
+      stubRpcThrows(
+        'record_current_session',
+        const PostgrestException(message: 'AUTH_REQUIRED', code: 'P0001'),
+        withParams: true,
+      );
+
+      await expectLater(
+        () => dataSource.recordSession(deviceFingerprint: 'fp-123'),
+        throwsA(
+          isA<ServerException>().having(
+            (e) => e.code,
+            'code',
+            'AUTH_REQUIRED',
+          ),
+        ),
+      );
+    });
+  });
+
   group('login', () {
     const tEmail = 'test@example.com';
     const tPassword = 'password123';

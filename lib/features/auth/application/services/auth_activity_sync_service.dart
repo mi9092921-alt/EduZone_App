@@ -63,10 +63,7 @@ class AuthActivitySyncService {
 
       if (recordSession) {
         await _remoteDataSource.recordSession(
-          userId: user.id,
-          tenantId: user.tenantId,
           deviceFingerprint: fingerprint,
-          regionId: user.regionId,
           userAgent:
               '${_deviceService.platform}: ${_deviceService.deviceInfoJson['model'] ?? 'Unknown'}',
         );
