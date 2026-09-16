@@ -44,6 +44,18 @@ import 'chunk_transport.dart';
 ///
 /// Refreshes the short-lived server URL via Supabase Edge Function
 /// before any HTTP request attempt (start, retry, resume).
+/// Redacts any embedded URLs (signed CDN links carry auth tokens in the
+/// query string — P6.26 "Secure Temporary URLs") from a link-refresh
+/// failure before it reaches logs/Sentry. The [StackTrace] itself is code
+/// frames only and stays intact; only the exception message is scrubbed.
+String _redactLinkRefreshFailure(Object e) {
+  return e
+      .toString()
+      .replaceAll(RegExp(r'https?://\S+'), '<redacted-url>')
+      .replaceAll(RegExp(r'signature=[^&\s]*', caseSensitive: false), 'signature=<redacted>')
+      .replaceAll(RegExp(r'token=[^&\s]*', caseSensitive: false), 'token=<redacted>');
+}
+
 @pragma('vm:entry-point')
 Future<Task?> handleTokenRefresh(Task task) async {
   try {
@@ -70,8 +82,14 @@ Future<Task?> handleTokenRefresh(Task task) async {
 
     return task.copyWith(url: freshUrl);
   } catch (e, stack) {
+    // Never interpolate $e/$stack here: link-refresh failures almost
+    // certainly embed the expired signed CDN URL (auth token in query
+    // string) in the exception message — local console gets only the
+    // safe runtime type, Sentry gets the redacted message + real stack.
     if (kDebugMode) {
-      debugPrint('⚠️ [handleTokenRefresh] Link refresh failed: $e\n$stack');
+      debugPrint(
+        '⚠️ [handleTokenRefresh] Link refresh failed: ${e.runtimeType}',
+      );
     }
     // This callback can run in a background isolate (see
     // _supabaseClientForBackgroundCallback's re-init fallback above),
@@ -81,7 +99,13 @@ Future<Task?> handleTokenRefresh(Task task) async {
     // unconditionally here. Without this, a failed background link
     // refresh (which silently degrades a download's retry behavior)
     // produced zero production observability signal at all.
-    GlobalErrorHandler.logError(e, stack);
+    GlobalErrorHandler.logError(
+      Exception(
+        '[handleTokenRefresh] Link refresh failed (${e.runtimeType}): '
+        '${_redactLinkRefreshFailure(e)}',
+      ),
+      stack,
+    );
     return null;
   }
 }
@@ -135,14 +159,24 @@ Future<String?> fetchFreshTrackUrl({
                 ? freshInfo.formats.first.videoUrl
                 : null));
   } catch (e, stack) {
+    // Same redaction rationale as handleTokenRefresh() above: the
+    // exception message can embed the signed sourceUrl being refreshed.
     if (kDebugMode) {
-      debugPrint('⚠️ [fetchFreshTrackUrl] Link refresh failed: $e\n$stack');
+      debugPrint(
+        '⚠️ [fetchFreshTrackUrl] Link refresh failed: ${e.runtimeType}',
+      );
     }
     // See the matching comment in handleTokenRefresh() above: this is
     // called from the same possibly-uninitialized background isolate,
     // and GlobalErrorHandler.logError() is safe to call unconditionally
     // there.
-    GlobalErrorHandler.logError(e, stack);
+    GlobalErrorHandler.logError(
+      Exception(
+        '[fetchFreshTrackUrl] Link refresh failed (${e.runtimeType}): '
+        '${_redactLinkRefreshFailure(e)}',
+      ),
+      stack,
+    );
     return null;
   }
 }
