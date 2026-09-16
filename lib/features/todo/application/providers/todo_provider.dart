@@ -5,8 +5,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/logging/domain/app_event.dart';
 import '../../../../core/logging/logging_providers.dart';
-import '../../../../core/network/supabase_client.dart';
-import '../../../../shared/cross_feature/auth_shared.dart';
+import '../../../auth/application/providers/auth_provider.dart';
 import '../../../auth/domain/entities/auth_state.dart';
 import '../../data/datasources/todo_remote_ds_impl.dart';
 import '../../data/repositories/todo_repo_impl.dart';
@@ -22,7 +21,7 @@ part 'todo_provider.g.dart';
 
 @riverpod
 TodoRemoteDataSourceImpl todoRemoteDataSource(Ref ref) {
-  return TodoRemoteDataSourceImpl(supabaseClient: SupabaseService.client);
+  return TodoRemoteDataSourceImpl(supabaseClient: ref.watch(supabaseClientProvider));
 }
 
 @riverpod
