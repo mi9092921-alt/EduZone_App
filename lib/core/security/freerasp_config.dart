@@ -43,10 +43,11 @@ bool isFreeraspConfigured() {
 /// In release builds, missing values fail fast instead of silently shipping
 /// a non-functional (empty signing hash / team id) RASP configuration.
 TalsecConfig _getTalsecConfig() {
-  const String kWatcherMail = String.fromEnvironment(
-    'SECURITY_WATCHER_MAIL',
-    defaultValue: 'mi9092921@gmail.com',
-  );
+  // Where Talsec sends threat alerts. Deliberately has NO hardcoded default —
+  // a personal mailbox in source is both PII and a phishing target. Supplied
+  // via .env.security (see .env.security.example); release builds fail fast
+  // below if it was never provided.
+  const String kWatcherMail = String.fromEnvironment('SECURITY_WATCHER_MAIL');
 
   // Android signing certificate SHA-256 hash (Base64), e.g. output of:
   //   keytool -list -v -keystore <release>.keystore -alias <alias>
@@ -65,16 +66,19 @@ TalsecConfig _getTalsecConfig() {
 
   // Fail fast in release if the real production values were never supplied.
   // Without this, the app would silently ship with an empty signing-hash
-  // allowlist, which makes freeRASP's tamper/repackaging detection useless.
+  // allowlist (useless tamper/repackaging detection) and/or threats detected
+  // with nowhere to report them (empty watcher mail).
   //
   // NOTE: this is a plain `if`/`throw`, not `assert()` — assert bodies are
   // stripped out of release builds by default, so an assert() here would
   // never actually run in production and would defeat the whole point.
   if (kReleaseMode &&
-      (kExpectedSignatureHash.isEmpty || kIosTeamId.isEmpty)) {
+      (kExpectedSignatureHash.isEmpty ||
+          kIosTeamId.isEmpty ||
+          kWatcherMail.isEmpty)) {
     throw StateError(
-      'freeRASP misconfigured: SECURITY_ANDROID_SIGNING_HASH and '
-      'SECURITY_IOS_TEAM_ID must be supplied via '
+      'freeRASP misconfigured: SECURITY_ANDROID_SIGNING_HASH, '
+      'SECURITY_IOS_TEAM_ID and SECURITY_WATCHER_MAIL must be supplied via '
       '--dart-define-from-file=.env.security for release builds.',
     );
   }
