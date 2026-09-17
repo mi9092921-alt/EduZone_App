@@ -630,6 +630,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get permissionGranted => 'Granted';
 
   @override
+  String get permissionLabel => 'Permission';
+
+  @override
   String get permissionDenied => 'Denied';
 
   @override

@@ -630,6 +630,9 @@ class AppLocalizationsAr extends AppLocalizations {
   String get permissionGranted => 'مسموح';
 
   @override
+  String get permissionLabel => 'إذن';
+
+  @override
   String get permissionDenied => 'مرفوض';
 
   @override

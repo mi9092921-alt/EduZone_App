@@ -1202,6 +1202,12 @@ abstract class AppLocalizations {
   /// **'Granted'**
   String get permissionGranted;
 
+  /// No description provided for @permissionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission'**
+  String get permissionLabel;
+
   /// No description provided for @permissionDenied.
   ///
   /// In en, this message translates to:

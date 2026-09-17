@@ -335,6 +335,7 @@
   "notificationPermission": "الإشعارات",
   "notificationPermissionDescription": "يُستخدم لتنبيهك بالمواعيد ونشاط الدورات والتحديثات المهمة.",
   "permissionGranted": "مسموح",
+  "permissionLabel": "إذن",
   "permissionDenied": "مرفوض",
   "permissionPermanentlyDenied": "معطل (من الإعدادات)",
   "openSettings": "فتح الإعدادات",

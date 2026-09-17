@@ -41,10 +41,10 @@ class SettingsPermissionsCard extends StatelessWidget {
         child: Column(
           children: List.generate(
             3,
-            (index) => const SettingsTile(
+            (index) => SettingsTile(
               icon: Icons.shield_outlined,
-              title: 'Permission', // check-ignore
-              trailing: SettingsValueDisplay(value: 'Denied'),
+              title: l10n.permissionLabel,
+              trailing: SettingsValueDisplay(value: l10n.permissionDenied),
             ),
           ),
         ),

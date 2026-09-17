@@ -332,6 +332,7 @@
   "notificationPermission": "Notifications",
   "notificationPermissionDescription": "Used to alert you about deadlines, course activity, and important updates.",
   "permissionGranted": "Granted",
+  "permissionLabel": "Permission",
   "permissionDenied": "Denied",
   "permissionPermanentlyDenied": "Disabled (Settings)",
   "openSettings": "Open Settings",
