@@ -148,4 +148,13 @@ EduZone_App_Audit_Report_ar.md
 ACCESSIBILITY_FIXES.md
 test_output.json
 
+# Local working notes / session artifacts (kept on disk, never committed)
+_local_drafts_backup/
+supabase_logs.json
+
+# Stray npm lockfile from an accidental root install — this is a Flutter
+# project; the ONLY legitimate lockfile is supabase/package-lock.json
+# (schema-deploy tooling), so this rule is root-anchored on purpose.
+/package-lock.json
+
 *.patch

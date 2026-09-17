@@ -9,6 +9,34 @@
 
 ### Added / Fixed
 
+- **الأمان (2026-09-18)**: أُضيف حجب `beforeSend` لـ Sentry — كل حدث يُنقَّى قبل
+  مغادرته الجهاز: توكنات الاستعلامات (`token=…`، `apikey=…`، `key=…`)، وترويسات
+  `Bearer`، وكلمات المرور/الأسرار/التواقيع تُستبدل بـ `***` في رسائل الاستثناءات
+  ورسائل الـ breadcrumbs والرسالة المنسّقة. التصميم fail-closed: إن فشلت التنقية
+  نفسها يُهمَل الحدث كاملًا بدل أن يُرسَل دون تنقية (URLs التحميل الموقّعة تحمل
+  توكن في query string — كانت تصل إلى Sentry عبر نص الاستثناء). اختبارات جديدة
+  في `test/core/services/sentry_service_test.dart`.
+- **الأمان (2026-09-18)**: أُزيل البريد الشخصي الافتراضي من
+  `lib/core/security/freerasp_config.dart` — `SECURITY_WATCHER_MAIL` صار قيمة
+  env إلزامية تُدخل عبر `.env.security`، وأُضيف للفحص fail-fast في إصدارات
+  الـ release (إضافةً لـ hash التوقيع وteam id). عُدّل `.env.security.example`
+  وفقًا لذلك (انظر أيضًا F-12 في تقرير الجاهزية: تدوير المفاتيح).
+- **النظافة (2026-09-18)**: أُلغي تتبع ملفات لا مكان لها في المستودع:
+  `.zcode/plans/` (خطط جلسات — كان gitignore أُضيف دون رفع التتبع)،
+  `_local_drafts_backup/`، `supabase_logs.json` (تفريغ سجلات منصة)، و
+  `package-lock.json` الجذري المُتيم (لا package.json جذريًا — الـ lockfile
+  الشرعي الوحيد `supabase/package-lock.json` لأدوات نشر الـ schema). أُضيفت
+  قواعد gitignore تمنع عودتها.
+- **الأصول (2026-09-18)**: حُذف `assets/certs/supabase_leaf.pem` — أصل ميت
+  غير مُشار إليه في أي مكان (V13 من تقرير الجاهزية) كانت صلاحيته ستنتهي
+  في 2026-09-26. الشهادتان المُثبَّتان فعليًا (`supabase.pem`,
+  `backup_ca.pem`) لم تُمسّا.
+- **التوطين (2026-09-18)**: وُجّهت نصوص الـ skeleton في
+  `settings_permissions_card.dart` — كانت 'Permission'/'Denied' إنجليزية
+  ثابتة تظهر داخل واجهة عربية أثناء التحميل — بمفتاحين من الـ l10n
+  (`permissionLabel` جديد، و`permissionDenied` الموجود). تطابق المفاتيح
+  379/379 في الملفين.
+
 - **CI/CD (2026-09-13 — أول تشغيل فعلي للـ CI)**: كان كل job يعتمد على Flutter
   يموت في خطوة الإعداد منذ إنشاء الـ workflow لأن `subosito/flutter-action@v2`
   لا يستطيع حل **نطاق** الإصدار (`environment.flutter: >=3.41.4 <4.0.0` من
