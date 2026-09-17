@@ -177,6 +177,9 @@ jobs:
           # These integration tests do not require animations to be disabled.
           disable-animations: false
           emulator-boot-timeout: 1200
+          # Pin the emulator binary so SDK-image updates cannot silently
+          # change the headless ADB/graphics path used by this job.
+          emulator-build: 12895296
           # Use the fully software renderer for headless CI. This avoids
           # renderer/ADB instability while the APK is installed and launched.
           emulator-options: >-
