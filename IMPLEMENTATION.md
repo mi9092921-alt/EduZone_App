@@ -68,7 +68,7 @@ for release verification.
 ### Getting the SHA-256 signing hash for `SECURITY_ANDROID_SIGNING_HASH`
 
 Required separately by `lib/core/security/freerasp_config.dart` (see
-`.env.security.example`) so freeRASP can detect a repackaged/resigned APK:
+`.env.example`) so freeRASP can detect a repackaged/resigned APK:
 
 ```bash
 keytool -list -v -keystore eduzone-release.keystore -alias eduzone | grep SHA256

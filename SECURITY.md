@@ -19,7 +19,7 @@ individually, each with what it defends against and what it doesn't.
 If you're looking for the full offline-download threat model and key
 lifecycle, see `EduZone_Offline_Download_Security_Trusted_Playback_Architecture.md`.
 This file is the shorter, code-grounded companion referenced directly from
-inline comments (`android/app/build.gradle.kts`, `.env.security.example`).
+inline comments (`android/app/build.gradle.kts`, `.env.example`).
 
 ---
 
@@ -35,8 +35,8 @@ inline comments (`android/app/build.gradle.kts`, `.env.security.example`).
   `deploy.yml` writes locally from the `PLAY_STORE_JSON_KEY` secret), and
   `*.p8`/`*.p12`/`*.mobileprovision` (iOS signing material, not currently
   produced by any workflow but git-ignored defensively) are git-ignored.
-  `.env.example` and `.env.security.example` are templates only — see
-  `.gitignore` for the exact rules.
+  `.env.example` (the single environment template) is a template only —
+  see `.gitignore` for the exact rules.
 - `tool/check_config_security.py` (wired into CI as the `Config/Secrets
   Security Guard` step, and into `make check-all`) statically enforces
   this: it fails if any of the patterns above lose `.gitignore` coverage,
@@ -236,7 +236,7 @@ release build time — see `IMPLEMENTATION.md`, REL-001).
 
 **Default posture is log-only, not enforcing:**
 `SECURITY_ENFORCE_THREAT_TERMINATION` defaults to `false`
-(`.env.security.example`). Threats are reported to a Supabase
+(`.env.example`). Threats are reported to a Supabase
 `security_incidents` table (fire-and-forget insert with a device
 fingerprint, app version, and platform info — see `_logThreatToSupabase`
 in `lib/core/security/security_service.dart`), with a capped in-memory

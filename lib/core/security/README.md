@@ -22,9 +22,9 @@ keytool -list -v -keystore <path-to-release>.keystore -alias <alias> | grep SHA2
 echo -n "<HEX_WITHOUT_COLONS>" | xxd -r -p | base64
 ```
 
-### ج. ملء `.env.security`
+### ج. ملء `.env`
 
-انسخ `.env.security.example` إلى `.env.security` (هذا الملف الأخير مُستثنى من Git تلقائيًا عبر `.gitignore`) واملأ القيم الحقيقية:
+أضِف القيم إلى ملف `.env` الوحيد (مُستثنى من Git تلقائيًا عبر `.gitignore` — القالب `.env.example`)：
 
 ```
 SECURITY_ANDROID_SIGNING_HASH=<القيمة من الخطوة ب>
@@ -34,11 +34,11 @@ SECURITY_IOS_TEAM_ID=<Apple Developer Team ID>
 ### د. البناء بالقيم الحقيقية
 
 ```bash
-flutter build apk --release --dart-define-from-file=.env.security
-flutter build ipa --release --dart-define-from-file=.env.security
+flutter build apk --release --dart-define-from-file=.env
+flutter build ipa --release --dart-define-from-file=.env
 ```
 
-بدون `--dart-define-from-file=.env.security`، البناء في وضع release سيفشل عمدًا (`StateError`) بدل أن يُشحن بإعدادات فارغة غير فعّالة — راجع `lib/core/security/freerasp_config.dart`.
+بدون تزويد مفاتيح `SECURITY_*` داخل `.env`، البناء في وضع release سيفشل عمدًا (`StateError` عند التشغيل) بدل أن يُشحن بإعدادات فارغة غير فعّالة — راجع `lib/core/security/freerasp_config.dart`.
 
 ### هـ. اختبار على جهاز حقيقي
 

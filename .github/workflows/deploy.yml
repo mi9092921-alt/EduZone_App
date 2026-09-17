@@ -71,7 +71,12 @@ jobs:
           PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          printf '%s' "$ENV_PROD" > .env.prod
+          # .env is the single environment file (see AGENTS.md). The
+          # ENV_PROD secret should now also carry the SECURITY_* RASP
+          # keys — a release built without them fail-fasts freeRASP at
+          # startup (logged, not a crash) and ships without tamper
+          # detection.
+          printf '%s' "$ENV_PROD" > .env
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/release.keystore
           {
             echo "storeFile=$(pwd)/android/release.keystore"
@@ -85,7 +90,7 @@ jobs:
           fi
       - name: flutter build appbundle --release
         if: steps.check.outputs.ready == 'true'
-        run: flutter build appbundle --release --dart-define-from-file=.env.prod
+        run: flutter build appbundle --release --dart-define-from-file=.env
       - name: fastlane android internal
         if: steps.check.outputs.ready == 'true'
         env:

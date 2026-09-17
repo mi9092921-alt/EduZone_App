@@ -79,11 +79,11 @@ dist/
 build/
 *.log
 
-# Environment files
+# Environment files — `.env` is the single env file; `.env.example` is
+# the only committed template.
 .env
 .env.*
 !.env.example
-!.env.security.example
 
 # IDE files
 .vscode/

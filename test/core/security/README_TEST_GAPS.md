@@ -19,7 +19,8 @@
    cleanly** via the new `isFreeraspConfigured()` check
    (`freerasp_config.dart`) whenever `SECURITY_ANDROID_SIGNING_HASH` is
    empty in a non-release build — confirmed to be every local build,
-   since the team does not currently supply `.env.security`. Previously
+   since `flutter test` runs are never passed the SECURITY_* dart-defines
+   (test runs do not read `.env`). Previously
    this let freerasp's own `AndroidConfig` constructor throw a
    `configuration-exception`, logged as a confusing generic startup
    failure. Release-build behavior (fail fast if genuinely misconfigured)
@@ -61,7 +62,8 @@ See `security_service_test.dart`, `guards/lifecycle_guard_test.dart`, and
   false-positive startup failures (this is the corrected behavior after
   fix #3).
 - `isFreeraspConfigured()`: correctly returns `false` for the team's
-  actual local-dev configuration (no `.env.security`).
+  actual local-dev configuration (no SECURITY_* dart-defines in test
+  runs).
 - `LifecycleGuard` and `ScreenshotGuard`: never throw or leak an async
   error even without a mocked native channel, for every relevant
   lifecycle state.

@@ -25,7 +25,7 @@ Rules:
             never be one `git add -A` away from being committed.
 
   ERROR  A tracked file (per `git ls-files`) matches `.env` naming
-         convention but is not `.env.example` / `.env.security.example`.
+         convention but is not `.env.example`.
          -> Section 10: ".env.example ... [is a] documentation/
             configuration template, not secret storage." A real `.env*`
             file must never be committed, regardless of gitignore state.
@@ -117,7 +117,7 @@ def check_gitignore_coverage(report: Report) -> None:
 
 # ── Rule 2: no real .env* file tracked in git ───────────────────────────────
 
-ALLOWED_ENV_FILENAMES = {".env.example", ".env.security.example"}
+ALLOWED_ENV_FILENAMES = {".env.example"}
 
 
 def _git_ls_files() -> list[str] | None:
@@ -149,14 +149,15 @@ def check_no_tracked_env_files(report: Report, tracked: list[str] | None) -> Non
         name = Path(rel).name
         if name in ALLOWED_ENV_FILENAMES:
             continue
-        if name == ".env" or (name.startswith(".env.") and not name.endswith(".example")):
-            report.add(
-                rel,
-                0,
-                "A real .env-style file is tracked in git — only "
-                "`.env.example` and `.env.security.example` may be "
-                "committed; this looks like it could contain real config.",
-            )
+            if name == ".env" or (name.startswith(".env.") and not name.endswith(".example")):
+                report.add(
+                    rel,
+                    0,
+                    "A real .env-style file is tracked in git — only "
+                    "`.env.example` (the single environment template) may "
+                    "be committed; this looks like it could contain real "
+                    "config.",
+                )
 
 
 # ── Rule 3: no non-empty defaultValue for a secret-shaped env var name ──────

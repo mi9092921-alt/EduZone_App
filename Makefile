@@ -1,23 +1,22 @@
-.PHONY: run-dev run-staging build-prod gen-l10n gen-code analyze check-a11y check-architecture check-provider-cycles check-session-invalidation check-rtl check-design-tokens check-performance check-memory-hygiene check-localizations check-auth-security check-logging-security check-config-security check-dependency-floor check-all test clean
+.PHONY: run-dev build-prod build-prod-aab build-ios gen-l10n gen-code analyze check-a11y check-architecture check-provider-cycles check-session-invalidation check-rtl check-design-tokens check-performance check-memory-hygiene check-localizations check-auth-security check-logging-security check-config-security check-dependency-floor check-all test clean
 
 ## ─── Development ───────────────────────────────────────────────────────
 
 run-dev:
 	flutter run --dart-define-from-file=.env
 
-run-staging:
-	flutter run --dart-define-from-file=.env.staging
-
 ## ─── Build ─────────────────────────────────────────────────────────────
+# Release builds use the same single .env — flip the APP_ENV/SENTRY_DSN
+# pair inside it to the production values before building for release.
 
 build-prod:
-	flutter build apk --release --dart-define-from-file=.env.prod
+	flutter build apk --release --dart-define-from-file=.env
 
 build-prod-aab:
-	flutter build appbundle --release --dart-define-from-file=.env.prod
+	flutter build appbundle --release --dart-define-from-file=.env
 
 build-ios:
-	flutter build ipa --release --dart-define-from-file=.env.prod
+	flutter build ipa --release --dart-define-from-file=.env
 
 ## ─── Code Generation ──────────────────────────────────────────────────
 

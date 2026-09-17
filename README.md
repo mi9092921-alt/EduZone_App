@@ -226,23 +226,26 @@ flutter pub get
 Copy the environment template and fill in your values:
 
 ```bash
-cp .env.example .env.local
+cp .env.example .env
 ```
 
 ```env
-# .env.local
+# .env — the single environment file
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key-here
 
-# Environment: development | staging | production
+# Flavor: flip APP_ENV and SENTRY_DSN together for production
 APP_ENV=development
+SENTRY_DSN=your-sentry-dsn
 
-# Feature Flags (optional for local environment)
-ENABLE_DARK_MODE=true
-ENABLE_PUSH_NOTIFICATIONS=true
+# RASP security flags (required for release builds — see
+# .env.example for the full annotated list)
+SECURITY_ANDROID_SIGNING_HASH=
+SECURITY_IOS_TEAM_ID=
+SECURITY_WATCHER_MAIL=
 ```
 
-> **⚠️ Security Warning:** Never commit `.env.local` to Git. The file is listed in `.gitignore`.
+> **⚠️ Security Warning:** Never commit `.env` to Git. The file is listed in `.gitignore`.
 
 ### 4. Generate Build Runner Code
 
@@ -260,10 +263,10 @@ flutter run -d android
 flutter run -d ios
 
 # Run with a specific environment
-flutter run --dart-define-from-file=.env.local
+flutter run --dart-define-from-file=.env
 
 # Run in Release mode for testing
-flutter run --release --dart-define-from-file=.env.local
+flutter run --release --dart-define-from-file=.env
 ```
 
 ---
@@ -274,10 +277,13 @@ flutter run --release --dart-define-from-file=.env.local
 |---|---|---|---|
 | `SUPABASE_URL` | ✅ | URL | Supabase project URL |
 | `SUPABASE_ANON_KEY` | ✅ | JWT | Supabase public (anon) key |
-| `APP_ENV` | ✅ | `development` · `staging` · `production` | Runtime environment |
-| `ENABLE_DARK_MODE` | — | `true` · `false` | Enable Dark Mode (default: true) |
-| `ENABLE_PUSH_NOTIFICATIONS` | — | `true` · `false` | Push notifications |
-| `SENTRY_DSN` | — | DSN URL | Error tracking in production |
+| `APP_ENV` | ✅ | `development` · `production` | Build flavor (flip with `SENTRY_DSN`) |
+| `SENTRY_DSN` | — | DSN URL | Error tracking |
+| `SECURITY_ANDROID_SIGNING_HASH` | release | Base64 SHA-256 | freeRASP signing-hash allowlist |
+| `SECURITY_IOS_TEAM_ID` | release | Team ID | freeRASP iOS team verification |
+| `SECURITY_IOS_BUNDLE_ID` | — | Bundle ID | freeRASP iOS bundle check |
+| `SECURITY_WATCHER_MAIL` | release | Email | Talsec threat-alert recipient |
+| `SECURITY_ENFORCE_THREAT_TERMINATION` | — | `true` · `false` | Terminate app on detected threat |
 
 > **Note:** The `service_role` key is **never** used in the app. All sensitive operations are routed through Supabase Edge Functions on the server side.
 
@@ -290,12 +296,12 @@ flutter run --release --dart-define-from-file=.env.local
 ```bash
 # APK for testing
 flutter build apk --release \
-  --dart-define-from-file=.env.local \
+  --dart-define-from-file=.env \
   --target-platform android-arm64
 
 # App Bundle for Google Play
 flutter build appbundle --release \
-  --dart-define-from-file=.env.production
+  --dart-define-from-file=.env
 
 # Analyze bundle size
 flutter build apk --analyze-size
@@ -306,7 +312,7 @@ flutter build apk --analyze-size
 ```bash
 # Archive for App Store (requires macOS)
 flutter build ipa --release \
-  --dart-define-from-file=.env.production
+  --dart-define-from-file=.env
 
 # Export IPA
 flutter build ipa --export-options-plist=ios/ExportOptions.plist

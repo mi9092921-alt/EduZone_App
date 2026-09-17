@@ -40,8 +40,8 @@ flutter test --coverage
 # Build APK (release check)
 flutter build apk --release --dart-define-from-file=.env --target-platform android-arm64
 
-# Build App Bundle (production)
-flutter build appbundle --release --dart-define-from-file=.env.prod
+# Build App Bundle (production — flip the APP_ENV/SENTRY_DSN pair in .env first)
+flutter build appbundle --release --dart-define-from-file=.env
 ```
 
 > After `flutter test` sessions, run `flutter clean` before a release
@@ -389,12 +389,15 @@ These are common mistakes that will be caught in review:
 The app is configured via `--dart-define-from-file`:
 
 ```
-.env                  ← development (not committed)
-.env.prod             ← production (not committed)
-.env.security         ← RASP/security flags (not committed)
-.env.example          ← committed, template only
-.env.security.example ← committed, template only
+.env         ← THE single environment file (not committed). Contains the
+               Supabase config, the APP_ENV/SENTRY_DSN flavor pair, and the
+               RASP/security flags. Switching dev ↔ production = flipping
+               that pair inside the file.
+.env.example ← committed, template only
 ```
+
+Every run/build command uses exactly `--dart-define-from-file=.env`.
+There are no `.env.prod` / `.env.security` files anymore.
 
 Read env values via:
 
