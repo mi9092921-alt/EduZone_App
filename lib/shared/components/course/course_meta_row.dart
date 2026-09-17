@@ -35,23 +35,9 @@ class CourseMetaRow extends StatelessWidget {
       spacing: AppSpacing.sm,
       runSpacing: 4,
       children: [
-        // Rating
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.star_rounded, color: AppColors.warning, size: 18),
-            const SizedBox(width: AppSpacing.xs2),
-            Text(
-              course.ratingLabel,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: ds.textPrimary,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-        _buildDot(),
-
+        // Rating intentionally NOT shown here — the dedicated
+        // CourseRatingSection (About tab) owns rating display; the
+        // discover/saved cards carry their own data-gated chip.
         // Students
         if (course.studentsCount != null) ...[
           Row(

@@ -611,5 +611,19 @@
     }
   },
   "taskInputHint": "What needs to be done?",
-  "dismissOfflineNotice": "Dismiss offline notice"
+  "dismissOfflineNotice": "Dismiss offline notice",
+  "ratingSectionTitle": "Ratings",
+  "ratingsCountLabel": "{count, plural, zero{No ratings yet} one{1 rating} other{{count} ratings}}",
+  "@ratingsCountLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "rateThisCourse": "Rate this course",
+  "ratingNotEnrolled": "Enroll in the course to be able to rate it",
+  "ratingSubmitted": "Your rating has been submitted",
+  "ratingUpdated": "Your rating has been updated",
+  "ratingSubmitFailed": "Couldn't submit your rating. Please try again."
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/error/failures.dart';
@@ -397,6 +399,50 @@ Future<List<Course>> savedCourses(Ref ref) async {
   );
 }
 
+// ─── Course ratings ──────────────────────────────────────────────────────────
+
+/// The current user's own rating for a course (1–5), or null when they
+/// haven't rated yet. Reads only the own row (course_ratings SELECT
+/// policy) — other students' individual ratings are never exposed.
+@riverpod
+Future<int?> myCourseRating(Ref ref, String courseId) async {
+  final repository = ref.watch(coursesRepositoryProvider);
+  final result = await repository.getMyRating(courseId);
+  return result.fold(
+    (failure) => throw failure.toAppException(),
+    (rating) => rating,
+  );
+}
+
+/// Submits/updates the user's star rating through the repository and
+/// refreshes every provider that renders the course-wide aggregate.
+@riverpod
+class CourseRatingSubmit extends _$CourseRatingSubmit {
+  @override
+  FutureOr<void> build() async {}
+
+  Future<void> submit(String courseId, int rating) async {
+    state = const AsyncLoading();
+    final result = await AsyncValue.guard(() async {
+      final repository = ref.read(coursesRepositoryProvider);
+      (await repository.rateCourse(courseId: courseId, rating: rating)).fold(
+        (failure) => throw failure.toAppException(),
+        (aggregate) => aggregate,
+      );
+    });
+    if (result.hasError) {
+      state = AsyncError(result.error!, result.stackTrace!);
+      return;
+    }
+    state = const AsyncData(null);
+    // The RPC already recomputed the aggregate server-side; re-read it
+    // wherever it is displayed (cards, preview, details).
+    ref.invalidate(myCourseRatingProvider(courseId));
+    ref.invalidate(publicCoursesProvider);
+    ref.invalidate(savedCoursesProvider);
+  }
+}
+
 // ─── Session cleanup ─────────────────────────────────────────────────────────
 
 /// Invalidates every user-scoped provider owned by the `courses` feature.
@@ -420,4 +466,5 @@ void invalidateCoursesProviders(Ref ref) {
   ref.invalidate(coursesRemoteDataSourceProvider);
   ref.invalidate(bookmarkedCoursesProvider);
   ref.invalidate(courseProgressProvider);
+  ref.invalidate(myCourseRatingProvider); // family: clears every courseId
 }

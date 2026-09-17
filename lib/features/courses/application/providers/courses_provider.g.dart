@@ -1379,3 +1379,146 @@ final class SavedCoursesProvider
 }
 
 String _$savedCoursesHash() => r'cefabc186d9495bd51ee124f2a293b7ed7fdde42';
+
+/// The current user's own rating for a course (1–5), or null when they
+/// haven't rated yet. Reads only the own row (course_ratings SELECT
+/// policy) — other students' individual ratings are never exposed.
+
+@ProviderFor(myCourseRating)
+final myCourseRatingProvider = MyCourseRatingFamily._();
+
+/// The current user's own rating for a course (1–5), or null when they
+/// haven't rated yet. Reads only the own row (course_ratings SELECT
+/// policy) — other students' individual ratings are never exposed.
+
+final class MyCourseRatingProvider
+    extends $FunctionalProvider<AsyncValue<int?>, int?, FutureOr<int?>>
+    with $FutureModifier<int?>, $FutureProvider<int?> {
+  /// The current user's own rating for a course (1–5), or null when they
+  /// haven't rated yet. Reads only the own row (course_ratings SELECT
+  /// policy) — other students' individual ratings are never exposed.
+  MyCourseRatingProvider._({
+    required MyCourseRatingFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'myCourseRatingProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
+
+  @override
+  String debugGetCreateSourceHash() => _$myCourseRatingHash();
+
+  @override
+  String toString() {
+    return r'myCourseRatingProvider'
+        ''
+        '($argument)';
+  }
+
+  @$internal
+  @override
+  $FutureProviderElement<int?> $createElement($ProviderPointer pointer) =>
+      $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<int?> create(Ref ref) {
+    final argument = this.argument as String;
+    return myCourseRating(ref, argument);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is MyCourseRatingProvider && other.argument == argument;
+  }
+
+  @override
+  int get hashCode {
+    return argument.hashCode;
+  }
+}
+
+String _$myCourseRatingHash() => r'9be82a4531f69c66a1acdd9fab7b042cf1c560b3';
+
+/// The current user's own rating for a course (1–5), or null when they
+/// haven't rated yet. Reads only the own row (course_ratings SELECT
+/// policy) — other students' individual ratings are never exposed.
+
+final class MyCourseRatingFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<int?>, String> {
+  MyCourseRatingFamily._()
+    : super(
+        retry: null,
+        name: r'myCourseRatingProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: true,
+      );
+
+  /// The current user's own rating for a course (1–5), or null when they
+  /// haven't rated yet. Reads only the own row (course_ratings SELECT
+  /// policy) — other students' individual ratings are never exposed.
+
+  MyCourseRatingProvider call(String courseId) =>
+      MyCourseRatingProvider._(argument: courseId, from: this);
+
+  @override
+  String toString() => r'myCourseRatingProvider';
+}
+
+/// Submits/updates the user's star rating through the repository and
+/// refreshes every provider that renders the course-wide aggregate.
+
+@ProviderFor(CourseRatingSubmit)
+final courseRatingSubmitProvider = CourseRatingSubmitProvider._();
+
+/// Submits/updates the user's star rating through the repository and
+/// refreshes every provider that renders the course-wide aggregate.
+final class CourseRatingSubmitProvider
+    extends $AsyncNotifierProvider<CourseRatingSubmit, void> {
+  /// Submits/updates the user's star rating through the repository and
+  /// refreshes every provider that renders the course-wide aggregate.
+  CourseRatingSubmitProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'courseRatingSubmitProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$courseRatingSubmitHash();
+
+  @$internal
+  @override
+  CourseRatingSubmit create() => CourseRatingSubmit();
+}
+
+String _$courseRatingSubmitHash() =>
+    r'448c16f224492fbfa09e7d8c76617a1acf4b2450';
+
+/// Submits/updates the user's star rating through the repository and
+/// refreshes every provider that renders the course-wide aggregate.
+
+abstract class _$CourseRatingSubmit extends $AsyncNotifier<void> {
+  FutureOr<void> build();
+  @$mustCallSuper
+  @override
+  void runBuild() {
+    final ref = this.ref as $Ref<AsyncValue<void>, void>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<AsyncValue<void>, void>,
+              AsyncValue<void>,
+              Object?,
+              Object?
+            >;
+    element.handleCreate(ref, build);
+  }
+}

@@ -5,6 +5,7 @@ import '../../../../core/network/network_exception_mapper.dart';
 import '../../../../core/network/network_guard.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../shared/models/course.dart';
+import '../../../../shared/models/course_rating.dart';
 import '../../../../shared/models/lesson_content.dart';
 import '../../domain/entities/course_enrollment.dart';
 import '../../domain/entities/course_progress_summary.dart';
@@ -161,7 +162,12 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
         CoursesJsonMapper.flattenLearningObjectives(fullData);
         CoursesJsonMapper.flattenPrerequisites(fullData);
 
-        return Course.fromJson(fullData);
+        // The users SELECT RLS hides teacher rows from students, so the
+        // PostgREST teacher join above resolves to NULL for them —
+        // resolve the instructor display fields via the RPC instead.
+        final course = Course.fromJson(fullData);
+        final merged = await mergeInstructors([course]);
+        return merged.first;
       } catch (e) {
         if (e is AppException) rethrow;
         throw NetworkExceptionMapper.map(e);
@@ -285,7 +291,7 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
             .range(offset, offset + limit - 1)
             .order('created_at', ascending: false);
 
-        return (response as List).map((json) {
+        final courses = (response as List).map((json) {
           final rawJson = json as Map<String, dynamic>;
           final fullData = Map<String, dynamic>.from(rawJson);
 
@@ -301,6 +307,8 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
 
           return Course.fromJson(fullData);
         }).toList();
+
+        return mergeInstructors(courses);
       } on PostgrestException catch (e) {
         throw ServerException(e.message, e.code); // check-ignore
       } catch (e) {
@@ -363,6 +371,108 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
         throw NetworkExceptionMapper.map(e);
       }
     });
+  }
+
+  // ── course ratings (see docs §2.12) ──────────────────────────────
+  @override
+  Future<int?> getMyRating(String courseId) async {
+    return NetworkGuard.read(() async {
+      try {
+        final response = await SupabaseService.client
+            .from('course_ratings')
+            .select('rating')
+            .eq('course_id', courseId)
+            .maybeSingle();
+        return (response?['rating'] as num?)?.toInt();
+      } on PostgrestException catch (e) {
+        throw ServerException(e.message, e.code); // check-ignore
+      } catch (e) {
+        if (e is AppException) rethrow;
+        throw NetworkExceptionMapper.map(e);
+      }
+    });
+  }
+
+  @override
+  Future<CourseRatingAggregate> rateCourse({
+    required String courseId,
+    required int rating,
+  }) async {
+    return NetworkGuard.write(() async {
+      try {
+        final response = await SupabaseService.client.rpc(
+          'rate_course',
+          params: {'p_course_id': courseId, 'p_rating': rating},
+        );
+        return CourseRatingAggregate.fromJson(
+          Map<String, dynamic>.from(response as Map),
+        );
+      } on PostgrestException catch (e) {
+        throw ServerException(e.message, e.code); // check-ignore
+      } catch (e) {
+        if (e is AppException) rethrow;
+        throw NetworkExceptionMapper.map(e);
+      }
+    });
+  }
+
+  // ── instructor resolution (see docs §2.13) ───────────────────────
+  @override
+  Future<Map<String, CourseInstructorInfo>> fetchInstructors(
+    List<String> courseIds,
+  ) async {
+    if (courseIds.isEmpty) return const {};
+
+    return NetworkGuard.read(() async {
+      try {
+        final response = await SupabaseService.client.rpc(
+          'get_courses_instructors',
+          params: {'p_course_ids': courseIds},
+        );
+        final rows = (response as List).whereType<Map>().map(
+              (row) => Map<String, dynamic>.from(row),
+            );
+        return {
+          for (final row in rows)
+            row['course_id'] as String: CourseInstructorInfo.fromJson(row),
+        };
+      } on PostgrestException catch (e) {
+        throw ServerException(e.message, e.code); // check-ignore
+      } catch (e) {
+        if (e is AppException) rethrow;
+        throw NetworkExceptionMapper.map(e);
+      }
+    });
+  }
+
+  /// Best-effort enrichment: patches instructor name/avatar resolved via
+  /// the `get_courses_instructors` RPC onto already-mapped courses. A
+  /// failure here is deliberately swallowed (same degradation class as
+  /// getUserSubscribedCourseIds): cards render without an instructor line
+  /// rather than failing an entire screen over secondary enrichment.
+  Future<List<Course>> mergeInstructors(List<Course> courses) async {
+    if (courses.isEmpty) return courses;
+    try {
+      final infos = await fetchInstructors(courses.map((c) => c.id).toList());
+      if (infos.isEmpty) return courses;
+      return [
+        for (final course in courses)
+          _withInstructor(course, infos[course.id]),
+      ];
+    } catch (e) {
+      if (e is AppException) {
+        // Deliberate degradation — see doc comment above.
+      }
+      return courses;
+    }
+  }
+
+  Course _withInstructor(Course course, CourseInstructorInfo? info) {
+    if (info == null) return course;
+    return course.copyWith(
+      instructorName: info.name,
+      instructorAvatar: info.avatarUrl,
+    );
   }
 
   // ── v11 NEW: get_lesson_content RPC ──────────────────────────────
@@ -471,7 +581,7 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
             .inFilter('id', ids)
             .eq('status', 'published');
 
-        return (response as List).map((json) {
+        final courses = (response as List).map((json) {
           final rawJson = json as Map<String, dynamic>;
           final fullData = Map<String, dynamic>.from(rawJson);
 
@@ -486,6 +596,8 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
 
           return Course.fromJson(fullData);
         }).toList();
+
+        return mergeInstructors(courses);
       } on PostgrestException catch (e) {
         throw ServerException(e.message, e.code); // check-ignore
       } catch (e) {

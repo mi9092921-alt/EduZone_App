@@ -2317,6 +2317,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Dismiss offline notice'**
   String get dismissOfflineNotice;
+
+  /// No description provided for @ratingSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Ratings'**
+  String get ratingSectionTitle;
+
+  /// No description provided for @ratingsCountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, zero{No ratings yet} one{1 rating} other{{count} ratings}}'**
+  String ratingsCountLabel(int count);
+
+  /// No description provided for @rateThisCourse.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate this course'**
+  String get rateThisCourse;
+
+  /// No description provided for @ratingNotEnrolled.
+  ///
+  /// In en, this message translates to:
+  /// **'Enroll in the course to be able to rate it'**
+  String get ratingNotEnrolled;
+
+  /// No description provided for @ratingSubmitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Your rating has been submitted'**
+  String get ratingSubmitted;
+
+  /// No description provided for @ratingUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Your rating has been updated'**
+  String get ratingUpdated;
+
+  /// No description provided for @ratingSubmitFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t submit your rating. Please try again.'**
+  String get ratingSubmitFailed;
 }
 
 class _AppLocalizationsDelegate

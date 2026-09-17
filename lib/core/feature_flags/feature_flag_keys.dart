@@ -90,6 +90,21 @@ enum FeatureFlagKey {
     description:
         'Downloads UI affordances (courses-tab entry, per-lesson download '
         'buttons, downloads screen). false hides them all.',
+  ),
+
+  /// Controls the course rating input (1–5 stars) on the course
+  /// preview/details "About" tab. Default `true` = the input renders, exactly
+  /// as before this flag existed. The aggregate display (card chips, meta
+  /// row) is NOT gated — the flag kills the submission path only, so
+  /// remotely disabling it never blanks information already on screen.
+  /// Not an authorization boundary: the `rate_course` RPC enforces
+  /// enrollment server-side regardless of the flag.
+  courseRating(
+    'course_rating',
+    defaultValue: true,
+    description:
+        'Course rating input (star picker) on the course About tab. '
+        'false hides the input; aggregate rating display stays.',
   );
 
   const FeatureFlagKey(

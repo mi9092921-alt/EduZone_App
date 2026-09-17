@@ -27,6 +27,7 @@ abstract class Course with _$Course {
     @JsonKey(name: 'updated_at') DateTime? updatedAt,
     @JsonKey(name: 'total_lessons') int? totalLessons,
     double? rating,
+    @JsonKey(name: 'rating_count') int? ratingCount,
     @JsonKey(name: 'students_count') int? studentsCount,
     @JsonKey(name: 'instructor_name') String? instructorName,
     @JsonKey(name: 'instructor_avatar') String? instructorAvatar,

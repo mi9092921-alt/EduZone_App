@@ -2,6 +2,7 @@ import 'package:fpdart/fpdart.dart';
 
 import '../../../../core/error/failures.dart';
 import '../../../../shared/models/course.dart';
+import '../../../../shared/models/course_rating.dart';
 import '../../../../shared/models/lesson_content.dart';
 import '../entities/course_enrollment.dart';
 import '../entities/course_progress_summary.dart';
@@ -44,6 +45,17 @@ abstract class CoursesRepository {
 
   /// Enrolls the user in a specific course.
   Future<Either<Failure, void>> enrollInCourse(String courseId);
+
+  /// Submits (or updates) the current user's 1-5 star rating for a course
+  /// via the `rate_course` RPC. Requires enrollment; returns the refreshed
+  /// course-wide aggregate.
+  Future<Either<Failure, CourseRatingAggregate>> rateCourse({
+    required String courseId,
+    required int rating,
+  });
+
+  /// The current user's own rating for a course, or null when unrated.
+  Future<Either<Failure, int?>> getMyRating(String courseId);
 
   /// Fetches video content for a lesson via the `get_lesson_content` RPC.
   ///

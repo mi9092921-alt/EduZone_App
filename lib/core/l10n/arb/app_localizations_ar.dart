@@ -1241,4 +1241,34 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get dismissOfflineNotice => 'إغلاق إشعار انقطاع الاتصال';
+
+  @override
+  String get ratingSectionTitle => 'التقييمات';
+
+  @override
+  String ratingsCountLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count تقييم',
+      one: 'تقييم واحد',
+      zero: 'لا توجد تقييمات بعد',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get rateThisCourse => 'قيّم هذا الكورس';
+
+  @override
+  String get ratingNotEnrolled => 'سجّل في الكورس لتتمكن من التقييم';
+
+  @override
+  String get ratingSubmitted => 'تم إرسال تقييمك';
+
+  @override
+  String get ratingUpdated => 'تم تحديث تقييمك';
+
+  @override
+  String get ratingSubmitFailed => 'لم نتمكن من إرسال تقييمك. حاول مرة أخرى.';
 }

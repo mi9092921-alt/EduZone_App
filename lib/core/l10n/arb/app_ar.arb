@@ -613,5 +613,19 @@
     }
   },
   "taskInputHint": "ما الذي يجب فعله؟",
-  "dismissOfflineNotice": "إغلاق إشعار انقطاع الاتصال"
+  "dismissOfflineNotice": "إغلاق إشعار انقطاع الاتصال",
+  "ratingSectionTitle": "التقييمات",
+  "ratingsCountLabel": "{count, plural, zero{لا توجد تقييمات بعد} one{تقييم واحد} other{{count} تقييم}}",
+  "@ratingsCountLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "rateThisCourse": "قيّم هذا الكورس",
+  "ratingNotEnrolled": "سجّل في الكورس لتتمكن من التقييم",
+  "ratingSubmitted": "تم إرسال تقييمك",
+  "ratingUpdated": "تم تحديث تقييمك",
+  "ratingSubmitFailed": "لم نتمكن من إرسال تقييمك. حاول مرة أخرى."
 }

@@ -135,6 +135,12 @@ ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.user_progress ENABLE ROW LEVEL SECURITY;
 
+-- ENABLE without FORCE (same class as enrollments/user_progress above):
+-- public.rate_course() is SECURITY DEFINER and INSERTs/UPDATEs
+-- course_ratings directly after its own session/tenant/enrollment checks,
+-- which rely on the table-owner bypass that FORCE would remove.
+ALTER TABLE public.course_ratings ENABLE ROW LEVEL SECURITY;
+
 -- AUTH-BUG-01-style regression (found via a live-Postgres repro, not just
 -- static review: FORCE + a policy scoped only `TO authenticated` was
 -- reproduced end-to-end -- see the reasoning below for the exact repro).
@@ -1642,6 +1648,58 @@ CREATE POLICY enrollments_select_policy ON public.enrollments
       )
     )
   );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- course_ratings
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Students read only their own rating row (powers "my rating" state in the
+-- app); the course-wide aggregate lives on courses.rating/rating_count and
+-- is served through the courses SELECT policies. Student writes go through
+-- the rate_course() RPC exclusively — same philosophy as enrollments,
+-- where enroll_in_course() is the only student path.
+
+DROP POLICY IF EXISTS course_ratings_select ON public.course_ratings;
+CREATE POLICY course_ratings_select ON public.course_ratings
+  FOR SELECT TO authenticated
+  USING (
+    deleted_at IS NULL
+    AND tenant_id = public.get_current_tenant_id()
+    AND (
+      user_id = (select auth.uid())
+      OR public.is_admin_with_session_validation()
+      OR public.is_teacher_of_course(public.get_auth_user_id(), course_id)
+    )
+  );
+
+DROP POLICY IF EXISTS course_ratings_admin_insert ON public.course_ratings;
+CREATE POLICY course_ratings_admin_insert ON public.course_ratings
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    public.is_admin_with_session_validation()
+    AND tenant_id = public.assert_tenant()
+    AND deleted_at IS NULL
+  );
+
+DROP POLICY IF EXISTS course_ratings_update ON public.course_ratings;
+CREATE POLICY course_ratings_update ON public.course_ratings
+  FOR UPDATE TO authenticated
+  USING (
+    tenant_id = public.get_current_tenant_id()
+    AND (
+      user_id = (select auth.uid())
+      OR public.is_admin_with_session_validation()
+    )
+  )
+  WITH CHECK (
+    tenant_id = public.get_current_tenant_id()
+    AND (
+      user_id = (select auth.uid())
+      OR public.is_admin_with_session_validation()
+    )
+  );
+-- No DELETE policy: physical delete stays service_role-only (the
+-- prevent_physical_delete trigger blocks it anyway); admins remove a
+-- rating by soft-deleting via UPDATE, which re-runs the aggregate trigger.
 
 DROP POLICY IF EXISTS feature_flags_admin_insert ON public.feature_flags;
 DROP POLICY IF EXISTS feature_flags_admin_update ON public.feature_flags;

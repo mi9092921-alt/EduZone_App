@@ -8,6 +8,7 @@ import '../../../../shared/models/course.dart';
 import '../utils/course_format_utils.dart';
 import 'course_bullet_point.dart';
 import 'course_description_section.dart';
+import 'course_rating_section.dart';
 
 /// The "About" tab body shared by [CourseDetailsScreen] and
 /// [CoursePreviewScreen]: meta row, description, learning objectives,
@@ -32,6 +33,10 @@ List<Widget> buildCourseAboutTabContent({
       ds: ds,
       duration: formatCourseDuration(course.totalDurationMinutes, l10n),
     ),
+    const SizedBox(height: AppSpacing.lg),
+    // Aggregate + (when enrolled) the tappable star input. Owns rating
+    // display — CourseMetaRow intentionally has no rating segment.
+    CourseRatingSection(course: course, l10n: l10n, ds: ds),
     const SizedBox(height: AppSpacing.lg),
     CourseDescriptionSection(
       description: course.description ?? '',

@@ -6,6 +6,7 @@ import 'package:app/features/courses/data/repositories/courses_repo_impl.dart';
 import 'package:app/features/courses/domain/entities/course_enrollment.dart';
 import 'package:app/features/courses/domain/entities/course_progress_summary.dart';
 import 'package:app/shared/models/course.dart';
+import 'package:app/shared/models/course_rating.dart';
 import 'package:app/shared/models/lesson_content.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
@@ -209,6 +210,58 @@ void main() {
       );
 
       expect(result, isA<Left<Failure, void>>());
+    });
+  });
+
+  group('rateCourse', () {
+    test('should return Right(aggregate) when data source succeeds', () async {
+      const tAggregate = CourseRatingAggregate(
+        courseId: 'c1',
+        rating: 4.25,
+        ratingCount: 8,
+      );
+      when(() => mockDataSource.rateCourse(courseId: 'c1', rating: 4))
+          .thenAnswer((_) async => tAggregate);
+
+      final result = await repository.rateCourse(courseId: 'c1', rating: 4);
+
+      expect(result, const Right<Failure, CourseRatingAggregate>(tAggregate));
+    });
+
+    test('should return Left(ServerFailure) on exception', () async {
+      when(() => mockDataSource.rateCourse(courseId: 'c1', rating: 4))
+          .thenThrow(const ServerException('NOT_ENROLLED'));
+
+      final result = await repository.rateCourse(courseId: 'c1', rating: 4);
+
+      expect(result, isA<Left<Failure, CourseRatingAggregate>>());
+    });
+  });
+
+  group('getMyRating', () {
+    test('should return Right(rating) when rated', () async {
+      when(() => mockDataSource.getMyRating('c1')).thenAnswer((_) async => 5);
+
+      final result = await repository.getMyRating('c1');
+
+      expect(result, const Right<Failure, int?>(5));
+    });
+
+    test('should return Right(null) when not rated', () async {
+      when(() => mockDataSource.getMyRating('c1')).thenAnswer((_) async => null);
+
+      final result = await repository.getMyRating('c1');
+
+      expect(result, const Right<Failure, int?>(null));
+    });
+
+    test('should return Left(ServerFailure) on exception', () async {
+      when(() => mockDataSource.getMyRating('c1'))
+          .thenThrow(const ServerException('Failed'));
+
+      final result = await repository.getMyRating('c1');
+
+      expect(result, isA<Left<Failure, int?>>());
     });
   });
 

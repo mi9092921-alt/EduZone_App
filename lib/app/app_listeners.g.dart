@@ -16,6 +16,10 @@ part of 'app_listeners.dart';
 /// via `ref.onDispose` and may only touch its own feature's internals —
 /// cross-feature communication flows through the [EventBus], never through
 /// direct feature-to-feature imports.
+///
+/// This is intentionally app-lifetime state: the composition root owns the
+/// subscriptions, while each listener is invalidated at logout and cleans up
+/// its subscription through `ref.onDispose`.
 
 @ProviderFor(appListeners)
 final appListenersProvider = AppListenersProvider._();
@@ -28,6 +32,10 @@ final appListenersProvider = AppListenersProvider._();
 /// via `ref.onDispose` and may only touch its own feature's internals —
 /// cross-feature communication flows through the [EventBus], never through
 /// direct feature-to-feature imports.
+///
+/// This is intentionally app-lifetime state: the composition root owns the
+/// subscriptions, while each listener is invalidated at logout and cleans up
+/// its subscription through `ref.onDispose`.
 
 final class AppListenersProvider extends $FunctionalProvider<void, void, void>
     with $Provider<void> {
@@ -39,6 +47,10 @@ final class AppListenersProvider extends $FunctionalProvider<void, void, void>
   /// via `ref.onDispose` and may only touch its own feature's internals —
   /// cross-feature communication flows through the [EventBus], never through
   /// direct feature-to-feature imports.
+  ///
+  /// This is intentionally app-lifetime state: the composition root owns the
+  /// subscriptions, while each listener is invalidated at logout and cleans up
+  /// its subscription through `ref.onDispose`.
   AppListenersProvider._()
     : super(
         from: null,

@@ -1243,4 +1243,35 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dismissOfflineNotice => 'Dismiss offline notice';
+
+  @override
+  String get ratingSectionTitle => 'Ratings';
+
+  @override
+  String ratingsCountLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ratings',
+      one: '1 rating',
+      zero: 'No ratings yet',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get rateThisCourse => 'Rate this course';
+
+  @override
+  String get ratingNotEnrolled => 'Enroll in the course to be able to rate it';
+
+  @override
+  String get ratingSubmitted => 'Your rating has been submitted';
+
+  @override
+  String get ratingUpdated => 'Your rating has been updated';
+
+  @override
+  String get ratingSubmitFailed =>
+      'Couldn\'t submit your rating. Please try again.';
 }

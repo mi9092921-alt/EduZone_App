@@ -75,6 +75,7 @@ void main() {
           'player_youtube': true,
           'player_modern': true,
           'courses_downloads': true,
+          'course_rating': true,
         },
       );
     });

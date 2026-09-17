@@ -3,6 +3,7 @@ import '../../../../core/error/failures.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../../../shared/models/course.dart';
+import '../../../../shared/models/course_rating.dart';
 import '../../../../shared/models/lesson_content.dart';
 import '../../domain/entities/course_enrollment.dart';
 import '../../domain/entities/course_progress_summary.dart';
@@ -119,6 +120,32 @@ class CoursesRepositoryImpl implements CoursesRepository {
     try {
       await remoteDataSource.enrollInCourse(courseId);
       return const Right(null);
+    } catch (e) {
+      return Left(failureFromError(e));
+    }
+  }
+
+  @override
+  Future<Either<Failure, CourseRatingAggregate>> rateCourse({
+    required String courseId,
+    required int rating,
+  }) async {
+    try {
+      final aggregate = await remoteDataSource.rateCourse(
+        courseId: courseId,
+        rating: rating,
+      );
+      return Right(aggregate);
+    } catch (e) {
+      return Left(failureFromError(e));
+    }
+  }
+
+  @override
+  Future<Either<Failure, int?>> getMyRating(String courseId) async {
+    try {
+      final rating = await remoteDataSource.getMyRating(courseId);
+      return Right(rating);
     } catch (e) {
       return Left(failureFromError(e));
     }
