@@ -177,12 +177,10 @@ jobs:
           # These integration tests do not require animations to be disabled.
           disable-animations: false
           emulator-boot-timeout: 1200
-          # `swiftshader_indirect` is deprecated by the Android Emulator
-          # and can invalidate the window surface after APK installation
-          # (`bad window surface handle`). Use the supported SwiftShader
-          # renderer so Flutter can attach to the running application.
+          # Use the fully software renderer for headless CI. This avoids
+          # renderer/ADB instability while the APK is installed and launched.
           emulator-options: >-
-            -no-window -gpu swiftshader -no-snapshot-load
+            -no-window -gpu software -no-snapshot-load
             -no-snapshot-save -noaudio -no-boot-anim -no-metrics
             -camera-back none -camera-front none
           script: |
