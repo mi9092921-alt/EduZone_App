@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/feature_flags/feature_flag_keys.dart';
+import '../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
 // Documented architecture debt (5c): the home dashboard refreshes the
@@ -63,8 +65,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
-    // Watch relevant data streams
-    final resumeLessonsAsync = ref.watch(resumeLessonsProvider);
+    // Watch relevant data streams. The resume provider is watched inside
+    // the gated section below, so a kill-switched carousel never fetches.
     final recentCoursesAsync = ref.watch(recentCoursesProvider);
     final recentTodosAsync = ref.watch(recentTodosProvider);
 
@@ -92,12 +94,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           const NotificationsPreview(),
 
           // 4. Primary Action: Resume Learning (Contextual)
-          _RecentLessonsSection(
-            lessonsAsync: resumeLessonsAsync,
-            l10n: l10n,
-          ),
-
-          const SizedBox(height: AppSpacing.md),
+          //
+          // Remote kill switch (FeatureFlagKey.homeResumeCarousel): when
+          // disabled the section — including its provider subscription and
+          // loading/error states — is skipped entirely, so a killed resume
+          // backend is not queried either. The default (true) preserves
+          // today's behavior for an unregistered/unevaluated flag.
+          if (ref
+              .watch(featureFlagsProvider)
+              .isEnabled(FeatureFlagKey.homeResumeCarousel)) ...[
+            _RecentLessonsSection(
+              lessonsAsync: ref.watch(resumeLessonsProvider),
+              l10n: l10n,
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
 
           // 5. Subsection: My Recent Courses
           _RecentCoursesSection(coursesAsync: recentCoursesAsync, l10n: l10n),

@@ -162,17 +162,18 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
     _saveLastWatched(lesson.id.toString());
     _handleToggleWatched(lesson.id, true); // Mark as watched automatically
 
+    final flags = ref.read(featureFlagsProvider);
     showPlayerChoiceSheet(
       context,
       onPlayerSelected: (playerType) =>
           _handlePlayerChoice(context, lesson, playerType),
-      // Remote kill switch for the direct (player4) backend — pure UI
-      // affordance gating; playback permission itself is enforced
-      // server-side regardless of this value. Defaults to true, so an
+      // Remote kill switches for the player backends — pure UI affordance
+      // gating; playback permission itself is enforced server-side
+      // regardless of these values. Each defaults to true, so an
       // unregistered flag preserves today's behavior exactly.
-      showDirectPlayer: ref
-          .read(featureFlagsProvider)
-          .isEnabled(FeatureFlagKey.playerDirectPlayer),
+      showYoutube: flags.isEnabled(FeatureFlagKey.playerYoutube),
+      showModern: flags.isEnabled(FeatureFlagKey.playerModern),
+      showDirectPlayer: flags.isEnabled(FeatureFlagKey.playerDirectPlayer),
     );
   }
 

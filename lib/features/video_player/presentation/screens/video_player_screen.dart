@@ -12,7 +12,6 @@ import '../../../../shared/models/lesson_content.dart';
 import '../../application/providers/video_provider.dart';
 import '../widgets/lessons_sidebar.dart';
 import 'video_player/lesson_lookup.dart';
-import 'video_player/player_switch_sheet.dart';
 import 'video_player/player_type.dart';
 import 'video_player/video_lesson_paywall.dart';
 
@@ -50,7 +49,6 @@ typedef VideoPlayerBuilderFactory = PlayerWidgetBuilder Function(
 //                                               قابل للاختبار بدون widgets
 //   - video_player/video_player_skeleton.dart → حالة التحميل
 //   - video_player/video_lesson_paywall.dart  → شاشة "يتطلب تسجيل"
-//   - video_player/player_switch_sheet.dart   → زر ونافذة تبديل المشغّل
 // ─────────────────────────────────────────────────────────────────────────────
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
@@ -192,13 +190,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       appBar: AppBar(
         elevation: 0,
         title: Text(currentLesson.title, style: AppTextStyles.h3),
-        actions: [
-          PlayerSwitchButton(
-            courseId: widget.courseId,
-            lessonId: widget.lessonId,
-            playerType: widget.playerType,
-          ),
-        ],
+        // The in-player switch button was removed deliberately: its sheet
+        // listed every player backend unconditionally and bypassed the
+        // remote feature-flag kill switches that the lesson-tap choice
+        // sheet (courses feature) honors. Player selection now happens
+        // only through that gated sheet.
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

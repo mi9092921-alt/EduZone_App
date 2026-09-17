@@ -701,7 +701,7 @@ void main() {
           'unregistered flag preserves production behavior in the real '
           'player-choice sheet', (tester) async {
         // No verdicts at all — exactly what the canonical evaluator returns
-        // when `player.direct_player` has no row registered yet. The app
+        // when `player_direct_player` has no row registered yet. The app
         // must behave as it did before feature flags existed.
         final flagRepository = _FakeFeatureFlagRemoteDataSource()
           ..verdicts = const [];

@@ -58,4 +58,67 @@ void main() {
       expect(selected, 'modern');
     });
   });
+
+  group('showPlayerChoiceSheet — kill switches', () {
+    Future<void> pumpAndOpen(
+      WidgetTester tester, {
+      bool showYoutube = true,
+      bool showModern = true,
+      bool showDirectPlayer = true,
+    }) async {
+      await tester.pumpWidget(
+        buildTestableWidget(
+          Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showPlayerChoiceSheet(
+                context,
+                onPlayerSelected: (_) {},
+                showYoutube: showYoutube,
+                showModern: showModern,
+                showDirectPlayer: showDirectPlayer,
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('hides the YouTube option when showYoutube is false', (
+      tester,
+    ) async {
+      await pumpAndOpen(tester, showYoutube: false);
+
+      expect(find.text('YouTube Player'), findsNothing);
+      expect(find.text('Modern Player'), findsOneWidget);
+    });
+
+    testWidgets('hides the Modern option when showModern is false', (
+      tester,
+    ) async {
+      await pumpAndOpen(tester, showModern: false);
+
+      expect(find.text('Modern Player'), findsNothing);
+      expect(find.text('YouTube Player'), findsOneWidget);
+    });
+
+    testWidgets(
+        'does not open the sheet at all when every option is hidden', (
+      tester,
+    ) async {
+      await pumpAndOpen(
+        tester,
+        showYoutube: false,
+        showModern: false,
+        showDirectPlayer: false,
+      );
+
+      expect(find.byType(PlayerChoiceSheet), findsNothing);
+      expect(find.text('YouTube Player'), findsNothing);
+      expect(find.text('Modern Player'), findsNothing);
+    });
+  });
 }

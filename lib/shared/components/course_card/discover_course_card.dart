@@ -91,9 +91,6 @@ class DiscoverCourseCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs2),
         ],
         _buildDiscoverMetaRow(colors, l10n),
-        // Audit P0 (H5): the fake 4.8 placeholder rating was removed —
-        // no ratings source exists yet. Reintroduce via data.rating once
-        // the ratings table ships.
         const Spacer(),
         Row(
           children: [
@@ -173,6 +170,11 @@ class DiscoverCourseCard extends StatelessWidget {
     AppLocalizations l10n,
   ) {
     final chips = <Widget>[
+      // Rating chip is data-gated (audit P0 H5): it renders only when the
+      // course carries a real rating — never a placeholder — so it appears
+      // the moment a ratings source ships on the backend.
+      if (data.rating != null && data.rating! > 0)
+        _buildRatingChip(data.rating!, colors),
       if (data.totalLessons != null && data.totalLessons! > 0)
         _buildMetaChip(
           Icons.menu_book_rounded,
@@ -193,6 +195,26 @@ class DiscoverCourseCard extends StatelessWidget {
       spacing: AppSpacing.sm,
       runSpacing: AppSpacing.xs2,
       children: chips,
+    );
+  }
+
+  /// Star + value, mirroring [CourseMetaRow]'s amber-star rating styling at
+  /// the card's compact chip scale.
+  Widget _buildRatingChip(double rating, DesignSystemColors colors) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.star_rounded, size: 12, color: AppColors.warning),
+        const SizedBox(width: AppSpacing.xs2),
+        Text(
+          rating.toStringAsFixed(1),
+          style: AppTextStyles.labelSmall.copyWith(
+            color: colors.textPrimary,
+            fontWeight: FontWeight.w600,
+            fontSize: 11,
+          ),
+        ),
+      ],
     );
   }
 

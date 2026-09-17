@@ -19,6 +19,12 @@ class LessonTile extends StatelessWidget {
   final bool downloadFailed;
   final double downloadProgress;
 
+  /// Whether the per-lesson download affordance is offered at all. Remote
+  /// kill switch (`courses_downloads` feature flag) — `false` removes the
+  /// indicator entirely instead of disabling it. Defaults to `true`
+  /// (current behavior) so existing call sites are unaffected.
+  final bool showDownload;
+
   const LessonTile({
     super.key,
     required this.title,
@@ -35,6 +41,7 @@ class LessonTile extends StatelessWidget {
     this.isDownloaded = false,
     this.downloadFailed = false,
     this.downloadProgress = 0.0,
+    this.showDownload = true,
   });
 
   @override
@@ -102,7 +109,7 @@ class LessonTile extends StatelessWidget {
           ),
 
         if (!isLocked) ...[
-          if (isEnrolled) _buildDownloadIndicator(ds, context),
+          if (isEnrolled && showDownload) _buildDownloadIndicator(ds, context),
           Checkbox(
             value: completed,
             onChanged: onToggleCompleted,

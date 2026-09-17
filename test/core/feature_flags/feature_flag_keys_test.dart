@@ -59,6 +59,26 @@ void main() {
       expect(FeatureFlagKey.isValidServerKey('a' * 129), isFalse);
     });
 
+    test('server keys pin the registered server-side contract', () {
+      // These strings are the rows in `public.feature_flags.key` managed in
+      // the dashboard repo. They must stay dot-free (`^[a-z][a-z0-9_]*$`)
+      // because the dashboard admin UI rejects dots, and renaming one here
+      // without migrating the server row silently orphans the flag
+      // (version 0 → client default), so a failure of this test must be
+      // resolved by renaming the server row in the same change — or by
+      // consciously updating both sides.
+      expect(
+        {for (final key in FeatureFlagKey.all) key.serverKey: key.defaultValue},
+        {
+          'player_direct_player': true,
+          'home_resume_carousel': true,
+          'player_youtube': true,
+          'player_modern': true,
+          'courses_downloads': true,
+        },
+      );
+    });
+
     test('every flag documents its description', () {
       for (final key in FeatureFlagKey.all) {
         expect(key.description.trim(), isNotEmpty, reason: key.name);

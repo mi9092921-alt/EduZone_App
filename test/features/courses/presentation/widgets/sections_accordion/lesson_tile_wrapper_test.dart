@@ -1,10 +1,13 @@
+import 'package:app/core/feature_flags/feature_flag_keys.dart';
 import 'package:app/features/courses/presentation/widgets/sections_accordion/lesson_tile_wrapper.dart';
 import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:app/shared/models/download_enums.dart';
 import 'package:app/shared/models/downloaded_lesson.dart';
 import 'package:app/shared/models/lesson.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../../../../helpers/feature_flag_overrides.dart';
 import 'sections_accordion_test_helpers.dart';
 
 /// Fake notifier returning a fixed list without touching any repository —
@@ -174,6 +177,64 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      expect(find.text('Intro to Widgets'), findsOneWidget);
+    });
+  });
+
+  group('LessonTileWrapper — downloads kill switch', () {
+    testWidgets(
+        'shows the download affordance by default (unregistered flag = '
+        'current behavior)', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        buildTestableWidget(
+          LessonTileWrapper(
+            lesson: _lesson(),
+            courseId: 'course_1',
+            courseTitle: 'Flutter Basics',
+            isEnrolled: true,
+            isCompleted: false,
+            isLastWatched: false,
+            onTap: () {},
+            onToggleCompleted: (_) {},
+            onDownload: () {},
+          ),
+          overrides: [
+            downloadsProvider.overrideWith(() => _FakeDownloadsNotifier(const [])),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.download_for_offline_outlined), findsOneWidget);
+    });
+
+    testWidgets(
+        'removes the download affordance entirely when the flag is disabled', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        buildTestableWidget(
+          LessonTileWrapper(
+            lesson: _lesson(),
+            courseId: 'course_1',
+            courseTitle: 'Flutter Basics',
+            isEnrolled: true,
+            isCompleted: false,
+            isLastWatched: false,
+            onTap: () {},
+            onToggleCompleted: (_) {},
+            onDownload: () {},
+          ),
+          overrides: [
+            downloadsProvider.overrideWith(() => _FakeDownloadsNotifier(const [])),
+            featureFlagsOverride({FeatureFlagKey.coursesDownloads: false}),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.download_for_offline_outlined), findsNothing);
+      // The rest of the tile stays intact.
       expect(find.text('Intro to Widgets'), findsOneWidget);
     });
   });

@@ -28,12 +28,68 @@ enum FeatureFlagKey {
   /// (per-student rollout / tenant override / global kill switch) without an
   /// app release — the same class of removal that already happened once for
   /// the earlier WebView-based proxy player.
+  ///
+  /// NOTE: the server row predates the dot-free key convention — it was
+  /// registered as `player.direct_player`. The dashboard-side rename to
+  /// `player_direct_player` must ship with (before or together with) the
+  /// first build carrying this serverKey; until then the evaluator returns
+  /// version 0 and the client default (true) applies.
   playerDirectPlayer(
-    'player.direct_player',
+    'player_direct_player',
     defaultValue: true,
     description:
         'Direct (player4) option in the lesson player-choice sheet. '
         'false hides the option; the other player choices remain.',
+  ),
+
+  /// Controls the "continue watching" resume card carousel on the home tab.
+  /// Default `true` = the section renders, exactly as before this flag
+  /// existed. Registered server-side, it lets support hide the section
+  /// remotely (per-student rollout / tenant override / global kill switch)
+  /// without an app release — including its provider fetch, so a killed
+  /// backend is not queried either.
+  homeResumeCarousel(
+    'home_resume_carousel',
+    defaultValue: true,
+    description:
+        'Resume card carousel on the home tab. false skips the section '
+        'entirely, including its loading/error states.',
+  ),
+
+  /// Controls the YouTube entry in the lesson player-choice sheet (courses
+  /// feature). Default `true` = the option is offered, exactly as before
+  /// this flag existed. Same kill-switch model as [playerDirectPlayer].
+  playerYoutube(
+    'player_youtube',
+    defaultValue: true,
+    description:
+        'YouTube option in the lesson player-choice sheet. '
+        'false hides the option; the other player choices remain.',
+  ),
+
+  /// Controls the "modern" entry in the lesson player-choice sheet (courses
+  /// feature). Default `true` = the option is offered, exactly as before
+  /// this flag existed. Same kill-switch model as [playerDirectPlayer].
+  playerModern(
+    'player_modern',
+    defaultValue: true,
+    description:
+        'Modern player option in the lesson player-choice sheet. '
+        'false hides the option; the other player choices remain.',
+  ),
+
+  /// Controls every downloads UI affordance in the app: the downloads entry
+  /// on the courses tab, the per-lesson download buttons, and the downloads
+  /// manager screen itself. Default `true` = current behavior. Hiding the
+  /// affordances is NOT an authorization boundary — download/storage
+  /// operations keep their own enforcement layers; the flag only removes
+  /// the UI surface.
+  coursesDownloads(
+    'courses_downloads',
+    defaultValue: true,
+    description:
+        'Downloads UI affordances (courses-tab entry, per-lesson download '
+        'buttons, downloads screen). false hides them all.',
   );
 
   const FeatureFlagKey(
@@ -45,6 +101,12 @@ enum FeatureFlagKey {
   /// Key exactly as stored in `public.feature_flags.key`. MUST satisfy the
   /// database constraint `chk_feature_flags_key_format`:
   /// `^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$`, length 2..128.
+  ///
+  /// The dashboard admin UI is stricter than the DB (its create/edit form
+  /// only accepts `^[a-z][a-z0-9_]*$` — lowercase letters, digits,
+  /// underscores; dots are stripped while typing), so keys in this registry
+  /// use the dot-free `<area>_<capability>` form and can be fully managed
+  /// from the product UI.
   final String serverKey;
 
   /// Client-side value when the server has not spoken for this flag

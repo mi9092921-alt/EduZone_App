@@ -62,7 +62,7 @@ void main() {
   group('evaluate', () {
     test('sends every registry key and parses a well-formed response', () async {
       stubRpc([
-        {'key': 'player.direct_player', 'enabled': true, 'version': 7},
+        {'key': 'player_direct_player', 'enabled': true, 'version': 7},
       ]);
 
       final evaluations = await repository.evaluate(FeatureFlagKey.all);
@@ -90,7 +90,7 @@ void main() {
       // behavior attached, so it must be dropped, not surfaced as a value.
       stubRpc([
         {'key': 'future.feature', 'enabled': true, 'version': 2},
-        {'key': 'player.direct_player', 'enabled': false, 'version': 1},
+        {'key': 'player_direct_player', 'enabled': false, 'version': 1},
       ]);
 
       final evaluations = await repository.evaluate(FeatureFlagKey.all);
@@ -101,9 +101,9 @@ void main() {
 
     test('skips malformed rows instead of failing the batch', () async {
       stubRpc([
-        {'key': 'player.direct_player', 'enabled': true, 'version': 1},
+        {'key': 'player_direct_player', 'enabled': true, 'version': 1},
         {'key': 42, 'enabled': true, 'version': 1}, // bad key type
-        {'key': 'player.direct_player', 'enabled': 'yes'}, // bad enabled type
+        {'key': 'player_direct_player', 'enabled': 'yes'}, // bad enabled type
         'not-a-map',
         null,
       ]);

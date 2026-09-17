@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../../core/utils/text_direction_detector.dart';
 import '../../../../../design_system/design_system.dart';
 import 'settings_floating_graduation_icon.dart';
 
@@ -46,8 +47,12 @@ class SettingsAboutDialog extends StatelessWidget {
               child: const SettingsFloatingGraduationIcon(),
             ),
             const SizedBox(height: AppSpacing.lg),
+            // Auto direction: the app/brand title is locale-independent
+            // content — an Arabic tenant name must read RTL even under an
+            // English UI, and vice versa.
             Text(
               l10n.appTitle,
+              textDirection: TextDirectionDetector.detect(l10n.appTitle),
               style: AppTextStyles.h2.copyWith(color: scheme.onSurface),
             ),
             const SizedBox(height: AppSpacing.sm),

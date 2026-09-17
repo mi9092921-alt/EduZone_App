@@ -248,18 +248,21 @@ class AppTheme {
         color: colorScheme.primary,
         linearMinHeight: 4,
       ),
+      // Both schemes alias outline and outlineVariant to a single border
+      // color, so the unselected thumb/track pair must not be drawn from
+      // them — an identical thumb and track renders as a solid block.
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return colorScheme.onPrimary;
           }
-          return colorScheme.outline;
+          return colorScheme.onSurfaceVariant;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return colorScheme.primary;
           }
-          return colorScheme.outlineVariant;
+          return colorScheme.surfaceContainerHighest;
         }),
       ),
       extensions: extensions,

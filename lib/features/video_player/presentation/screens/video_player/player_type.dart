@@ -1,6 +1,8 @@
 /// The 3 video player backends `VideoPlayerScreen` can be configured to
-/// drive, each wired to its own route (`lesson`, `lesson3`, `lesson4` — see
-/// `player_switch_sheet.dart`).
+/// drive, each wired to its own route (`lesson`, `lesson3`, `lesson4`).
+/// Player selection happens through the feature-flag-gated choice sheet
+/// opened from the lesson tile (courses feature) — there is no in-player
+/// switcher.
 ///
 /// Extracted from `video_player_screen.dart` so it can be imported by the
 /// router and other screens without pulling in the full screen file.

@@ -1,4 +1,5 @@
 import 'package:app/core/error/failures.dart';
+import 'package:app/core/feature_flags/feature_flag_keys.dart';
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
@@ -13,7 +14,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../../../../helpers/feature_flag_overrides.dart';
 
 // Deliberately scoped to what this widget owns directly: rendering, the
 // enrollment gate on lesson tap, and the optimistic watched-toggle +
@@ -54,11 +58,13 @@ Widget _wrap({
   required CoursesRepository coursesRepository,
   required DownloadRepository downloadRepository,
   bool isEnrolled = false,
+  List<Override> extraOverrides = const [],
 }) {
   return ProviderScope(
     overrides: [
       coursesRepositoryProvider.overrideWithValue(coursesRepository),
       downloadRepositoryProvider.overrideWithValue(downloadRepository),
+      ...extraOverrides,
     ],
     child: MaterialApp(
       scaffoldMessengerKey: FeedbackService.messengerKey,
@@ -183,6 +189,47 @@ void main() {
         ),
       ).called(1);
       // "choose a player" bottom sheet content.
+      expect(find.text(l10n.directPlayer), findsOneWidget);
+    });
+  });
+
+  group('SectionsAccordion — player kill-switch wiring', () {
+    testWidgets(
+        'the youtube/modern kill switches reach the choice sheet: tapping a '
+        'preview lesson offers only the remaining (direct) player', (
+      tester,
+    ) async {
+      when(
+        () => coursesRepository.updateLessonProgress(
+          courseId: any(named: 'courseId'),
+          lessonId: any(named: 'lessonId'),
+          completed: any(named: 'completed'),
+          progressPct: any(named: 'progressPct'),
+          watchTimeSec: any(named: 'watchTimeSec'),
+        ),
+      ).thenAnswer((_) async => const Right(null));
+
+      await tester.pumpWidget(
+        _wrap(
+          coursesRepository: coursesRepository,
+          downloadRepository: downloadRepository,
+          extraOverrides: [
+            featureFlagsOverride({
+              FeatureFlagKey.playerYoutube: false,
+              FeatureFlagKey.playerModern: false,
+            }),
+          ],
+        ),
+      );
+      await tester.tap(find.text('Getting Started'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Intro (free preview)'));
+      await tester.pumpAndSettle();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.youtubePlayer), findsNothing);
+      expect(find.text(l10n.modernPlayer), findsNothing);
       expect(find.text(l10n.directPlayer), findsOneWidget);
     });
   });

@@ -26,9 +26,12 @@ class AppSizes {
   static const double progressHeight = 6.0;
   // Home "continue watching" carousel. The width is a cap, not a fixed
   // card width: the carousel uses the available viewport width on smaller
-  // devices and stops growing on tablets/desktops.
+  // devices and stops growing on tablets/desktops. The height is
+  // content-derived (padding + 2-line title + course line + progress row
+  // ≈ 130) — do not align it with RecentCourseCard's 208; that card has a
+  // 16:9 thumbnail, ResumeCard has no image.
   static const double resumeCardMaxWidth = 360.0;
-  static const double resumeCardHeight = 208.0;
+  static const double resumeCardHeight = 140.0;
   static const double appBarHeight = 56.0;
   static const double bottomNavHeight = 64.0;
 }

@@ -45,8 +45,8 @@ void main() {
   }
 
   String payload({
-    Object? flags = const {'player.direct_player': true},
-    Object? versions = const {'player.direct_player': 2},
+    Object? flags = const {'player_direct_player': true},
+    Object? versions = const {'player_direct_player': 2},
     int? evaluatedAtMs,
     Object? schemaVersion = 1,
   }) {
@@ -156,7 +156,7 @@ void main() {
       cache = await makeCache({
         'feature_flags_cache_v1_$userId': payload(
           flags: {
-            'player.direct_player': true,
+            'player_direct_player': true,
             'future.feature': true, // unknown to this build
             'malformed': 'not-a-bool',
           },

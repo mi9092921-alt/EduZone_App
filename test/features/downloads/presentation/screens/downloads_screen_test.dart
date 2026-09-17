@@ -1,7 +1,21 @@
+import 'package:app/core/feature_flags/feature_flag_keys.dart';
+import 'package:app/core/l10n/arb/app_localizations.dart';
+import 'package:app/features/downloads/application/providers/downloads_provider.dart';
+import 'package:app/features/downloads/domain/repositories/download_repository.dart';
 import 'package:app/features/downloads/presentation/screens/downloads_screen.dart';
 import 'package:app/shared/models/download_enums.dart';
 import 'package:app/shared/models/downloaded_lesson.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../../../helpers/feature_flag_overrides.dart';
+
+class MockDownloadRepository extends Mock implements DownloadRepository {}
 
 void main() {
   group('resolveCourseGroupTitle', () {
@@ -42,6 +56,65 @@ void main() {
       );
 
       expect(resolveCourseGroupTitle(download), 'course-456');
+    });
+  });
+
+  group('DownloadsScreen — downloads kill switch', () {
+    late MockDownloadRepository downloadRepository;
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      downloadRepository = MockDownloadRepository();
+      when(() => downloadRepository.getDownloads())
+          .thenAnswer((_) async => const Right([]));
+      when(() => downloadRepository.changeStream)
+          .thenAnswer((_) => const Stream.empty());
+    });
+
+    Widget wrap(List<Override> overrides) {
+      return ProviderScope(
+        overrides: overrides,
+        child: const MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: DownloadsScreen(),
+        ),
+      );
+    }
+
+    testWidgets(
+        'renders the manager UI (empty list) by default — unregistered flag '
+        'preserves current behavior', (tester) async {
+      await tester.pumpWidget(
+        wrap([downloadRepositoryProvider.overrideWithValue(downloadRepository)]),
+      );
+      await tester.pumpAndSettle();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.downloadsTitle), findsOneWidget);
+      expect(find.text(l10n.downloadsEmpty), findsOneWidget);
+      // Manager-only affordance is offered on the normal path.
+      expect(find.byIcon(Icons.cleaning_services), findsOneWidget);
+    });
+
+    testWidgets(
+        'renders the empty state instead of the manager UI when the flag is '
+        'disabled — even if the screen is reached through a stale route', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        wrap([
+          downloadRepositoryProvider.overrideWithValue(downloadRepository),
+          featureFlagsOverride({FeatureFlagKey.coursesDownloads: false}),
+        ]),
+      );
+      await tester.pumpAndSettle();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.downloadsTitle), findsOneWidget);
+      expect(find.text(l10n.downloadsEmpty), findsOneWidget);
+      // Manager-only affordances are not offered while kill-switched.
+      expect(find.byIcon(Icons.cleaning_services), findsNothing);
     });
   });
 }

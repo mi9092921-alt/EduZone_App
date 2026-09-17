@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../../core/feature_flags/feature_flag_keys.dart';
+import '../../../../../core/feature_flags/feature_flags_provider.dart';
 // Documented architecture debt (5c): the lesson list needs per-lesson
 // download status; there is no event/shared-model representation of
 // download state, so this remains a direct provider import (same debt
@@ -83,6 +85,11 @@ class LessonTileWrapper extends ConsumerWidget {
       onTap: onTap,
       onToggleCompleted: onToggleCompleted,
       onDownload: onDownload,
+      // Remote kill switch (FeatureFlagKey.coursesDownloads): false removes
+      // the download indicator entirely; playback/progress UI is unaffected.
+      showDownload: ref
+          .watch(featureFlagsProvider)
+          .isEnabled(FeatureFlagKey.coursesDownloads),
       isDownloading: isDownloading,
       isDownloaded: isDownloaded,
       downloadFailed: downloadFailed,

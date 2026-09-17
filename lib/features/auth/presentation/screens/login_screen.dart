@@ -7,6 +7,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../core/utils/text_direction_detector.dart';
 import '../../../../shared/models/auth_state.dart';
 import '../../../../shared/utils/app_snackbar.dart';
 import '../../application/providers/auth_provider.dart';
@@ -272,6 +273,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       if (_appVersion.isNotEmpty)
                         Text(
                           '${l10n.appTitle} ${l10n.versionLabel(_appVersion)}',
+                          // The sentence's language (the localized version
+                          // label) drives the base direction, so an Arabic
+                          // label reads RTL even with a Latin brand name —
+                          // the mixed name+version line never scrambles.
+                          textDirection: TextDirectionDetector.detect(
+                            l10n.versionLabel(_appVersion),
+                          ),
                           style: AppTextStyles.bodySmall.copyWith(
                             color: AppColors.textSecondary,
                             fontWeight: FontWeight.w600,

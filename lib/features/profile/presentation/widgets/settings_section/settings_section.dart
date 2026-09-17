@@ -9,11 +9,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../../app/app_providers.dart';
 import '../../../../../app/state/app_state_provider.dart';
 import '../../../../../core/constants/app_constants.dart';
+import '../../../../../core/feature_flags/feature_flag_keys.dart';
+import '../../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../core/permissions/permission_builder.dart';
 import '../../../../../core/permissions/permission_item.dart';
 import '../../../../../core/services/permission_service.dart';
 import '../../../../../core/services/push_token_registration_service.dart';
+import '../../../../../core/utils/text_direction_detector.dart';
 import '../../../../../shared/models/auth_state.dart';
 import '../../../../../shared/providers/download_network_policy_provider.dart';
 import '../../../../../shared/utils/app_snackbar.dart';
@@ -268,25 +271,34 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
             onRequestPermission: _requestPermission,
           ),
         ),
-        const SizedBox(height: AppSpacing.lg),
-        SettingsSectionHeader(title: l10n.downloadsSettingsHeader),
-        const SizedBox(height: AppSpacing.md),
-        AppCard(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-          elevated: false,
-          backgroundColor: scheme.surface,
-          borderColor: scheme.outlineVariant,
-          child: SettingsSwitchTile(
-            icon: AppIcons.wifi,
-            title: l10n.wifiOnlyDownloads,
-            subtitle: l10n.wifiOnlyDownloadsSubtitle,
-            value: downloadPolicy.wifiOnly,
-            semanticsLabel: l10n.wifiOnlyDownloads,
-            onChanged: (value) => ref
-                .read(downloadNetworkPolicyProvider.notifier)
-                .setWifiOnly(value),
+        // Remote kill switch (FeatureFlagKey.coursesDownloads): the whole
+        // downloads settings section goes away together with the other
+        // downloads surfaces (courses-tab entry, per-lesson buttons,
+        // downloads screen). The stored Wi-Fi-only preference itself is
+        // untouched — hiding the section is UI gating only.
+        if (ref
+            .watch(featureFlagsProvider)
+            .isEnabled(FeatureFlagKey.coursesDownloads)) ...[
+          const SizedBox(height: AppSpacing.lg),
+          SettingsSectionHeader(title: l10n.downloadsSettingsHeader),
+          const SizedBox(height: AppSpacing.md),
+          AppCard(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            elevated: false,
+            backgroundColor: scheme.surface,
+            borderColor: scheme.outlineVariant,
+            child: SettingsSwitchTile(
+              icon: AppIcons.wifi,
+              title: l10n.wifiOnlyDownloads,
+              subtitle: l10n.wifiOnlyDownloadsSubtitle,
+              value: downloadPolicy.wifiOnly,
+              semanticsLabel: l10n.wifiOnlyDownloads,
+              onChanged: (value) => ref
+                  .read(downloadNetworkPolicyProvider.notifier)
+                  .setWifiOnly(value),
+            ),
           ),
-        ),
+        ],
         const SizedBox(height: AppSpacing.lg),
         SettingsSectionHeader(title: l10n.supportAndInfo),
         const SizedBox(height: AppSpacing.md),
@@ -365,6 +377,11 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
         Center(
           child: Text(
             '${l10n.appTitle} ${l10n.versionLabel(_appVersion)}',
+            // Sentence language (version label) drives the base direction —
+            // same treatment as the login version footer.
+            textDirection: TextDirectionDetector.detect(
+              l10n.versionLabel(_appVersion),
+            ),
             style: AppTextStyles.bodySmall.copyWith(color: ds.textSecondary),
           ),
         ),

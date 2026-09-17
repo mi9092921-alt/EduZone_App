@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/feature_flags/feature_flag_keys.dart';
+import '../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/utils/error_handler.dart';
 import '../../application/providers/courses_provider.dart';
@@ -24,11 +26,18 @@ class MyCoursesScreen extends ConsumerWidget {
           ? ErrorHandler.getMessage(context, myCoursesAsync.error!)
           : null,
       actions: [
-        IconButton(
-          icon: const Icon(Icons.download_rounded),
-          onPressed: () => context.push('/courses/downloads'),
-          tooltip: l10n.downloads,
-        ),
+        // Remote kill switch (FeatureFlagKey.coursesDownloads): hides the
+        // downloads entry. Pure UI affordance gating — the downloads
+        // manager screen is gated too, so a stale route cannot reach it,
+        // while actual download operations keep their own enforcement.
+        if (ref
+            .watch(featureFlagsProvider)
+            .isEnabled(FeatureFlagKey.coursesDownloads))
+          IconButton(
+            icon: const Icon(Icons.download_rounded),
+            onPressed: () => context.push('/courses/downloads'),
+            tooltip: l10n.downloads,
+          ),
       ],
       slivers: [
         myCoursesAsync.when(

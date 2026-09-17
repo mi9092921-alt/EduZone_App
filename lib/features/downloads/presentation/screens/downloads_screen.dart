@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/feature_flags/feature_flag_keys.dart';
+import '../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
 import '../../../../shared/models/download_enums.dart';
@@ -55,12 +57,39 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Skip the data refresh when the feature is kill-switched off; the
+      // gated build() below renders the empty state regardless.
+      if (!ref
+          .read(featureFlagsProvider)
+          .isEnabled(FeatureFlagKey.coursesDownloads)) {
+        return;
+      }
       ref.read(downloadsProvider.notifier).refresh();
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    // Remote kill switch (FeatureFlagKey.coursesDownloads): when disabled
+    // the manager UI is not rendered at all — even if the screen is
+    // reached through a stale route or deep link — and the regular empty
+    // state serves instead. Pure UI affordance gating, not an
+    // authorization boundary.
+    if (!ref
+        .watch(featureFlagsProvider)
+        .isEnabled(FeatureFlagKey.coursesDownloads)) {
+      final ds = AppColors.of(context);
+      final l10n = AppLocalizations.of(context)!;
+      return AppScreen(
+        scrollable: false,
+        appBar: AppBar(
+          elevation: 0,
+          title: Text(l10n.downloadsTitle),
+        ),
+        child: _buildEmptyState(context, ds, l10n),
+      );
+    }
+
     final ds = AppColors.of(context);
     final l10n = AppLocalizations.of(context)!;
     final downloadsAsync = ref.watch(downloadsProvider);

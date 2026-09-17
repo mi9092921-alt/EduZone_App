@@ -82,6 +82,18 @@ void main() {
     expect(light.colorScheme.primary, dark.colorScheme.primary);
   });
 
+  test('unselected switch keeps its thumb visible against the track', () {
+    for (final theme in [AppTheme.light(locale), AppTheme.dark(locale)]) {
+      const unselected = <WidgetState>{};
+      final thumb = theme.switchTheme.thumbColor!.resolve(unselected);
+      final track = theme.switchTheme.trackColor!.resolve(unselected);
+      // outline and outlineVariant are aliased to one border color in
+      // both schemes — a thumb/track pair drawn from them renders the
+      // off switch as a solid block with no visible thumb.
+      expect(thumb, isNot(track));
+    }
+  });
+
   testWidgets(
     'building either theme does not throw for the Arabic locale',
     (tester) async {

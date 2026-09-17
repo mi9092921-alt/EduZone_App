@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app/core/feature_flags/feature_flag_keys.dart';
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/courses/domain/entities/course_enrollment.dart';
@@ -9,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+import '../../../../helpers/feature_flag_overrides.dart';
 
 const _course = Course(
   id: 'course-1',
@@ -98,6 +101,35 @@ void main() {
 
     expect(find.text(_course.title), findsOneWidget);
     expect(find.text(courseB.title), findsOneWidget);
+  });
+
+  group('downloads entry kill switch', () {
+    testWidgets(
+        'shows the downloads entry by default (unregistered flag = current '
+        'behavior)', (tester) async {
+      await pumpMyCourses(
+        tester,
+        overrides: [myCoursesProvider.overrideWith((ref) async => const [])],
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.download_rounded), findsOneWidget);
+    });
+
+    testWidgets('hides the downloads entry when the flag is disabled', (
+      tester,
+    ) async {
+      await pumpMyCourses(
+        tester,
+        overrides: [
+          myCoursesProvider.overrideWith((ref) async => const []),
+          featureFlagsOverride({FeatureFlagKey.coursesDownloads: false}),
+        ],
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.download_rounded), findsNothing);
+    });
   });
 
   testWidgets(
