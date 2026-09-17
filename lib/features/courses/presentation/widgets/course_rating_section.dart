@@ -49,6 +49,7 @@ class CourseRatingSection extends ConsumerWidget {
           _RatingStars(
             currentRating: ref.watch(myCourseRatingProvider(course.id)).value,
             onSubmit: (value) => _submitRating(context, ref, value),
+            l10n: l10n,
           ),
         ] else if (ratingInputEnabled &&
             isEnrolled.hasValue &&
@@ -127,8 +128,13 @@ class CourseRatingSection extends ConsumerWidget {
 class _RatingStars extends StatelessWidget {
   final int? currentRating;
   final ValueChanged<int> onSubmit;
+  final AppLocalizations l10n;
 
-  const _RatingStars({required this.currentRating, required this.onSubmit});
+  const _RatingStars({
+    required this.currentRating,
+    required this.onSubmit,
+    required this.l10n,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -148,7 +154,7 @@ class _RatingStars extends StatelessWidget {
               size: 32,
               color: AppColors.warning,
             ),
-            tooltip: '$star',
+            tooltip: l10n.ratingStarTooltip(star),
             onPressed: () => onSubmit(star),
           ),
       ],

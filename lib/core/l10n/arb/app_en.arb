@@ -622,6 +622,14 @@
     }
   },
   "rateThisCourse": "Rate this course",
+  "ratingStarTooltip": "Rate {star} of 5 stars",
+  "@ratingStarTooltip": {
+    "placeholders": {
+      "star": {
+        "type": "int"
+      }
+    }
+  },
   "ratingNotEnrolled": "Enroll in the course to be able to rate it",
   "ratingSubmitted": "Your rating has been submitted",
   "ratingUpdated": "Your rating has been updated",

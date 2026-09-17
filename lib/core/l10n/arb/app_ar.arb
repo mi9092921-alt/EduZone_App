@@ -624,6 +624,7 @@
     }
   },
   "rateThisCourse": "قيّم هذا الكورس",
+  "ratingStarTooltip": "قيّم بـ {star} من 5",
   "ratingNotEnrolled": "سجّل في الكورس لتتمكن من التقييم",
   "ratingSubmitted": "تم إرسال تقييمك",
   "ratingUpdated": "تم تحديث تقييمك",

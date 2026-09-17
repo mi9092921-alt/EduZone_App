@@ -1263,6 +1263,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get rateThisCourse => 'Rate this course';
 
   @override
+  String ratingStarTooltip(int star) {
+    return 'Rate $star of 5 stars';
+  }
+
+  @override
   String get ratingNotEnrolled => 'Enroll in the course to be able to rate it';
 
   @override

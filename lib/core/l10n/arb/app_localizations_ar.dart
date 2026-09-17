@@ -1261,6 +1261,11 @@ class AppLocalizationsAr extends AppLocalizations {
   String get rateThisCourse => 'قيّم هذا الكورس';
 
   @override
+  String ratingStarTooltip(int star) {
+    return 'قيّم بـ $star من 5';
+  }
+
+  @override
   String get ratingNotEnrolled => 'سجّل في الكورس لتتمكن من التقييم';
 
   @override

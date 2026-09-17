@@ -2336,6 +2336,12 @@ abstract class AppLocalizations {
   /// **'Rate this course'**
   String get rateThisCourse;
 
+  /// No description provided for @ratingStarTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate {star} of 5 stars'**
+  String ratingStarTooltip(int star);
+
   /// No description provided for @ratingNotEnrolled.
   ///
   /// In en, this message translates to:

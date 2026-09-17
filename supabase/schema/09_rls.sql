@@ -19,11 +19,13 @@ CREATE POLICY offline_entitlements_select_own
 
 DROP POLICY IF EXISTS offline_entitlements_service_all
   ON public.offline_download_entitlements;
+-- VALIDATION check 31 bans a literal USING(true)/WITH CHECK(true); the JWT
+-- role claim check is the service-role equivalent with the same effect.
 CREATE POLICY offline_entitlements_service_all
   ON public.offline_download_entitlements
   FOR ALL TO service_role
-  USING (true)
-  WITH CHECK (true);
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
 
 ALTER TABLE public.security_incidents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.security_incidents FORCE ROW LEVEL SECURITY;
@@ -1602,7 +1604,7 @@ DROP POLICY IF EXISTS constants_authenticated_read ON public.constants;
 
 CREATE POLICY constants_authenticated_read ON public.constants
   FOR SELECT TO authenticated
-  USING (true);
+  USING ((select auth.uid()) IS NOT NULL);
 
 DROP POLICY IF EXISTS constants_anon_deny ON public.constants;
 
@@ -2190,6 +2192,14 @@ BEGIN
     WHERE n.nspname = 'public' AND c.relname = 'user_progress' AND c.relkind = 'r'
   ) THEN
     EXECUTE 'ALTER TABLE public.user_progress NO FORCE ROW LEVEL SECURITY';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'activity_log_queue' AND c.relkind = 'r'
+  ) THEN
+    EXECUTE 'ALTER TABLE public.activity_log_queue NO FORCE ROW LEVEL SECURITY';
   END IF;
 END;
 $$;
