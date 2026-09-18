@@ -5,6 +5,7 @@ import 'package:app/core/error/exceptions.dart';
 import 'package:app/core/network/network_exception_mapper.dart';
 import 'package:app/core/network/session_revocation_hook.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
@@ -149,6 +150,57 @@ void main() {
         Exception('SocketException: Failed host lookup: example.com'),
       );
       expect(mapped, isA<NoInternetException>());
+    });
+
+    group('transport-level http.ClientException (Sentry EDUZONE-V)', () {
+      // Production incident: a connection dropped mid-request surfaces as
+      // http.ClientException("Software caused connection abort") from the
+      // Supabase REST client. It used to fall through to a generic
+      // ServerException — skipping NetworkGuard.read's retry path and
+      // leaking into Sentry as an "error". It is pure connectivity noise.
+      test('classifies a bare ClientException as NoInternetException', () {
+        final mapped = NetworkExceptionMapper.map(
+          http.ClientException(
+            'Software caused connection abort',
+            Uri.parse(
+              'https://example.supabase.co/rest/v1/rpc/check_student_app_access',
+            ),
+          ),
+        );
+        expect(mapped, isA<NoInternetException>());
+      });
+
+      test('classifies the production message shape wrapped in a plain '
+          'Exception', () {
+        final mapped = NetworkExceptionMapper.map(
+          Exception(
+            'ClientException: Software caused connection abort, '
+            'uri=https://example.supabase.co/rest/v1/rpc/check_student_app_access',
+          ),
+        );
+        expect(mapped, isA<NoInternetException>());
+      });
+
+      test('classifies a raw OSError connection-abort message', () {
+        final mapped = NetworkExceptionMapper.map(
+          Exception('OSError: Software caused connection abort, errno = 103'),
+        );
+        expect(mapped, isA<NoInternetException>());
+      });
+
+      test('classifies "connection closed while receiving data"', () {
+        final mapped = NetworkExceptionMapper.map(
+          http.ClientException('Connection closed while receiving data'),
+        );
+        expect(mapped, isA<NoInternetException>());
+      });
+
+      test('a ClientException-mapped failure is retryable for reads', () {
+        final mapped = NetworkExceptionMapper.map(
+          http.ClientException('Software caused connection abort'),
+        );
+        expect(NetworkExceptionMapper.isRetryable(mapped), isTrue);
+      });
     });
 
     test('falls back to ServerException for anything unclassified', () {

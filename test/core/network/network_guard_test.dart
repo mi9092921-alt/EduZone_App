@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:app/core/error/exceptions.dart';
 import 'package:app/core/network/network_guard.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 
 void main() {
   group('NetworkGuard.read', () {
@@ -30,6 +31,23 @@ void main() {
       );
       expect(result, 'ok');
       expect(calls, 3);
+    });
+
+    test('retries a transient http.ClientException (transport abort), then succeeds',
+        () async {
+      var calls = 0;
+      final result = await NetworkGuard.read(
+        () async {
+          calls++;
+          if (calls < 2) {
+            throw http.ClientException('Software caused connection abort');
+          }
+          return 'ok';
+        },
+        retryBaseDelay: const Duration(milliseconds: 1),
+      );
+      expect(result, 'ok');
+      expect(calls, 2);
     });
 
     test('gives up after maxAttempts and throws the classified exception', () async {

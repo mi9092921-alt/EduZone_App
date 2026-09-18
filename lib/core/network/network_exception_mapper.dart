@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../error/exceptions.dart';
@@ -41,6 +42,17 @@ class NetworkExceptionMapper {
 
     if (error is TimeoutException) {
       return const RequestTimeoutException();
+    }
+
+    if (error is http.ClientException) {
+      // package:http's ClientException is the transport-failure mode of the
+      // engine under Supabase's REST client: the connection was aborted,
+      // dropped, or reset mid-request (e.g. Android errno 103 "Software
+      // caused connection abort"). The request never completed, so this is
+      // connectivity noise, not a server error — and for NetworkGuard.read
+      // it must classify as retryable (Sentry EDUZONE-V reported it as an
+      // unclassified ServerException that skipped the read retry path).
+      return const NoInternetException();
     }
 
     if (error is AuthRetryableFetchException) {
@@ -108,6 +120,9 @@ class NetworkExceptionMapper {
         lower.contains('network is unreachable') ||
         lower.contains('connection refused') ||
         lower.contains('connection reset') ||
+        lower.contains('connection abort') ||
+        lower.contains('connection closed') ||
+        lower.contains('clientexception') ||
         lower.contains('httpexception')) {
       return const NoInternetException();
     }
