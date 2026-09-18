@@ -149,7 +149,17 @@ class CheckStudentAppAccessService {
 
       final data = response;
 
-      final dbTokenVersion = data['token_version'] as int?;
+      // token_version must be accepted as int OR String: the RPC briefly
+      // emitted it as a JSON string when the schema declared the variable
+      // text (fixed in the canonical schema), and a cast failure here would
+      // abort the whole check — killing maintenance/app_locked handling and
+      // mismatch detection — before the allowed/denied decision below.
+      final rawTokenVersion = data['token_version'];
+      final dbTokenVersion = rawTokenVersion is int
+          ? rawTokenVersion
+          : rawTokenVersion is String
+              ? int.tryParse(rawTokenVersion)
+              : null;
       final jwtVersion = _currentJwtTokenVersion;
 
       if (dbTokenVersion != null && jwtVersion != null) {

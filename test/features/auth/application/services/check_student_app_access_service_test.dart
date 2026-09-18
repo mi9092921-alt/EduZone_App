@@ -121,6 +121,39 @@ void main() {
     });
   });
 
+  group('string token_version payloads (schema text-bug regression)', () {
+    // check_student_app_access() briefly declared its token_version variable
+    // as text, so the RPC returned it as a JSON *string* ("9" not 9) on
+    // every return path. The old `as int?` cast threw a TypeError on every
+    // poll tick — swallowed by the catch, but it aborted the whole check:
+    // maintenance/app_locked restricted callbacks never fired and
+    // token_version-mismatch detection never ran. Both shapes must work.
+    test('string token_version > jwtVersion still forces logout', () async {
+      mockRpcResponse = {'token_version': '9', 'allowed': true};
+      mockJwtVersion = 3;
+
+      final service = buildService();
+      await service.checkNow();
+
+      expect(deniedReasons, ['token_version_mismatch']);
+    });
+
+    test('maintenance_mode with string token_version still restricts',
+        () async {
+      mockRpcResponse = {
+        'allowed': false,
+        'reason': 'maintenance_mode',
+        'token_version': '5',
+      };
+
+      final service = buildService();
+      await service.checkNow();
+
+      expect(deniedReasons, isEmpty);
+      expect(restrictedAccesses.single.status, AccountStatus.maintenance);
+    });
+  });
+
   group('connectivity failure during check (CHECKUSERACCESS-BUG-01)', () {
     // Production incident: a device with no network at all makes the
     // check RPC fail with a DNS/socket-level error (`http.ClientException`
