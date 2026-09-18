@@ -166,7 +166,7 @@ jobs:
           api-level: 34
           arch: x86_64
           profile: pixel_2
-          target: google_apis
+          target: google_atd
           force-avd-creation: true
           ram-size: 4096M
           disk-size: 8192M
@@ -177,9 +177,6 @@ jobs:
           # These integration tests do not require animations to be disabled.
           disable-animations: false
           emulator-boot-timeout: 1200
-          # Pin the emulator binary so SDK-image updates cannot silently
-          # change the headless ADB/graphics path used by this job.
-          emulator-build: 12895296
           # Use the fully software renderer for headless CI. This avoids
           # renderer/ADB instability while the APK is installed and launched.
           emulator-options: >-
