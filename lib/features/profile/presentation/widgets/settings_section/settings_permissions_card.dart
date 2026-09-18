@@ -14,14 +14,20 @@ import 'settings_value_display.dart';
 /// while permissions are being checked, or the actual list of permission
 /// rows (each tappable to request/re-check that permission) once loaded.
 ///
-/// Pure presentational widget — all data (items, statuses, loading flag)
-/// and the request action are passed in, so it's independently testable
-/// without a real `PermissionService`.
+/// Pure presentational widget — all data (items, statuses, loading and
+/// requesting flags) and the request action are passed in, so it's
+/// independently testable without a real `PermissionService`.
 class SettingsPermissionsCard extends StatelessWidget {
   final bool isLoading;
   final List<PermissionItem> items;
   final Map<AppPermissionKind, PermissionStatus> statuses;
   final ValueChanged<PermissionItem> onRequestPermission;
+
+  /// True while a native permission request is still pending:
+  /// permission_handler throws a PlatformException when a second request
+  /// starts before the first one settles, so every row must stay inert
+  /// until then (Sentry EDUZONE-W).
+  final bool isRequesting;
 
   const SettingsPermissionsCard({
     super.key,
@@ -29,6 +35,7 @@ class SettingsPermissionsCard extends StatelessWidget {
     required this.items,
     required this.statuses,
     required this.onRequestPermission,
+    this.isRequesting = false,
   });
 
   @override
@@ -66,7 +73,7 @@ class SettingsPermissionsCard extends StatelessWidget {
                 title: item.label,
                 semanticsLabel: '${item.label}, $statusLabel',
                 trailing: SettingsValueDisplay(value: statusLabel),
-                onTap: () => onRequestPermission(item),
+                onTap: isRequesting ? null : () => onRequestPermission(item),
               );
             },
           ),

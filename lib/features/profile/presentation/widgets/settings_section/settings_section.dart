@@ -1,5 +1,6 @@
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -55,6 +56,12 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
   List<PermissionItem> _permissionItems = const [];
   Map<AppPermissionKind, PermissionStatus> _permissionStatuses = {};
 
+  /// True while a native permission request is pending. permission_handler
+  /// throws a PlatformException when a second request starts before the
+  /// first settles (Sentry EDUZONE-W), so requests are serialized and the
+  /// rows stay disabled until the current one finishes.
+  bool _permissionRequestInFlight = false;
+
   @override
   void initState() {
     super.initState();
@@ -105,22 +112,37 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
   }
 
   Future<void> _requestPermission(PermissionItem item) async {
-    final status = await ref
-        .read(permissionServiceProvider)
-        .request(item.permission);
+    if (_permissionRequestInFlight) return;
+    _permissionRequestInFlight = true;
+    if (mounted) setState(() {});
 
-    if (!mounted) return;
+    try {
+      final status = await ref
+          .read(permissionServiceProvider)
+          .request(item.permission);
 
-    setState(() {
-      _permissionStatuses[item.kind] = status;
-    });
+      if (!mounted) return;
 
-    if (item.kind == AppPermissionKind.notifications && status.isGranted) {
-      await PushTokenRegistrationService.requestPermissionAndRegister();
-    }
+      setState(() {
+        _permissionStatuses[item.kind] = status;
+      });
 
-    if (status.isPermanentlyDenied) {
-      await _showPermanentlyDeniedDialog(item);
+      if (item.kind == AppPermissionKind.notifications && status.isGranted) {
+        await PushTokenRegistrationService.requestPermissionAndRegister();
+      }
+
+      if (status.isPermanentlyDenied) {
+        await _showPermanentlyDeniedDialog(item);
+      }
+    } on PlatformException catch (e) {
+      // Expected residue of the same race (a tap landing around the native
+      // dialog) or an OS-level refusal — not a system defect. The previous
+      // status stays displayed and the user can simply tap again; never
+      // forwarded to Sentry.
+      debugPrint('[SettingsSection] Permission request failed: ${e.code}');
+    } finally {
+      _permissionRequestInFlight = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -269,6 +291,7 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
             items: _permissionItems,
             statuses: _permissionStatuses,
             onRequestPermission: _requestPermission,
+            isRequesting: _permissionRequestInFlight,
           ),
         ),
         // Remote kill switch (FeatureFlagKey.coursesDownloads): the whole

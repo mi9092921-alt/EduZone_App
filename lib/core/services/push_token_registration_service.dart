@@ -1,6 +1,7 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../network/network_config.dart';
 import '../network/supabase_client.dart';
@@ -14,7 +15,17 @@ class PushTokenRegistrationService {
 
   static Future<void> requestPermissionAndRegister() async {
     try {
-      await FirebaseMessaging.instance.requestPermission();
+      // Skip the native prompt when the OS-level notification permission is
+      // already granted: the primary caller (settings_section) has usually
+      // just obtained it through permission_handler, and firing FCM's
+      // requestPermission() on top of that is a second native request that
+      // can collide with other pending permission dialogs (Sentry
+      // EDUZONE-W). Both plugins surface the same underlying OS permission,
+      // so a permission_handler "granted" is authoritative for FCM too.
+      final notificationStatus = await Permission.notification.status;
+      if (!notificationStatus.isGranted) {
+        await FirebaseMessaging.instance.requestPermission();
+      }
       await registerCurrentUserToken();
     } catch (error, stackTrace) {
       debugPrint('Push permission request failed: ${error.runtimeType}');

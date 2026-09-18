@@ -83,5 +83,38 @@ void main() {
 
       expect(requested, item);
     });
+
+    testWidgets('keeps every row inert while isRequesting is true', (
+      WidgetTester tester,
+    ) async {
+      const cameraItem = PermissionItem(
+        kind: AppPermissionKind.camera,
+        permission: Permission.camera,
+        label: 'Camera',
+      );
+
+      var requested = 0;
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          SettingsPermissionsCard(
+            isLoading: false,
+            items: const [cameraItem],
+            statuses: const {},
+            onRequestPermission: (_) => requested++,
+            isRequesting: true,
+          ),
+        ),
+      );
+
+      // Simulates a second tap racing the still-pending native dialog —
+      // this is the tap that used to hit permission_handler's "a request
+      // for permissions is already running" PlatformException (Sentry
+      // EDUZONE-W). With isRequesting the row must not fire.
+      await tester.tap(find.text('Camera'), warnIfMissed: false);
+      await tester.pump();
+
+      expect(requested, 0);
+    });
   });
 }
