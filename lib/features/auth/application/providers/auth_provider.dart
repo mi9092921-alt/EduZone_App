@@ -596,20 +596,27 @@ class Auth extends _$Auth {
       // trace. That made a real post-authentication failure (a wrong
       // RPC contract, a missing grant, an RLS rejection) indistinguishable
       // from any other unmapped error after the fact. `InvalidCredentialsException`
-      // (and its authless siblings below) are the one case that's an
-      // expected, high-volume, user-caused outcome -- not a system
-      // defect -- so those are deliberately kept out of Sentry to avoid
-      // turning normal typo/forgotten-password attempts into alert noise.
+      // (and its authless siblings below) are the expected, high-volume,
+      // user-caused outcomes -- not system defects -- so those are
+      // deliberately kept out of Sentry to avoid turning normal
+      // typo/forgotten-password attempts into alert noise.
+      // `MaxDevicesReachedException` joins them (Sentry EDUZONE-Q/R): a
+      // device-limit rejection is normal usage with dedicated login-screen
+      // copy, and the freshly created session is torn down either way.
       // Everything else reaching this catch happened *after*
       // signInWithPassword() already succeeded, so it is always worth a
       // full diagnostic record.
+      final isExpectedLoginFailure = AuthErrorPolicy.isTransient(e) ||
+          e is InvalidCredentialsException ||
+          e is EmailNotConfirmedException ||
+          e is RateLimitedException ||
+          e is MaxDevicesReachedException;
+
       if (AuthErrorPolicy.isTransient(e)) {
         debugPrint(
           '[Auth] Login failed due to transient error: ${e.runtimeType}',
         );
-      } else if (e is InvalidCredentialsException ||
-          e is EmailNotConfirmedException ||
-          e is RateLimitedException) {
+      } else if (isExpectedLoginFailure) {
         debugPrint('[Auth] Login failed with ${e.runtimeType}');
       } else {
         GlobalErrorHandler.logError(e, st);
@@ -651,6 +658,7 @@ class Auth extends _$Auth {
               timestamp: DateTime.now(),
               errorMessage:
                   'Login failed: ${AuthErrorPolicy.mapExceptionToKey(e)}',
+              expected: isExpectedLoginFailure,
             ),
           );
 

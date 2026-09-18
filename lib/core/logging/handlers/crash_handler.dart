@@ -57,7 +57,14 @@ class CrashHandler extends EventHandler {
     // GlobalErrorHandler.logError() already reports for the underlying
     // failure. captureMessage() is the correct API for a diagnostic
     // string like this.
-    Sentry.captureMessage(event.errorMessage, level: SentryLevel.error);
+    Sentry.captureMessage(
+      event.errorMessage,
+      // Expected outcomes (transient/offline, user-caused rejections —
+      // flagged by the emitter) still earn the breadcrumb trail and a
+      // message record, but at info level: alerting on normal user
+      // behavior is page-on-call noise (Sentry EDUZONE-Q/R).
+      level: event.expected ? SentryLevel.info : SentryLevel.error,
+    );
 
     if (kDebugMode) {
       debugPrint('[CrashHandler] Error: ${event.errorMessage}');

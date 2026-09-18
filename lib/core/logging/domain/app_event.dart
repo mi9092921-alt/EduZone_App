@@ -541,6 +541,12 @@ class ErrorOccurredEvent extends AppEvent {
   final String errorMessage;
   final String? stackTrace;
 
+  /// True when this error is an expected outcome — transient connectivity,
+  /// or a user-caused business rejection (bad credentials, device limit
+  /// reached, ...) — rather than a system defect. Consumers (CrashHandler)
+  /// keep expected outcomes out of error-level alerting.
+  final bool expected;
+
   const ErrorOccurredEvent({
     required super.timestamp,
     super.userId,
@@ -548,6 +554,7 @@ class ErrorOccurredEvent extends AppEvent {
     super.deviceId,
     required this.errorMessage,
     this.stackTrace,
+    this.expected = false,
   });
 
   @override
@@ -560,6 +567,7 @@ class ErrorOccurredEvent extends AppEvent {
   Map<String, dynamic> get details => {
     'error': errorMessage,
     if (stackTrace != null) 'stack_trace': stackTrace,
+    'expected': expected,
   };
 }
 

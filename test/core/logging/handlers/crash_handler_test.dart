@@ -52,4 +52,25 @@ void main() {
       );
     });
   });
+
+  group('ErrorOccurredEvent expected flag', () {
+    test('defaults to expected=false and surfaces it in details', () {
+      final unexpected = ErrorOccurredEvent(
+        timestamp: DateTime(2026),
+        errorMessage: 'boom',
+      );
+      expect(unexpected.expected, isFalse);
+      expect(unexpected.details['expected'], isFalse);
+    });
+
+    test('an expected outcome carries expected=true in details', () {
+      final expected = ErrorOccurredEvent(
+        timestamp: DateTime(2026),
+        errorMessage: 'Login failed: errorMaxDevices',
+        expected: true,
+      );
+      expect(expected.expected, isTrue);
+      expect(expected.details['expected'], isTrue);
+    });
+  });
 }
