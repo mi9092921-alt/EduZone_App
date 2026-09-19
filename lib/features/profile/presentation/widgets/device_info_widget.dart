@@ -85,11 +85,8 @@ class DeviceInfoWidget extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xs2),
                 Text(
                   l10n.verifiedDevice,
-                  style: AppTextStyles.label.copyWith(
+                  style: AppTextStyles.labelTiny.copyWith(
                     color: AppColors.success,
-                    fontWeight: FontWeight.w600,
-                    fontSize:
-                        10, // Slightly smaller but bolder for premium look
                   ),
                 ),
               ],

@@ -284,6 +284,18 @@ abstract class AppLocalizations {
   /// **'Device limit reached (1 device).'**
   String get errorMaxDevices;
 
+  /// No description provided for @errorScreenTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong'**
+  String get errorScreenTitle;
+
+  /// No description provided for @errorScreenBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Don\'t worry, our technical team is already working on fixing this. Please try again.'**
+  String get errorScreenBody;
+
   /// No description provided for @errorDeviceBound.
   ///
   /// In en, this message translates to:

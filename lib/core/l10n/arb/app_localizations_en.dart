@@ -109,6 +109,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errorMaxDevices => 'Device limit reached (1 device).';
 
   @override
+  String get errorScreenTitle => 'Something went wrong';
+
+  @override
+  String get errorScreenBody =>
+      'Don\'t worry, our technical team is already working on fixing this. Please try again.';
+
+  @override
   String get errorDeviceBound => 'Device registered to another account.';
 
   @override

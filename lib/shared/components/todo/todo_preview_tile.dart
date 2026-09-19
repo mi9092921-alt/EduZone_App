@@ -88,11 +88,10 @@ class TodoPreviewTile extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: (dateStr.isNotEmpty || isLoading)
+                          child: dateStr.isNotEmpty
                               ? Text(
-                                  dateStr.isEmpty ? 'Loading Date...' : dateStr,
+                                  dateStr,
                                   style: AppTextStyles.labelSmall.copyWith(
-                                    fontSize: 10,
                                     color: item.isOverdue(DateTime.now())
                                         ? AppColors.error
                                         : ds.textSecondary,

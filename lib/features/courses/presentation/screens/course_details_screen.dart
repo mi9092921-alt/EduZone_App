@@ -387,9 +387,8 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
                             ).languageCode,
                           ),
                         ),
-                        style: AppTextStyles.bodySmall.copyWith(
+                        style: AppTextStyles.labelSmall.copyWith(
                           color: ds.textMuted,
-                          fontSize: 11,
                         ),
                       ),
                     ],

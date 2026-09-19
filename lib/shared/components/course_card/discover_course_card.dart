@@ -157,10 +157,8 @@ class DiscoverCourseCard extends StatelessWidget {
     return CourseCardOverlayBadge(
       child: Text(
         localized.toUpperCase(),
-        style: AppTextStyles.labelSmall.copyWith(
+        style: AppTextStyles.labelTiny.copyWith(
           color: colors.textPrimary,
-          fontWeight: FontWeight.w700,
-          fontSize: 10,
         ),
       ),
     );
@@ -209,10 +207,8 @@ class DiscoverCourseCard extends StatelessWidget {
         const SizedBox(width: AppSpacing.xs2),
         Text(
           rating.toStringAsFixed(1),
-          style: AppTextStyles.labelSmall.copyWith(
+          style: AppTextStyles.overline.copyWith(
             color: colors.textPrimary,
-            fontWeight: FontWeight.w600,
-            fontSize: 11,
           ),
         ),
       ],
@@ -233,7 +229,6 @@ class DiscoverCourseCard extends StatelessWidget {
           label,
           style: AppTextStyles.labelSmall.copyWith(
             color: colors.textMuted,
-            fontSize: 11,
           ),
         ),
       ],
@@ -360,10 +355,8 @@ class _NewBadgeState extends State<_NewBadge>
         tint: colors.primary,
         child: Text(
           l10n.newStatusLabel,
-          style: AppTextStyles.labelSmall.copyWith(
+          style: AppTextStyles.labelTiny.copyWith(
             color: Colors.white,
-            fontWeight: FontWeight.w700,
-            fontSize: 10,
           ),
         ),
       ),

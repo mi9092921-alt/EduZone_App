@@ -151,6 +151,16 @@ class SecurityService with WidgetsBindingObserver {
       debugPrint('[SECURITY] $name failed during startup: ${e.runtimeType}');
       debugPrintStack(stackTrace: stack);
       _logThreatToSupabase('Security Startup Step Failed: $name');
+      // Deliberate misconfiguration must fail fast in a release build, not
+      // degrade to "RASP silently disabled": freeRASP's config throws
+      // StateError when the release signing hash / team id / watcher mail
+      // were never supplied — exactly the "production build without its
+      // security guards" case its fail-fast exists to catch. Mirrors
+      // SupabaseService.initialize's cert-pinning fail-fast (SEC-001):
+      // startup refuses to continue rather than running unpinned/unguarded.
+      // Debug/profile builds keep the swallow-and-log behavior so local
+      // development without security env values keeps working.
+      if (kReleaseMode && e is StateError) rethrow;
     }
   }
 
@@ -179,6 +189,11 @@ class SecurityService with WidgetsBindingObserver {
     // Fire-and-forget: we do not await or block execution.
     try {
       final client = SupabaseService.client;
+      // No session gate: report_security_incident() accepts pre-auth callers
+      // by design (anon → user_id NULL server-side) — capturing pre-login
+      // RASP events is exactly its purpose (2026-09-19 product/security
+      // decision). The RPC validates shape and absorbs volume abuse
+      // server-side; local buffering below handles transport failures only.
       pip.PackageInfo.fromPlatform().then((packageInfo) {
         payload['app_version'] = packageInfo.version;
         payload['app_build_number'] = packageInfo.buildNumber;
@@ -217,7 +232,15 @@ class SecurityService with WidgetsBindingObserver {
     // probe in the caller (see the StateError/AssertionError note in
     // _logThreatToSupabase).
     const SecurityIncidentRemoteDs()
-        .insertIncident(payload)
+        .reportIncident(
+          threat: payload['threat'] as String? ?? 'unknown',
+          platform: payload['platform'] as String? ?? 'unknown',
+          platformVersion: payload['platform_version'] as String?,
+          isReleaseBuild: payload['is_release_build'] as bool? ?? false,
+          deviceFingerprint: payload['device_fingerprint'] as String?,
+          appVersion: payload['app_version'] as String?,
+          appBuildNumber: payload['app_build_number'] as String?,
+        )
         .then((_) {})
         .catchError((_) {
           _bufferThreatLocally(payload, status: 'insert_failed');

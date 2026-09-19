@@ -43,6 +43,8 @@
     }
   },
   "errorMaxDevices": "Device limit reached (1 device).",
+  "errorScreenTitle": "Something went wrong",
+  "errorScreenBody": "Don't worry, our technical team is already working on fixing this. Please try again.",
   "errorDeviceBound": "Device registered to another account.",
   
   "retryButton": "Retry",

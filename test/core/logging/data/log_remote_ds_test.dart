@@ -9,6 +9,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MockSupabaseClient extends Mock implements SupabaseClient {}
 
+class MockGoTrueClient extends Mock implements GoTrueClient {}
+
+class MockSession extends Mock implements Session {}
+
 /// `SupabaseClient.rpc()` returns `PostgrestFilterBuilder<dynamic>`, not a
 /// plain Future — it only behaves like one when awaited. See
 /// test/features/auth/application/services/check_student_app_access_service_test.dart
@@ -65,6 +69,7 @@ LogEntry _entry({String type = 'lesson_started'}) => LogEntry(
 
 void main() {
   late MockSupabaseClient client;
+  late MockGoTrueClient mockAuth;
   late LogRemoteDataSource dataSource;
 
   setUpAll(() {
@@ -73,7 +78,13 @@ void main() {
 
   setUp(() {
     client = MockSupabaseClient();
+    mockAuth = MockGoTrueClient();
     dataSource = LogRemoteDataSource(client);
+    // syncBatch gates on an existing session (log_activity_async is
+    // revoked from anon); default to "authenticated" so the submission
+    // tests below exercise the RPC path. The no-session tests re-stub.
+    when(() => client.auth).thenReturn(mockAuth);
+    when(() => mockAuth.currentSession).thenReturn(MockSession());
   });
 
   group('LogRemoteDataSource.syncBatch', () {
@@ -110,6 +121,34 @@ void main() {
       final result = await dataSource.syncBatch([_entry()]);
 
       expect(result, isFalse);
+    });
+
+    test('returns false WITHOUT any RPC when no session exists '
+        '(pre-login flush)', () async {
+      // log_activity_async is revoked from anon by design; the datasource
+      // must not even attempt the call while unauthenticated (this is what
+      // produced the 401/42501 noise in the production Postgres logs).
+      when(() => mockAuth.currentSession).thenReturn(null);
+
+      final result = await dataSource.syncBatch([_entry(), _entry()]);
+
+      expect(result, isFalse);
+      verifyNever(
+        () => client.rpc('log_activity_async', params: any(named: 'params')),
+      );
+    });
+
+    test('an empty batch still returns true without any RPC', () async {
+      // The isEmpty short-circuit precedes the session gate, so an empty
+      // flush is a no-op regardless of auth state.
+      when(() => mockAuth.currentSession).thenReturn(null);
+
+      final result = await dataSource.syncBatch([]);
+
+      expect(result, isTrue);
+      verifyNever(
+        () => client.rpc('log_activity_async', params: any(named: 'params')),
+      );
     });
 
     test('returns false when the RPC never resolves before timeout', () async {

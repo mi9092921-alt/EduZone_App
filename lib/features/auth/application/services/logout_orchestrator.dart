@@ -19,6 +19,19 @@ const _preservedPrefKeys = {
 };
 
 /// Keys that are always wiped on logout.
+///
+/// Deliberately does NOT include the per-download AES keys
+/// (`enc_key_<downloadId>`, owned by EncryptionService) or the offline
+/// metadata HMAC key (`offline_metadata_hmac_key`, StorageService): wiping
+/// them at logout would make every redownload-free offline lesson
+/// permanently unplayable for the SAME user when they sign back in on this
+/// device. The residual exposure (a rooted device extracting those keys
+/// between logout and the next login) is covered by two compensating
+/// controls instead: OfflineAccountGuard purges another account's
+/// files+keys+rows at the next AuthLoginEvent (P6.20), and
+/// OfflinePolicyEngine revalidates the server entitlement at every
+/// playback, so a stale key alone grants nothing without the server's
+/// blessing. Documented accepted boundary — see SECURITY.md.
 const _sensitiveSecureKeys = {
   'supabase_access_token',
 };
@@ -121,7 +134,10 @@ class LogoutOrchestrator {
       debugPrint('[LogoutOrchestrator] Supabase local signOut ✓');
     } catch (e, st) {
       // This is the step that actually clears the local Supabase session
-      // (SDK's own SharedPreferences key) — if it fails, the device can
+      // (the Keystore/Keychain-held 'supabase_access_token' entry via our
+      // SecureLocalStorage — see Step 3 of this method's doc comment on
+      // lines 107-118 above; it is NOT a SharedPreferences key) — if it
+      // fails, the device can
       // come back up still "logged in" after a restart despite the user
       // having explicitly logged out. High value to know about.
       GlobalErrorHandler.logError(e, st);

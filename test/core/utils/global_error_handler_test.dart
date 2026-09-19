@@ -148,13 +148,29 @@ void main() {
   });
 
   group('AppProductionErrorScreen', () {
-    testWidgets('renders the friendly Arabic fallback title and message', (tester) async {
+    testWidgets('renders the localized title and message for the device '
+        'locale (English device -> English copy)', (tester) async {
+      final details = FlutterErrorDetails(exception: Exception('layout crashed'));
+
+      await tester.pumpWidget(AppProductionErrorScreen(details: details));
+
+      // Test platform default locale is en_US: the screen must render the
+      // English copy (it previously hardcoded Arabic for every locale).
+      expect(find.text('Something went wrong'), findsOneWidget);
+      expect(find.byIcon(Icons.monitor_heart_rounded), findsOneWidget);
+    });
+
+    testWidgets('renders the Arabic copy when the device locale is Arabic',
+        (tester) async {
+      tester.platformDispatcher.localeTestValue = const Locale('ar');
+      addTearDown(
+        () => tester.platformDispatcher.localeTestValue = const Locale('en'),
+      );
       final details = FlutterErrorDetails(exception: Exception('layout crashed'));
 
       await tester.pumpWidget(AppProductionErrorScreen(details: details));
 
       expect(find.text('حدث خطأ غير متوقع'), findsOneWidget);
-      expect(find.byIcon(Icons.monitor_heart_rounded), findsOneWidget);
     });
 
     testWidgets('shows raw exception details in debug mode', (tester) async {

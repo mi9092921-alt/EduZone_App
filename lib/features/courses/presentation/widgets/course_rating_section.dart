@@ -142,19 +142,17 @@ class _RatingStars extends StatelessWidget {
     return Row(
       children: [
         for (var star = 1; star <= 5; star++)
-          IconButton(
+          AppIconButton(
             key: ValueKey('rating_star_$star'),
-            visualDensity: VisualDensity.compact,
+            icon: star <= selected
+                ? Icons.star_rounded
+                : Icons.star_outline_rounded,
+            color: AppColors.warning,
+            iconSize: 32,
+            semanticLabel: l10n.ratingStarTooltip(star),
+            style: const ButtonStyle(visualDensity: VisualDensity.compact),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            icon: Icon(
-              star <= selected
-                  ? Icons.star_rounded
-                  : Icons.star_outline_rounded,
-              size: 32,
-              color: AppColors.warning,
-            ),
-            tooltip: l10n.ratingStarTooltip(star),
             onPressed: () => onSubmit(star),
           ),
       ],

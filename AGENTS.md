@@ -60,7 +60,7 @@ The app follows **Clean Architecture** with Feature Slices, three layers:
 ```
 core/       ← Layer 1: infrastructure, theme, navigation, services, utils
 shared/     ← Layer 2: reusable widgets and shared data models
-features/   ← Layer 3: isolated feature slices (auth, downloads, home, courses, notifications, warnings, profile, todo, video_player)
+features/   ← Layer 3: isolated feature slices (auth, downloads, home, courses, notifications, profile, todo, video_player)
 ```
 
 ### Import Rules — Hard Constraints
@@ -271,7 +271,7 @@ The design system lives in `lib/design_system/` (components/, tokens/, rules/, `
 
 The app supports Arabic (`ar-EG`, RTL) and English (`en-US`, LTR).
 
-- All user-facing strings go in `lib/core/l10n/arb/app_ar.arb` and `lib/core/l10n/arb/app_en.arb` (both files must keep identical key sets — 370 keys as of the last audit)
+- All user-facing strings go in `lib/core/l10n/arb/app_ar.arb` and `lib/core/l10n/arb/app_en.arb` (both files must keep identical key sets — 381 keys as of the last audit)
 - Never hardcode a user-visible string in Dart. Use `context.l10n.someKey`
 - After adding a key to both ARB files, run `flutter gen-l10n` (or `flutter pub get` triggers it via `l10n.yaml`)
 - Test every new screen in both locales. RTL layout must be verified manually
@@ -289,16 +289,15 @@ Text('كورساتي')
 
 ## Responsiveness
 
-Use `AdaptiveLayout` from `core/layout/adaptive_layout.dart` for layout differences across breakpoints.
+The app is **mobile-first**: `MainShell` (`lib/app/router/main_shell.dart`)
+caps main content width (`AdaptiveValue.maxContentWidth` from
+`core/layout/adaptive_layout.dart`, 840px) and centers it on tablet/desktop
+while the bottom navigation stays on every screen size.
 
-```dart
-// Breakpoints defined in core/layout/breakpoints.dart
-// mobile  < 600px
-// tablet  600–1200px
-// desktop ≥ 1200px
-```
-
-All layouts must work at all three breakpoints. Test on a tablet emulator before submitting UI changes.
+All layouts must work at every width — verify UI changes on a tablet
+emulator before submitting. A per-breakpoint layout switcher was removed as
+dead API; if a screen genuinely needs mobile/tablet/desktop variants,
+reintroduce one alongside a real consumer.
 
 ---
 

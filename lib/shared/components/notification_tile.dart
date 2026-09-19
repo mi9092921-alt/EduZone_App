@@ -226,9 +226,8 @@ class NotificationTile extends StatelessWidget {
                               notification.createdAt,
                               locale: languageCode,
                             ),
-                            style: AppTextStyles.bodySmall.copyWith(
+                            style: AppTextStyles.labelSmall.copyWith(
                               color: ds.textMuted,
-                              fontSize: 10,
                             ),
                           ),
                         ],

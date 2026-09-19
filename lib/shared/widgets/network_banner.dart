@@ -115,7 +115,6 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
                               style: AppTextStyles.label.copyWith(
                                 color: AppColors.neutral0,
                                 fontWeight: FontWeight.w700,
-                                fontSize: 13,
                               ),
                             );
                           },

@@ -15,8 +15,11 @@ class ConfirmDialog extends StatelessWidget {
     super.key,
     required this.title,
     required this.description,
-    this.confirmLabel = 'تأكيد',
-    this.cancelLabel = 'إلغاء',
+    // Deliberately required (no hardcoded defaults): the previous Arabic
+    // 'تأكيد'/'إلغاء' fallbacks silently rendered Arabic action labels in
+    // the English UI for any future caller that forgot to pass l10n labels.
+    required this.confirmLabel,
+    required this.cancelLabel,
     this.isDangerous = false,
     this.isLoading = false,
     this.onConfirm,

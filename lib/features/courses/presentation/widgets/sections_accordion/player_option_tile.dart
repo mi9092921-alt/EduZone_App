@@ -63,7 +63,7 @@ class PlayerOptionTile extends StatelessWidget {
               ),
             ),
             Icon(
-              Icons.arrow_forward_ios_rounded,
+              AppIcons.chevronForward(context),
               size: 16,
               color: ds.textMuted,
             ),

@@ -92,85 +92,87 @@ class DownloadActionButtons extends ConsumerWidget {
 
     switch (status) {
       case DownloadStatus.downloading:
-        return IconButton(
-          icon: const Icon(Icons.pause),
+        return AppIconButton(
+          icon: Icons.pause,
+          semanticLabel: l10n.downloadPause,
           onPressed: () => performDownloadAction(
             context,
             () => ref.read(downloadsProvider.notifier).pauseDownload(
                   downloadId,
                 ),
           ),
-          tooltip: l10n.downloadPause,
         );
       case DownloadStatus.paused:
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              icon: const Icon(Icons.play_arrow),
+            AppIconButton(
+              icon: Icons.play_arrow,
+              semanticLabel: l10n.downloadResume,
               onPressed: () => performDownloadAction(
                 context,
                 () => ref.read(downloadsProvider.notifier).resumeDownload(
                       downloadId,
                     ),
               ),
-              tooltip: l10n.downloadResume,
             ),
-            IconButton(
-              icon: const Icon(Icons.cancel),
+            AppIconButton(
+              icon: Icons.cancel,
+              semanticLabel: l10n.downloadCancel,
               onPressed: () => performDownloadAction(
                 context,
                 () => ref.read(downloadsProvider.notifier).cancelDownload(
                       downloadId,
                     ),
               ),
-              tooltip: l10n.downloadCancel,
             ),
           ],
         );
       case DownloadStatus.completed:
-        return IconButton(
-          icon: const Icon(Icons.delete_outline),
+        return AppIconButton(
+          icon: Icons.delete_outline,
+          semanticLabel: l10n.downloadsDeleteBtn,
           onPressed: () =>
               showDownloadDeleteDialog(context, ref, l10n, downloadId),
-          tooltip: l10n.downloadsDeleteBtn,
         );
       case DownloadStatus.failed:
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
+            AppIconButton(
+              icon: Icons.refresh,
+              semanticLabel: l10n.downloadRetry,
               onPressed: () => performDownloadAction(
                 context,
                 () => ref.read(downloadsProvider.notifier).resumeDownload(
                       downloadId,
                     ),
               ),
-              tooltip: l10n.downloadRetry,
             ),
-            IconButton(
-              icon: Icon(Icons.delete_outline, color: ds.error, size: 20),
+            AppIconButton(
+              icon: Icons.delete_outline,
+              color: ds.error,
+              iconSize: 20,
+              semanticLabel: l10n.downloadsDeleteBtn,
               onPressed: () => performDownloadAction(
                 context,
                 () => ref.read(downloadsProvider.notifier).deleteDownload(
                       downloadId,
                     ),
               ),
-              tooltip: l10n.downloadsDeleteBtn,
             ),
           ],
         );
       case DownloadStatus.pending:
-        return IconButton(
-          icon: const Icon(Icons.cancel),
+        return AppIconButton(
+          icon: Icons.cancel,
+          semanticLabel: l10n.downloadCancel,
           onPressed: () => performDownloadAction(
             context,
             () => ref.read(downloadsProvider.notifier).cancelDownload(
                   downloadId,
                 ),
           ),
-          tooltip: l10n.downloadCancel,
         );
     }
   }

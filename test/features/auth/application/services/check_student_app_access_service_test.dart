@@ -300,4 +300,81 @@ void main() {
       expect(restrictedAccesses.single.status, AccountStatus.appLocked);
     });
   });
+
+  group('resolveTokenVersion (shared int/String resolution)', () {
+    // Both detection paths (poll + realtime) must resolve token_version
+    // through this one function so they can never drift apart again: the
+    // realtime callback used a bare `as int?` cast while the poll accepted
+    // int|String, so a string-valued realtime payload silently skipped the
+    // forced-logout check.
+    test('accepts int', () {
+      expect(CheckStudentAppAccessService.resolveTokenVersion(9), 9);
+      expect(CheckStudentAppAccessService.resolveTokenVersion(0), 0);
+    });
+
+    test('accepts a numeric String', () {
+      expect(CheckStudentAppAccessService.resolveTokenVersion('9'), 9);
+    });
+
+    test('returns null for a non-numeric String, null, and bool', () {
+      expect(CheckStudentAppAccessService.resolveTokenVersion('abc'), isNull);
+      expect(CheckStudentAppAccessService.resolveTokenVersion(null), isNull);
+      expect(CheckStudentAppAccessService.resolveTokenVersion(true), isNull);
+    });
+
+    test('a malformed poll payload with a string token_version does not '
+        'deny access', () async {
+      mockRpcResponse = {'token_version': '5', 'allowed': true};
+      mockJwtVersion = 5;
+
+      final service = buildService();
+      await expectLater(service.checkNow(), completes);
+      expect(deniedReasons, isEmpty);
+      expect(restrictedAccesses, isEmpty);
+    });
+  });
+
+  group('malformed `allowed` payloads (fail-visible, not fail-silent)', () {
+    // The old `data['allowed'] == false` check silently skipped the tick
+    // when the key was missing or of an unexpected type — a revoked user
+    // could poll forever with no denial and no signal anywhere. A malformed
+    // payload must be reported (GlobalErrorHandler -> Sentry) without
+    // being treated as a denial either (it is not the server saying "no").
+    test('missing allowed key: no denial, no restriction, no throw',
+        () async {
+      mockRpcResponse = {'token_version': 5};
+      mockJwtVersion = 5;
+
+      final service = buildService();
+      await expectLater(service.checkNow(), completes);
+      expect(deniedReasons, isEmpty);
+      expect(restrictedAccesses, isEmpty);
+    });
+
+    test('string allowed key: no denial, no restriction, no throw', () async {
+      mockRpcResponse = {'allowed': 'false', 'token_version': 5};
+      mockJwtVersion = 5;
+
+      final service = buildService();
+      await expectLater(service.checkNow(), completes);
+      expect(deniedReasons, isEmpty);
+      expect(restrictedAccesses, isEmpty);
+    });
+
+    test('an explicit allowed:false still denies after a malformed tick',
+        () async {
+      mockJwtVersion = 5;
+      final service = buildService();
+
+      // Malformed tick — skipped with a report, no counter corruption.
+      mockRpcResponse = {'token_version': 5};
+      await service.checkNow();
+      expect(deniedReasons, isEmpty);
+
+      // The server then answers with a real denial.
+      mockRpcResponse = {'allowed': false, 'reason': 'account_locked'};
+      await service.checkNow();
+      expect(deniedReasons, ['account_locked']);
+    });
+  });
 }

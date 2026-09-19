@@ -1,5 +1,3 @@
-// ignore_for_file: unused_field
-
 import 'dart:async';
 
 import 'package:app/app/session/session_invalidation.dart';
@@ -87,8 +85,12 @@ class Auth extends _$Auth {
     });
 
     // Kick off session check — UI shows splash via AuthInitializing.
-    final generation = _authOperationGeneration;
-    Future.microtask(() => _initializeSession(generation: generation));
+    // The generation is read when the microtask RUNS, not when it is
+    // scheduled: capturing it here would race any generation bump between
+    // build() and the microtask, and a stale capture makes
+    // _initializeSession silently return — stranding the app on
+    // AuthInitializing (splash) forever.
+    Future.microtask(() => _initializeSession());
 
     return const AuthInitializing();
   }
@@ -285,6 +287,20 @@ class Auth extends _$Auth {
           // Log location on app open — fire-and-forget, non-blocking
           unawaited(LocationService.logOnAppOpen());
         } else {
+          // Session-hygiene parity with the device-invalid and non-student
+          // paths above (M11): a session whose profile has vanished must
+          // not keep a live JWT in secure storage — otherwise every cold
+          // start replays this exact path with the token still on disk.
+          // Best-effort: the unauthenticated state below is shown either way.
+          try {
+            await _forceLocalSignOutOnly();
+          } catch (e, st) {
+            GlobalErrorHandler.logError(e, st);
+            debugPrint(
+              '[Auth] Ghost-session cleanup failed: ${e.runtimeType}',
+            );
+          }
+          if (!_isCurrentAuthOperation(operationGeneration)) return;
           _safeSetStateIfStillPending(const AuthUnauthenticated());
         }
       } else {
@@ -731,6 +747,18 @@ class Auth extends _$Auth {
           // screen applies immediately.
           _refreshFeatureFlags();
         } else {
+          // Same ghost-session hygiene as _initializeSession's null-profile
+          // path: clear the dead local session instead of leaving its JWT
+          // in secure storage (best-effort — the state below is shown
+          // either way).
+          try {
+            await _forceLocalSignOutOnly();
+          } catch (e, st) {
+            GlobalErrorHandler.logError(e, st);
+            debugPrint(
+              '[Auth] Ghost-session cleanup failed: ${e.runtimeType}',
+            );
+          }
           _safeSetState(const AuthUnauthenticated());
         }
       } else {

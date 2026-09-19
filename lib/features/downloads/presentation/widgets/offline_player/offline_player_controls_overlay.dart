@@ -71,25 +71,21 @@ class OfflinePlayerControlsOverlay extends StatelessWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      IconButton(
-                        tooltip: isPlaying
+                      AppIconButton(
+                        semanticLabel: isPlaying
                             ? l10n.pauseButtonTooltip
                             : l10n.playButtonLabel,
                         onPressed: onTogglePlayback,
-                        icon: Icon(
-                          isPlaying
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          color: Colors.white,
-                        ),
+                        icon: isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        color: Colors.white,
                       ),
-                      IconButton(
-                        tooltip: l10n.rewindButtonTooltip,
+                      AppIconButton(
+                        semanticLabel: l10n.rewindButtonTooltip,
                         onPressed: onRewind,
-                        icon: const Icon(
-                          Icons.replay_10,
-                          color: Colors.white,
-                        ),
+                        icon: Icons.replay_10,
+                        color: Colors.white,
                       ),
                       TextButton(
                         onPressed: onCycleSpeed,
@@ -100,25 +96,21 @@ class OfflinePlayerControlsOverlay extends StatelessWidget {
                           ),
                         ),
                       ),
-                      IconButton(
-                        tooltip: l10n.fastForwardButtonTooltip,
+                      AppIconButton(
+                        semanticLabel: l10n.fastForwardButtonTooltip,
                         onPressed: onFastForward,
-                        icon: const Icon(
-                          Icons.forward_10,
-                          color: Colors.white,
-                        ),
+                        icon: Icons.forward_10,
+                        color: Colors.white,
                       ),
-                      IconButton(
-                        tooltip: isFullScreen
+                      AppIconButton(
+                        semanticLabel: isFullScreen
                             ? l10n.exitFullScreenButtonTooltip
                             : l10n.fullScreenButtonTooltip,
                         onPressed: onFullscreenToggle,
-                        icon: Icon(
-                          isFullScreen
-                              ? Icons.fullscreen_exit
-                              : Icons.fullscreen,
-                          color: Colors.white,
-                        ),
+                        icon: isFullScreen
+                            ? Icons.fullscreen_exit
+                            : Icons.fullscreen,
+                        color: Colors.white,
                       ),
                     ],
                   ),

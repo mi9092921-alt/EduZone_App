@@ -726,6 +726,50 @@ void main() {
     });
   });
 
+  // ─── _initializeSession(): ghost session (profile missing) ───────────────
+  //
+  // Session-hygiene parity (M11): an access-allowed session whose user
+  // profile has vanished (getCurrentUser -> null) must tear the local
+  // session down like the device-invalid and non-student paths do — not
+  // silently leave a live JWT in secure storage to replay the same path on
+  // every cold start.
+
+  group('_initializeSession(): ghost session on cold start', () {
+    test(
+        'wipes the local session and lands on unauthenticated when the '
+        'profile is missing', () async {
+      final mockSession = _MockSession();
+      final mockUser = _MockSupabaseUser();
+      when(() => mockUser.id).thenReturn('user-1');
+      when(() => mockSession.user).thenReturn(mockUser);
+      when(() => mockAuth.currentSession).thenReturn(mockSession);
+      when(() => mockDataSource.hasCurrentSession).thenReturn(true);
+      when(() => mockDataSource.currentSession).thenReturn(mockSession);
+      when(() => mockDataSource.validateDeviceExists(any(), any()))
+          .thenAnswer((_) async => true);
+      when(() => mockDataSource.checkStudentAppAccess())
+          .thenAnswer((_) async => _tActiveAccess);
+      // The ghost: access is allowed, but no profile row comes back.
+      when(() => mockDataSource.getCurrentUser()).thenAnswer((_) async => null);
+
+      final ghostContainer = ProviderContainer(
+        overrides: [
+          authRemoteDataSourceProvider.overrideWithValue(mockDataSource),
+          supabaseClientProvider.overrideWithValue(mockSupabase),
+          deviceServiceProvider.overrideWithValue(mockDevice),
+          eventBusProvider.overrideWithValue(mockEventBus),
+          updateServiceProvider.overrideWithValue(mockUpdateService),
+        ],
+      );
+      addTearDown(ghostContainer.dispose);
+      ghostContainer.read(authProvider);
+      await _settleInitialization();
+
+      expect(ghostContainer.read(authProvider), isA<AuthUnauthenticated>());
+      verify(() => mockDataSource.signOutLocally()).called(1);
+    });
+  });
+
   // ─── _initializeSession(): transient error with an existing session ──────
   //
   // EduZone_Authentication_Session_Security_Architecture.md, Phase 18:

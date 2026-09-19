@@ -642,9 +642,16 @@ class _VideoLessonRoute extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final courseAsync = ref.watch(courseDetailsProvider(courseId));
     final lessonContentAsync = ref.watch(lessonContentProvider(lessonId));
-    final isEnrolled = ref
-        .watch(isEnrolledProvider(courseId))
-        .when(data: (v) => v, loading: () => false, error: (_, _) => false);
+    // .value (not when(loading: false, error: false)): a loading or
+    // error state on the enrollment check must keep the LAST KNOWN verdict
+    // instead of forcing `false` — with the old mapping, one transient
+    // failure of isEnrolledProvider rendered every non-preview lesson as
+    // LOCKED in the lessons sidebar for a legitimately-enrolled student
+    // (server-side access stays RLS-enforced, so this is a UI-truth bug,
+    // not a security one). Riverpod 3's AsyncValue.value returns the
+    // previous data through loading/error states; null only when no
+    // verdict has ever arrived.
+    final isEnrolled = ref.watch(isEnrolledProvider(courseId)).value ?? false;
 
     return courseAsync.when(
       data: (course) {

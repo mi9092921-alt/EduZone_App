@@ -102,10 +102,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
         elevation: 0,
         title: Text(l10n.downloadsTitle),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.cleaning_services),
+          AppIconButton(
+            icon: Icons.cleaning_services,
+            semanticLabel: l10n.downloadsCleanup,
             onPressed: () => _showCleanupDialog(context, l10n),
-            tooltip: l10n.downloadsCleanup,
           ),
         ],
       ),

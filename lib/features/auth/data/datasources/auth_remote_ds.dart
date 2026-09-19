@@ -147,7 +147,7 @@ class AuthRemoteDataSource {
 
     final payload = parts[1];
     final normalizedPayload = payload.replaceAll('-', '+').replaceAll('_', '/');
-    final padding = '=' * ((4 - (normalizedPayload.length % 4)) % 4).toInt();
+    final padding = '=' * ((4 - (normalizedPayload.length % 4)) % 4);
 
     try {
       final decoded = utf8.decode(base64Url.decode(normalizedPayload + padding));
@@ -504,10 +504,15 @@ class AuthRemoteDataSource {
   }
 
   AppException _mapAuthException(AuthException e) {
-    // ignore: avoid_print
-    debugPrint(
-      'DEBUG: Supabase Auth Error: ${e.runtimeType} (Code: ${e.statusCode})',
-    );
+    // kDebugMode-gated: debugPrint survives release builds, and auth error
+    // types/status codes belong in release logcat no more than any other
+    // internal detail (same discipline as the token_version prints in
+    // check_student_app_access_service.dart).
+    if (kDebugMode) {
+      debugPrint(
+        'DEBUG: Supabase Auth Error: ${e.runtimeType} (Code: ${e.statusCode})',
+      );
+    }
 
     // AuthRetryableFetchException is thrown by the gotrue client both for:
     //   (a) real network/DNS/socket failures  -> statusCode == null

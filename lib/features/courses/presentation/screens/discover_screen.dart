@@ -152,9 +152,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         ref.invalidate(myCoursesProvider);
       },
       actions: [
-        IconButton(
-          icon: const Icon(Icons.bookmark_border_rounded),
-          tooltip: l10n.savedCoursesTitle,
+        AppIconButton(
+          icon: Icons.bookmark_border_rounded,
+          semanticLabel: l10n.savedCoursesTitle,
           onPressed: () => context.push('${AppRoutes.discover}/saved'),
         ),
       ],

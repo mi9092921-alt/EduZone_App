@@ -67,4 +67,15 @@ class AppIcons {
   static const IconData locked      = lock;
   static const IconData suspended   = Icons.pause_circle_rounded;
   static const IconData banned      = ban;
+
+  /// Chevron pointing toward the "next" screen affordance (list-row
+  /// disclosure). Direction-aware: the raw `Icons.arrow_forward_ios_rounded`
+  /// glyph never mirrors under RTL, so a right-pointing chevron rendered in
+  /// an Arabic layout points away from the content it opens. Use this
+  /// helper instead of the raw icon wherever a row's trailing chevron is
+  /// decorative (navigational semantics, not an absolute direction).
+  static IconData chevronForward(BuildContext context) =>
+      Directionality.of(context) == TextDirection.rtl
+          ? Icons.arrow_back_ios_rounded
+          : Icons.arrow_forward_ios_rounded;
 }

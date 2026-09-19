@@ -77,13 +77,13 @@ class AppInitializer {
       // 4.5. Initialize Media Kit (libmpv)
       MediaKit.ensureInitialized();
 
-      // 5. Initialize Notifications & Local Channels
-      final pushEnabled = prefs.getBool('push_notifications_enabled') ?? true;
-      if (pushEnabled) {
-        unawaited(FcmService.init());
-      } else {
-        unawaited(FcmService.initLocalNotifications());
-      }
+      // 5. Initialize Notifications. FCM init also wires the local
+      // notification channels (FcmService.init → _setupLocalNotifications),
+      // so there is nothing to branch on: no user-facing push opt-out exists
+      // (the old 'push_notifications_enabled' pref was never written by any
+      // screen, leaving the "local-only" branch unreachable dead code), and
+      // permission prompting stays deferred to the permissions surface.
+      unawaited(FcmService.init());
 
       // 6. Initialize Background Downloader & Cleanup Scheduler
       //
@@ -127,84 +127,63 @@ class AppInitializer {
       // Constructed directly (not via Riverpod) because no ProviderScope
       // exists yet at this point in startup — same constraint
       // CleanupScheduler's isolate callback already has.
-      unawaited(() async {
-        final recoveryStorageService =
-            StorageService(secureStorage: hardenedSecureStorage);
-        try {
-          return await DownloadRecoveryService(
-            localDataSource: DownloadLocalDataSource(recoveryStorageService),
-          ).reconcile();
-        } catch (e, stack) {
-          debugPrint(
-            '⚠️ Durable download recovery failed: '
-            '${e.runtimeType}',
-          );
+      //
+      // EDUZONE-2 (Sentry, SqfliteDatabaseException: database_closed,
+      // reproduced on every launch): these passes previously closed their
+      // StorageService in a `finally` block. sqflite's `openDatabase()`
+      // defaults to `singleInstance: true`, which means every StorageService
+      // opened against the same on-disk path (`eduzone_downloads.db`) —
+      // these, the long-lived instance behind `storageServiceProvider`, and
+      // `CleanupScheduler`'s main-isolate usage — share ONE underlying
+      // native connection. Whichever pass finished first and called
+      // `close()` tore down the connection out from under the others,
+      // which then threw `database_closed` — deterministically, on every
+      // cold start, exactly as reported. There is nothing to leak by not
+      // closing here: the connection is a process-lifetime, path-keyed
+      // cache owned by sqflite itself; a one-shot wrapper around a shared
+      // resource must not unilaterally close it.
+      //
+      // 7-7e run concurrently (`unawaited`, fired back-to-back, no `await`
+      // between them) and each is an independent best-effort sweep with a
+      // distinct on-disk target and failure mode — kept as separate calls
+      // (via the shared [_runRecoverySweep] wrapper for the identical
+      // try/log/Sentry/fallback scaffolding) so one failure can never hide
+      // another.
+      unawaited(
+        _runRecoverySweep<DownloadRecoveryReport>(
+          label: 'Durable download recovery', // check-ignore -- debug-only sweep label, never user-facing
           // Section 15: a reconcile() failure here means potentially
           // corrupted/half-written encrypted downloads are never
           // detected/repaired for this launch — worth Sentry visibility,
           // not just a local console line.
-          GlobalErrorHandler.logError(e, stack);
-          return const DownloadRecoveryReport(
+          fallback: const DownloadRecoveryReport(
             sessionsScanned: 0,
             chunksReset: 0,
             chunksInvalidated: 0,
-          );
-        }
-        // EDUZONE-2 (Sentry, SqfliteDatabaseException: database_closed,
-        // reproduced on every launch): this pass previously closed
-        // `recoveryStorageService` in a `finally` block. sqflite's
-        // `openDatabase()` defaults to `singleInstance: true`, which
-        // means every `StorageService` opened against the same on-disk
-        // path (`eduzone_downloads.db`) — this one, the four sibling
-        // one-shot instances in 7b-7e below, the long-lived instance
-        // behind `storageServiceProvider`, and `CleanupScheduler`'s
-        // main-isolate usage — share ONE underlying native connection,
-        // not five/six independent ones. Passes 7-7e all run
-        // concurrently (`unawaited`, fired back-to-back, no `await`
-        // between them) and each held its own non-null `_database`
-        // field pointing at that shared connection. Whichever pass
-        // finished first and called `close()` tore down the connection
-        // out from under every other pass/provider still mid-flight or
-        // about to run its first query, which then threw
-        // `database_closed` — deterministically, on every cold start,
-        // exactly as reported. There is nothing to leak by not closing
-        // here: the connection is a process-lifetime, path-keyed cache
-        // owned by sqflite itself, already kept alive for the rest of
-        // the app's life by `storageServiceProvider`, and released by
-        // the OS at process death — a one-shot wrapper around a shared
-        // resource must not unilaterally close it.
-      }());
+          ),
+          sweep: (localDataSource) =>
+              DownloadRecoveryService(localDataSource: localDataSource)
+                  .reconcile(),
+        ),
+      );
 
       // 7b. Same crash-recovery pass, but for leftover *plaintext* offline
       // playback temp files (see the method's doc comment) rather than
       // half-written encrypted downloads — a separate on-disk location and
       // failure mode, so it gets its own best-effort, non-blocking sweep.
-      unawaited(() async {
-        final crashRecoveryStorageService =
-            StorageService(secureStorage: hardenedSecureStorage);
-        try {
-          return await OfflineCrashRecovery(
-            localDataSource:
-                DownloadLocalDataSource(crashRecoveryStorageService),
-          ).reconcileOrphanedPlaintextPlaybackFiles();
-        } catch (e, stack) {
-          debugPrint(
-            '⚠️ Orphaned plaintext playback file cleanup failed: '
-            '${e.runtimeType}',
-          );
-          // Section 15 + P6.14 (offline security architecture): a failure
-          // here means leftover *plaintext* decrypted video may remain on
-          // disk indefinitely with nothing scheduled to catch it — this is
-          // exactly the kind of failure that must never go unobserved.
-          GlobalErrorHandler.logError(e, stack);
-          return 0;
-        }
-        // No `finally { crashRecoveryStorageService.close() }` — see the
-        // EDUZONE-2 explanation on pass 7 above: this shares the same
-        // singleInstance sqflite connection as every other pass here,
-        // and closing it out from under them is the actual bug, not a
-        // missing cleanup.
-      }());
+      // Section 15 + P6.14 (offline security architecture): a failure here
+      // means leftover *plaintext* decrypted video may remain on disk
+      // indefinitely with nothing scheduled to catch it — this is exactly
+      // the kind of failure that must never go unobserved.
+      unawaited(
+        _runRecoverySweep<int>(
+          label: 'Orphaned plaintext playback file cleanup', // check-ignore -- debug-only
+          fallback: 0,
+          sweep: (localDataSource) => OfflineCrashRecovery(
+            localDataSource: localDataSource,
+          ).reconcileOrphanedPlaintextPlaybackFiles(),
+        ),
+      );
 
       // 7c. download-subsystem-production-hardening-plan.md, "Manifest +
       // Crash Recovery" — the "DB exists + [process gone]" mandatory case.
@@ -212,111 +191,86 @@ class AppInitializer {
       // any row still stuck in `pending`/`downloading` at cold-start
       // (impossible unless the process that was driving it died —
       // see the method's own doc comment) to `failed`, so the Downloads
-      // screen shows an actionable "failed, tap to retry" tile instead of
-      // a permanently stuck progress bar. This method already existed,
-      // fully implemented and covered by
-      // offline_crash_recovery_test.dart, but was never actually called
-      // from anywhere in the app — 7b above only reconciles the
-      // *plaintext-playback-temp-file* half of OfflineCrashRecovery, never
-      // this one. A separate pass (not folded into 7b) for the same
-      // reason 7 and 7b are already kept separate: distinct on-disk
-      // targets and failure modes deserve independent best-effort sweeps
-      // rather than one failure hiding the other.
-      unawaited(() async {
-        final interruptedDownloadsStorageService =
-            StorageService(secureStorage: hardenedSecureStorage);
-        try {
-          return await OfflineCrashRecovery(
-            localDataSource:
-                DownloadLocalDataSource(interruptedDownloadsStorageService),
-          ).reconcileInterruptedDownloads();
-        } catch (e, stack) {
-          debugPrint(
-            '⚠️ Interrupted download reconciliation failed: '
-            '${e.runtimeType}',
-          );
-          // Same observability rationale as 7/7b: a failure here means
-          // downloads killed mid-write stay stuck showing "downloading…"
-          // forever with nothing surfaced to diagnose why.
-          GlobalErrorHandler.logError(e, stack);
-          return 0;
-        }
-        // No close() here either — see the EDUZONE-2 explanation on
-        // pass 7 above.
-      }());
+      // screen shows an actionable "failed, tap to retry" tile instead of a
+      // permanently stuck progress bar. Its own pass (not folded into 7b)
+      // for the same reason 7 and 7b are separate: distinct on-disk targets
+      // and failure modes deserve independent best-effort sweeps.
+      unawaited(
+        _runRecoverySweep<int>(
+          label: 'Interrupted download reconciliation', // check-ignore -- debug-only
+          fallback: 0,
+          sweep: (localDataSource) => OfflineCrashRecovery(
+            localDataSource: localDataSource,
+          ).reconcileInterruptedDownloads(),
+        ),
+      );
 
-      // 7d. download-subsystem-production-hardening-plan.md, "Manifest +
-      // Crash Recovery" — the "DB missing + file exists" / orphan
-      // video/audio mandatory cases. See
+      // 7d. Same plan, "DB missing + file exists" / orphan video/audio
+      // mandatory cases. See
       // OfflineCrashRecovery.reconcileOrphanedDownloadFiles's doc comment
       // for the concrete reachable path that produces these orphans today
       // (DownloadRepositoryImpl._cleanupDownloadFiles can delete a row
-      // whose own file deletion silently failed). Deliberately its own
-      // pass rather than folded into 7c: 7c only ever changes a row's
-      // status/sidecar files, never lists or deletes anything based on
-      // the *absence* of a row, which is a distinct failure mode worth
-      // its own independent best-effort sweep and its own Sentry signal.
-      unawaited(() async {
-        final orphanedFilesStorageService =
-            StorageService(secureStorage: hardenedSecureStorage);
-        try {
-          return await OfflineCrashRecovery(
-            localDataSource:
-                DownloadLocalDataSource(orphanedFilesStorageService),
-          ).reconcileOrphanedDownloadFiles();
-        } catch (e, stack) {
-          debugPrint(
-            '⚠️ Orphaned download file cleanup failed: ${e.runtimeType}',
-          );
-          // A failure here means a file whose DB row is already gone (and
-          // whose encryption key is already gone) stays on disk,
-          // permanently unplayable, indefinitely — silent storage waste
-          // with nothing surfaced to diagnose why.
-          GlobalErrorHandler.logError(e, stack);
-          return 0;
-        }
-        // No close() here either — see the EDUZONE-2 explanation on
-        // pass 7 above.
-      }());
+      // whose own file deletion silently failed). A failure here means a
+      // file whose DB row is already gone (and whose encryption key is
+      // already gone) stays on disk, permanently unplayable, indefinitely —
+      // silent storage waste with nothing surfaced to diagnose why.
+      unawaited(
+        _runRecoverySweep<int>(
+          label: 'Orphaned download file cleanup', // check-ignore -- debug-only
+          fallback: 0,
+          sweep: (localDataSource) => OfflineCrashRecovery(
+            localDataSource: localDataSource,
+          ).reconcileOrphanedDownloadFiles(),
+        ),
+      );
 
-      // 7e. download-subsystem-production-hardening-plan.md, "Manifest +
-      // Crash Recovery" — the "DB exists + file missing" mandatory case,
-      // the one entry in that list 7c/7d don't already cover between them
-      // (7c only reclassifies pending/downloading rows; 7d only deletes
-      // files no row claims). A `completed` row whose file has actually
-      // disappeared (external storage cleanup, manual tampering, an
-      // I/O fault) would otherwise sit in the Downloads list looking
-      // fully playable until the user taps it and OfflinePolicyEngine
-      // denies it at playback time — the correct fail-safe outcome, but
-      // with no "tap to retry" affordance in the meantime. See
+      // 7e. Same plan, "DB exists + file missing" mandatory case, the one
+      // entry 7c/7d don't already cover between them (7c only reclassifies
+      // pending/downloading rows; 7d only deletes files no row claims). A
+      // `completed` row whose file has actually disappeared (external
+      // storage cleanup, manual tampering, an I/O fault) would otherwise
+      // sit in the Downloads list looking fully playable until the user
+      // taps it and OfflinePolicyEngine denies it at playback time — the
+      // correct fail-safe outcome, but with no "tap to retry" affordance
+      // in the meantime. See
       // OfflineCrashRecovery.reconcileMissingCompletedFiles's doc comment.
-      unawaited(() async {
-        final missingFilesStorageService =
-            StorageService(secureStorage: hardenedSecureStorage);
-        try {
-          return await OfflineCrashRecovery(
-            localDataSource:
-                DownloadLocalDataSource(missingFilesStorageService),
-          ).reconcileMissingCompletedFiles();
-        } catch (e, stack) {
-          debugPrint(
-            '⚠️ Missing completed-download file reconciliation failed: '
-            '${e.runtimeType}',
-          );
-          // A failure here means a "completed" tile can keep silently
-          // pointing at a file that no longer exists, with nothing
-          // surfaced to diagnose why the next playback attempt fails.
-          GlobalErrorHandler.logError(e, stack);
-          return 0;
-        }
-        // No close() here either — see the EDUZONE-2 explanation on
-        // pass 7 above.
-      }());
+      unawaited(
+        _runRecoverySweep<int>(
+          label: 'Missing completed-download file reconciliation', // check-ignore -- debug-only
+          fallback: 0,
+          sweep: (localDataSource) => OfflineCrashRecovery(
+            localDataSource: localDataSource,
+          ).reconcileMissingCompletedFiles(),
+        ),
+      );
 
     } catch (e) {
       debugPrint('CRITICAL INITIALIZATION ERROR: ${e.runtimeType}');
       // Re-throw to be caught by runZonedGuarded
       rethrow;
+    }
+  }
+
+  /// Shared scaffolding for the cold-start recovery sweeps (7-7e above):
+  /// constructs a fresh StorageService-backed data source, runs [sweep],
+  /// and converts any failure into a Sentry report plus a debug console
+  /// line before returning [fallback] — a sweep failure must never block
+  /// or fail startup, but must also never be invisible (Section 15).
+  ///
+  /// The data source is deliberately never closed here — see the EDUZONE-2
+  /// note on pass 7: it wraps the shared singleInstance sqflite connection.
+  static Future<T> _runRecoverySweep<T>({
+    required String label,
+    required T fallback,
+    required Future<T> Function(DownloadLocalDataSource localDataSource) sweep,
+  }) async {
+    final storageService = StorageService(secureStorage: hardenedSecureStorage);
+    try {
+      return await sweep(DownloadLocalDataSource(storageService));
+    } catch (e, stack) {
+      debugPrint('⚠️ $label failed: ${e.runtimeType}');
+      GlobalErrorHandler.logError(e, stack);
+      return fallback;
     }
   }
 

@@ -80,14 +80,15 @@ void main() {
 
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       // Current own rating (4) pre-fills the row: stars 1-4 filled.
-      final filled = tester.widget<IconButton>(
+      // (Stars render through AppIconButton — icon is an IconData there.)
+      final filled = tester.widget<AppIconButton>(
         find.byKey(const ValueKey('rating_star_4')),
       );
-      expect((filled.icon as Icon).icon, Icons.star_rounded);
-      final outline = tester.widget<IconButton>(
+      expect(filled.icon, Icons.star_rounded);
+      final outline = tester.widget<AppIconButton>(
         find.byKey(const ValueKey('rating_star_5')),
       );
-      expect((outline.icon as Icon).icon, Icons.star_outline_rounded);
+      expect(outline.icon, Icons.star_outline_rounded);
       // Enrolled: the not-enrolled hint must not render.
       expect(find.text(l10n.ratingNotEnrolled), findsNothing);
     });

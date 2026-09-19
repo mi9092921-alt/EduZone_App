@@ -21,11 +21,19 @@ abstract class TodoItem with _$TodoItem {
   factory TodoItem.fromJson(Map<String, dynamic> json) =>
       _$TodoItemFromJson(json);
 
-  /// Factory for skeleton dummy data
-  factory TodoItem.skeleton() => const TodoItem(
+  /// Factory for skeleton dummy data.
+  ///
+  /// [dueAt] must be a fixed future date (not null): the home preview tile
+  /// renders the formatted due date even while shimmering, and a null date
+  /// here previously forced the tile to fall back to a hardcoded English
+  /// 'Loading Date...' placeholder. A real (future) date renders a genuine
+  /// formatted label under the shimmer instead, and being far in the future
+  /// keeps the skeleton permanently non-overdue.
+  factory TodoItem.skeleton() => TodoItem(
         id: 'skeleton',
         userId: 'skeleton',
         tenantId: 'skeleton',
         title: 'Loading Task...', // check-ignore
+        dueAt: DateTime(2030),
       );
 }

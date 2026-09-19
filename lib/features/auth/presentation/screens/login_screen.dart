@@ -149,14 +149,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         obscureText: _obscurePassword,
                         textInputAction: TextInputAction.done,
                         onFieldSubmitted: (_) => _signIn(),
-                        suffixIcon: IconButton(
-                         tooltip: _obscurePassword ? l10n.passwordShow : l10n.passwordHide,
-                          icon: Icon(
-                            _obscurePassword
-                                ? AppIcons.visibilityOff
-                                : AppIcons.visibility,
-                            color: AppColors.textSecondary,
-                          ),
+                        suffixIcon: AppIconButton(
+                          semanticLabel: _obscurePassword
+                              ? l10n.passwordShow
+                              : l10n.passwordHide,
+                          icon: _obscurePassword
+                              ? AppIcons.visibilityOff
+                              : AppIcons.visibility,
+                          color: AppColors.textSecondary,
                           onPressed: () =>
                               setState(() => _obscurePassword = !_obscurePassword),
                         ),

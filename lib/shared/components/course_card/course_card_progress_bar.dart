@@ -38,10 +38,9 @@ class CourseCardProgressBar extends StatelessWidget {
           children: [
             Text(
               isCompleted ? l10n.completed : '${(safeProgress * 100).round()}%',
-              style: AppTextStyles.labelSmall.copyWith(
+              style: AppTextStyles.bodySmall.copyWith(
                 color: statusColor,
                 fontWeight: FontWeight.w700,
-                fontSize: 12,
               ),
             ),
             const Spacer(),
@@ -55,7 +54,6 @@ class CourseCardProgressBar extends StatelessWidget {
               l10n.lessonsProgress(completedLessons, totalLessons),
               style: AppTextStyles.labelSmall.copyWith(
                 color: colors.textSecondary,
-                fontSize: 11,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

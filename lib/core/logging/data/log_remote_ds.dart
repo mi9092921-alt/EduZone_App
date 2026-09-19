@@ -65,6 +65,16 @@ class LogRemoteDataSource {
   Future<bool> syncBatch(List<LogEntry> entries) async {
     if (entries.isEmpty) return true;
 
+    // Session gate: `log_activity_async` is explicitly revoked from `anon`
+    // (supabase/schema/10_permissions.sql — fail-closed by design: only
+    // authenticated clients write to the observability pipeline), so an
+    // unauthenticated flush can never succeed. Attempting it anyway produced
+    // a 401/42501 on every SyncEngine retry tick before login (seen in
+    // production Postgres logs). Returning false keeps the entries queued —
+    // they flush once a session exists, and age out via SyncEngine's
+    // dead-letter path if one never does.
+    if (_client.auth.currentSession == null) return false;
+
     try {
       for (final entry in entries) {
         // `p_device_id` is intentionally omitted (left at the RPC's own

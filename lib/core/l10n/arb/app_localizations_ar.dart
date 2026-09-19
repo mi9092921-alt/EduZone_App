@@ -107,6 +107,13 @@ class AppLocalizationsAr extends AppLocalizations {
   String get errorMaxDevices => 'تم الوصول للحد الأقصى للأجهزة (جهاز واحد).';
 
   @override
+  String get errorScreenTitle => 'حدث خطأ غير متوقع';
+
+  @override
+  String get errorScreenBody =>
+      'لا تقلق، فريقنا الفني سيعمل على إصلاح المشكلة في أسرع وقت. يرجى المحاولة مرة أخرى.';
+
+  @override
   String get errorDeviceBound => 'هذا الجهاز مسجل لحساب آخر.';
 
   @override

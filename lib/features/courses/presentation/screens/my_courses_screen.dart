@@ -34,10 +34,10 @@ class MyCoursesScreen extends ConsumerWidget {
         if (ref
             .watch(featureFlagsProvider)
             .isEnabled(FeatureFlagKey.coursesDownloads))
-          IconButton(
-            icon: const Icon(Icons.download_rounded),
+          AppIconButton(
+            icon: Icons.download_rounded,
+            semanticLabel: l10n.downloads,
             onPressed: () => context.push(AppRoutes.downloads),
-            tooltip: l10n.downloads,
           ),
       ],
       slivers: [

@@ -4,6 +4,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../design_system/design_system.dart';
 import '../error/exceptions.dart';
+import '../l10n/arb/app_localizations.dart';
 import '../network/network_exception_mapper.dart';
 
 /// Centralized error management system for the EduZone app.
@@ -108,13 +109,19 @@ class GlobalErrorHandler {
 
 /// A premium, user-friendly error screen that replaces the "Red Screen of Death".
 ///
-/// Deliberately does NOT depend on lib/design_system/ tokens: this is the
-/// last-resort UI shown when the app has already crashed, possibly due to
-/// a bug in app-level code. Keeping it fully self-contained means it can
-/// still render even if something elsewhere (theoretically including the
-/// design system itself) is what caused the crash. Raw values below are
-/// intentional for that reason -- check-ignore is added on the relevant
-/// lines rather than wiring in AppSpacing/AppTextStyles/AppColors.
+/// Self-containment boundary: this is the last-resort UI shown when the app
+/// has already crashed, so it must not touch app-level SERVICES (no
+/// Supabase, no Riverpod providers, no repositories) — anything that could
+/// itself be the cause of the crash. Design-system tokens and the l10n
+/// delegates are pure, generated, dependency-free lookups and stay safe to
+/// use (AppSpacing was already in use here before the localization pass).
+///
+/// The screen builds its OWN MaterialApp: ErrorWidget.builder can fire
+/// outside the real app's MaterialApp (bootstrap crash, crash above the
+/// navigator), so the ambient context cannot be relied on for locale or
+/// delegates. Wiring the delegates + the DEVICE locale here localizes the
+/// screen — the first version hardcoded Arabic copy, which English-locale
+/// users saw verbatim.
 class AppProductionErrorScreen extends StatelessWidget {
   final FlutterErrorDetails details;
 
@@ -124,56 +131,86 @@ class AppProductionErrorScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0), // check-ignore -- see class doc
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.monitor_heart_rounded,
-                  size: 80,
-                  color: Colors.redAccent,
+      // Explicit locale from the BINDING's platformDispatcher (not the raw
+      // PlatformDispatcher.instance static): in production both are the
+      // device locale, but the binding indirection honors the widget-test
+      // localeTestValue seam, and MaterialApp's implicit view-based
+      // resolution bypasses the test proxy.
+      locale: WidgetsBinding.instance.platformDispatcher.locale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      home: _ProductionErrorBody(details: details),
+    );
+  }
+}
+
+/// The localized content of [AppProductionErrorScreen].
+///
+/// Separate widget so its build context sits UNDER the screen's own
+/// MaterialApp and `AppLocalizations.of(context)` actually resolves (the
+/// outer widget's context is above the MaterialApp it returns).
+class _ProductionErrorBody extends StatelessWidget {
+  final FlutterErrorDetails details;
+
+  const _ProductionErrorBody({required this.details});
+
+  @override
+  Widget build(BuildContext context) {
+    // Null-aware lookup + English fallback: with the delegates wired the
+    // lookup always resolves, but this keeps the screen renderable even in
+    // a pathological environment where localization itself fails.
+    final l10n = AppLocalizations.of(context);
+    return Scaffold(
+      backgroundColor: AppColors.neutral0,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.monitor_heart_rounded,
+                size: 80,
+                color: AppColors.error,
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              Text(
+                // Crash-screen defensive fallback: rendered only when
+                // localization itself fails to resolve.
+                l10n?.errorScreenTitle ?? 'Something went wrong', // check-ignore
+                style: AppTextStyles.h2.copyWith(color: AppColors.neutral800),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                // Crash-screen defensive fallback: rendered only when
+                // localization itself fails to resolve.
+                l10n?.errorScreenBody ??
+                    "Don't worry, our technical team is already working " // check-ignore
+                        'on fixing this. Please try again.', // check-ignore
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.neutral600,
                 ),
-                const SizedBox(height: AppSpacing.xl),
-                const Text( // check-ignore -- see class doc
-                  'حدث خطأ غير متوقع',
-                  style: TextStyle( // check-ignore -- see class doc
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.xl2),
+              if (kDebugMode)
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  decoration: BoxDecoration(
+                    color: AppColors.neutral100,
+                    borderRadius: BorderRadius.circular(AppRadius.xs),
                   ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                const Text( // check-ignore -- see class doc
-                  'لا تقلق، فريقنا الفني سيعمل على إصلاح المشكلة في أسرع وقت. يرجى المحاولة مرة أخرى.',
-                  style: TextStyle(fontSize: 14, color: Colors.black54), // check-ignore -- see class doc
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.xl2),
-                if (kDebugMode)
-                  Container(
-                    padding: const EdgeInsets.all(12), // check-ignore -- see class doc
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(8), // check-ignore -- see class doc
-                    ),
-                    child: SingleChildScrollView(
-                      child: Text(
-                        details.exceptionAsString(),
-                        style: const TextStyle( // check-ignore -- see class doc
-                          fontFamily: 'monospace',
-                          fontSize: 10,
-                          color: Colors.redAccent,
-                        ),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      details.exceptionAsString(),
+                      style: AppTextStyles.code.copyWith(
+                        color: AppColors.error,
                       ),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       ),

@@ -100,46 +100,86 @@ class CheckStudentAppAccessService {
           ),
           callback: (payload) {
             if (!_active) return;
-
-            final newStatusStr = payload.newRecord['account_status'] as String?;
-            final status = AccountStatus.fromString(newStatusStr ?? 'active');
-            final oldVersion = payload.oldRecord['token_version'] as int?;
-            final newVersion = payload.newRecord['token_version'] as int?;
-            final jwtVersion = _currentJwtTokenVersion;
-
-            // kDebugMode-gated: token_version values are security-relevant
-            // state; debugPrint survives release builds and would surface
-            // them in device logcat.
-            if (kDebugMode) {
+            try {
+              _handleRealtimeSecurityChange(payload);
+            } catch (e, st) {
+              // A malformed/unexpected realtime payload must never kill the
+              // channel subscription: an exception escaping this callback can
+              // break event delivery for the channel's lifetime, silently
+              // disabling realtime revocation detection until the next app
+              // start (the 5-minute poll is the only remaining path).
+              // Realtime is an optimization over the poll; degrade to it
+              // rather than losing the channel.
+              GlobalErrorHandler.logError(e, st);
               debugPrint(
-                '[Security] Realtime change detected. '
-                'DB Version: $newVersion, JWT Version: $jwtVersion',
+                '[Security] Realtime callback error: ${e.runtimeType}',
               );
-            }
-
-            // token_version bump = forced logout
-            if (_isForcedLogoutVersionChange(
-              oldVersion: oldVersion,
-              newVersion: newVersion,
-              jwtVersion: jwtVersion,
-            )) {
-              _onAccessDenied(reason: 'token_version_mismatch');
-              return;
-            }
-
-            if (status == AccountStatus.banned ||
-                status == AccountStatus.locked ||
-                status == AccountStatus.suspended) {
-              _onAccessDenied(reason: 'account_${status.toDbString}');
-              return;
-            }
-
-            if (status == AccountStatus.appLocked) {
-              _onAccessRestricted?.call(access: UserAccess(status: status));
             }
           },
         )
         .subscribe();
+  }
+
+  /// Realtime payload handler, extracted from the subscription callback so
+  /// the body above can stay exception-contained.
+  ///
+  /// Hardened in the same pass as the poll path (EDUZONE-K follow-up):
+  /// `token_version` is accepted as int OR String on BOTH paths — the
+  /// realtime branch previously used a bare `as int?` cast, which threw a
+  /// TypeError whenever the RPC's transient text-typing behavior showed up
+  /// in the realtime payload, silently skipping the forced-logout check.
+  /// Also handles `maintenance_mode` (previously only the poll did), so an
+  /// admin-initiated maintenance transition shows immediately instead of
+  /// waiting up to [pollingInterval].
+  void _handleRealtimeSecurityChange(PostgresChangePayload payload) {
+    final newStatusStr = payload.newRecord['account_status'] as String?;
+    final status = AccountStatus.fromString(newStatusStr ?? 'active');
+    final oldVersion = resolveTokenVersion(payload.oldRecord['token_version']);
+    final newVersion = resolveTokenVersion(payload.newRecord['token_version']);
+    final jwtVersion = _currentJwtTokenVersion;
+
+    // kDebugMode-gated: token_version values are security-relevant
+    // state; debugPrint survives release builds and would surface
+    // them in device logcat.
+    if (kDebugMode) {
+      debugPrint(
+        '[Security] Realtime change detected. '
+        'DB Version: $newVersion, JWT Version: $jwtVersion',
+      );
+    }
+
+    // token_version bump = forced logout
+    if (_isForcedLogoutVersionChange(
+      oldVersion: oldVersion,
+      newVersion: newVersion,
+      jwtVersion: jwtVersion,
+    )) {
+      _onAccessDenied(reason: 'token_version_mismatch');
+      return;
+    }
+
+    if (status == AccountStatus.banned ||
+        status == AccountStatus.locked ||
+        status == AccountStatus.suspended) {
+      _onAccessDenied(reason: 'account_${status.toDbString}');
+      return;
+    }
+
+    if (status == AccountStatus.appLocked || status == AccountStatus.maintenance) {
+      _onAccessRestricted?.call(access: UserAccess(status: status));
+    }
+  }
+
+  /// Accepts `token_version` as int OR numeric String and returns it as
+  /// int (null otherwise). Shared by the realtime payload handler and the
+  /// poll path below so the two detection paths can never drift apart —
+  /// see the "string token_version" regression note in
+  /// check_student_app_access_service_test.dart.
+  @visibleForTesting
+  static int? resolveTokenVersion(Object? raw) {
+    if (raw is int) return raw;
+    if (raw is String) return int.tryParse(raw);
+    return null;
   }
 
   Future<void> _check() async {
@@ -162,12 +202,7 @@ class CheckStudentAppAccessService {
       // text (fixed in the canonical schema), and a cast failure here would
       // abort the whole check — killing maintenance/app_locked handling and
       // mismatch detection — before the allowed/denied decision below.
-      final rawTokenVersion = data['token_version'];
-      final dbTokenVersion = rawTokenVersion is int
-          ? rawTokenVersion
-          : rawTokenVersion is String
-              ? int.tryParse(rawTokenVersion)
-              : null;
+      final dbTokenVersion = resolveTokenVersion(data['token_version']);
       final jwtVersion = _currentJwtTokenVersion;
 
       if (dbTokenVersion != null && jwtVersion != null) {
@@ -214,7 +249,27 @@ class CheckStudentAppAccessService {
         _resetMissingJwtVersionStrikes();
       }
 
-      if (data['allowed'] == false) {
+      // Fail-visible on a malformed decision: `allowed` must be a bool.
+      // A missing/non-bool key means the server contract broke — silently
+      // skipping the tick (the old `== false` check) left a revoked user
+      // polling forever with no signal anywhere. It is deliberately NOT
+      // treated as a denial either (a malformed payload is not the server
+      // saying "no", and a forced logout on one bad tick would be harsh);
+      // the failure is reported to Sentry and the next tick retries.
+      final allowedFlag = data['allowed'];
+      if (allowedFlag is! bool) {
+        GlobalErrorHandler.logError(
+          StateError(
+            'check_student_app_access returned a malformed `allowed` key: '
+            '${allowedFlag.runtimeType}',
+          ),
+          StackTrace.current,
+        );
+        debugPrint('[Security] Malformed `allowed` payload — skipping tick');
+        return;
+      }
+
+      if (!allowedFlag) {
         final reason = data['reason'] as String? ?? 'unknown';
         final status = AccountStatus.fromString(reason);
         final access = UserAccess(
