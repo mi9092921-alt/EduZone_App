@@ -1,8 +1,12 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:screen_protector/screen_protector.dart';
 
 class ScreenshotGuard {
+  static const MethodChannel _screenProtectorChannel =
+      MethodChannel('screen_protector');
+
   /// Enables screenshot and screen recording protection across both platforms.
   ///
   /// • **Android** — `preventScreenshotOn()` sets `FLAG_SECURE`, which blocks
@@ -16,6 +20,13 @@ class ScreenshotGuard {
     try {
       // Blocks screenshots (and screen recording on Android via FLAG_SECURE).
       await ScreenProtector.preventScreenshotOn();
+
+      // screen_protector exposes this native operation on iOS but does not
+      // include it in its Dart API. Keep recording protection enabled for the
+      // whole app lifetime; Android is covered by FLAG_SECURE above/native.
+      if (Platform.isIOS) {
+        await _screenProtectorChannel.invokeMethod<void>('preventScreenRecordOn');
+      }
 
       // Hide content when the app is in the task-switcher / app-switcher.
       if (Platform.isAndroid) {

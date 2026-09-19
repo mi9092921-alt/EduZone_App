@@ -42,15 +42,15 @@ flutter build ipa --release --dart-define-from-file=.env
 
 ### هـ. اختبار على جهاز حقيقي
 
-اختبر على جهاز Android حقيقي مُعطَّل جذريًا (rooted) أو عبر محاكي — تحقق من ظهور السجل `[SECURITY][THREAT DETECTED]` أو تفعيل `killAppHandler`/`exit(0)` حسب إعداد `SECURITY_ENFORCE_THREAT_TERMINATION`.
+اختبر على جهاز Android حقيقي مُعطَّل جذريًا (rooted) أو عبر محاكي — ظهور السجل `[SECURITY][THREAT DETECTED]` متوقع في الحالتين. أما تفعيل `killAppHandler`/`exit(0)` فيقتصر على بناء release على جهاز حقيقي (بناء debug لا يُنهي التطبيق أبدًا مهما كان إعداد `SECURITY_ENFORCE_THREAT_TERMINATION`، حمايةً من قفل الحساب على المحاكي أثناء التطوير).
 
 ## 3. تفعيل إنهاء التطبيق تدريجيًا (Rollout)
 
-لا تُفعّل `SECURITY_ENFORCE_THREAT_TERMINATION=true` من أول إصدار. الخطوات الموصى بها:
+الافتراضي في بناء release هو الإنهاء (`true`); بناء debug لا يُنهي أبدًا. لصيغة تسجيل فقط (بدون إنهاء) يجب تعيين `SECURITY_ENFORCE_THREAT_TERMINATION=false` صراحةً في `.env`:
 
-1. أصدر نسخة بـ `SECURITY_ENFORCE_THREAT_TERMINATION=false` (تسجيل فقط، بدون إنهاء).
+1. لصيغة أول إصدار بتسجيل فقط، عيّن `SECURITY_ENFORCE_THREAT_TERMINATION=false`.
 2. راقب جدول `security_incidents` في Supabase لمدة أسبوع على الأقل، تأكد من معدل false-positive منخفض.
-3. فعّل `SECURITY_ENFORCE_THREAT_TERMINATION=true` في الإصدار التالي.
+3. أزِل التعيين (أو عيّن `true`) في الإصدار التالي لتفعيل الإنهاء.
 
 ## 4. iOS — عمل غير مكتمل بعد
 

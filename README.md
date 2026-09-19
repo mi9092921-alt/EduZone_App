@@ -283,7 +283,7 @@ flutter run --release --dart-define-from-file=.env
 | `SECURITY_IOS_TEAM_ID` | release | Team ID | freeRASP iOS team verification |
 | `SECURITY_IOS_BUNDLE_ID` | — | Bundle ID | freeRASP iOS bundle check |
 | `SECURITY_WATCHER_MAIL` | release | Email | Talsec threat-alert recipient |
-| `SECURITY_ENFORCE_THREAT_TERMINATION` | — | `true` · `false` | Terminate app on detected threat |
+| `SECURITY_ENFORCE_THREAT_TERMINATION` | — | `true` · `false` | Terminate app on detected threat (release builds only; default `true` in release, `false` = telemetry-only) |
 
 > **Note:** The `service_role` key is **never** used in the app. All sensitive operations are routed through Supabase Edge Functions on the server side.
 

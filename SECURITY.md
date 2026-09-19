@@ -234,21 +234,22 @@ root/jailbreak, hooking frameworks, and app tampering/repackaging (via
 `SECURITY_ANDROID_SIGNING_HASH` / `SECURITY_IOS_TEAM_ID`, both required at
 release build time — see `IMPLEMENTATION.md`, REL-001).
 
-**Default posture is log-only, not enforcing:**
-`SECURITY_ENFORCE_THREAT_TERMINATION` defaults to `false`
-(`.env.example`). Threats are reported to a Supabase
+**Default posture is enforcing in release, log-only in debug:**
+`SECURITY_ENFORCE_THREAT_TERMINATION` defaults to `true` in release builds
+(and is overridden by the `debug`/`profile` build modes, which never
+terminate — a simulator/debugger must not be able to lock the app while a
+pre-login developer tests on an emulator). Set the define to `false` for a
+telemetry-only release rollout. Threats are reported to a Supabase
 `security_incidents` table (fire-and-forget insert with a device
 fingerprint, app version, and platform info — see `_logThreatToSupabase`
 in `lib/core/security/security_service.dart`), with a capped in-memory
 fallback buffer if the insert can't complete (e.g. offline, or Supabase
 not initialized yet at startup). This is a separate path from the
 Sentry/`CrashHandler` event pipeline described above — freeRASP threats do
-**not** currently go through Sentry. The app is **not** terminated on
-detection until `SECURITY_ENFORCE_THREAT_TERMINATION` is deliberately
-flipped to `true` for a release, after confirming an acceptably low
-false-positive rate against the `security_incidents` data. Until that
-flip happens, treat root/jailbreak/tamper detection as telemetry, not
-enforcement.
+**not** currently go through Sentry. If a first enforcing release shows an
+unacceptable false-positive rate, flip the define to `false` for the next
+release (telemetry only) until the `security_incidents` data confirms the
+rate is acceptable.
 
 ## Offline downloads
 

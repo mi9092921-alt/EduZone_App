@@ -56,8 +56,8 @@ void main() {
     );
 
     test(
-      'resumed routes through protectDataLeakageOff() without throwing '
-      'or leaking',
+      'resumed does not disable permanent screenshot protection and never '
+      'throws or leaks',
       () async {
         expect(
           () => LifecycleGuard.instance

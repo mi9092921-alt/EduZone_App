@@ -135,9 +135,8 @@ class LogoutOrchestrator {
     } catch (e, st) {
       // This is the step that actually clears the local Supabase session
       // (the Keystore/Keychain-held 'supabase_access_token' entry via our
-      // SecureLocalStorage — see Step 3 of this method's doc comment on
-      // lines 107-118 above; it is NOT a SharedPreferences key) — if it
-      // fails, the device can
+      // SecureLocalStorage — see Step 1 of this method's doc comment above;
+      // it is NOT a SharedPreferences key) — if it fails, the device can
       // come back up still "logged in" after a restart despite the user
       // having explicitly logged out. High value to know about.
       GlobalErrorHandler.logError(e, st);
