@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/l10n/arb/app_localizations.dart';
 import '../../../design_system/design_system.dart';
 import 'course_card_badges.dart';
@@ -32,7 +33,7 @@ class DiscoverCourseCard extends StatelessWidget {
   });
 
   void _defaultNavigation(BuildContext context) {
-    context.push('/discover/course-preview/${data.id}');
+    context.push('${AppRoutes.coursePreview}/${data.id}');
   }
 
   @override

@@ -188,6 +188,19 @@ void main() {
     );
     when(() => mockDataSource.currentJwtTokenVersion).thenReturn(null);
 
+    // The auth provider reads session state through the DATASOURCE
+    // accessors (audit refactor) instead of reaching into
+    // supabaseClientProvider.auth directly. Defaults here model "no local
+    // session"; tests that need a restored session re-stub
+    // hasCurrentSession/currentSession to true/mockSession.
+    when(() => mockDataSource.hasCurrentSession).thenReturn(false);
+    when(() => mockDataSource.currentSession).thenReturn(null);
+    when(() => mockDataSource.currentUserId).thenReturn(null);
+    when(() => mockDataSource.authStateChanges)
+        .thenAnswer((_) => const Stream.empty());
+    when(() => mockDataSource.signOutCurrentSession())
+        .thenAnswer((_) async {});
+
     // LogoutOrchestrator (wired by logout()/forceLocalCleanup paths) now
     // reaches Supabase only through the datasource.
     when(() => mockDataSource.revokeCurrentSession()).thenAnswer((_) async {});
@@ -276,7 +289,8 @@ void main() {
           .thenAnswer((_) async => _tBindResult);
       when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tBannedAccess);
-      when(() => mockAuth.signOut()).thenAnswer((_) async {});
+      when(() => mockDataSource.signOutCurrentSession())
+          .thenAnswer((_) async {});
 
       await container.read(authProvider.notifier).login(
             'test@example.com',
@@ -301,7 +315,8 @@ void main() {
           .thenAnswer((_) async => _tBindResult);
       when(() => mockDataSource.checkStudentAppAccess())
           .thenAnswer((_) async => _tLockedAccess);
-      when(() => mockAuth.signOut()).thenThrow(Exception('sign out failed'));
+      when(() => mockDataSource.signOutCurrentSession())
+          .thenThrow(Exception('sign out failed'));
 
       await container.read(authProvider.notifier).login(
             'test@example.com',
@@ -319,7 +334,7 @@ void main() {
 
       when(() => mockDataSource.login(any(), any()))
           .thenThrow(const InvalidCredentialsException());
-      when(() => mockAuth.currentSession).thenReturn(null);
+      when(() => mockDataSource.hasCurrentSession).thenReturn(false);
 
       await container.read(authProvider.notifier).login(
             'test@example.com',
@@ -339,7 +354,7 @@ void main() {
           .thenAnswer((_) async {});
       when(() => mockDataSource.bindDevice(any(), any(), any()))
           .thenThrow(const MaxDevicesReachedException());
-      when(() => mockAuth.currentSession).thenReturn(null);
+      when(() => mockDataSource.hasCurrentSession).thenReturn(false);
 
       await container.read(authProvider.notifier).login(
             'test@example.com',
@@ -357,7 +372,7 @@ void main() {
 
       when(() => mockDataSource.login(any(), any()))
           .thenThrow(Exception('unexpected'));
-      when(() => mockAuth.currentSession).thenReturn(null);
+      when(() => mockDataSource.hasCurrentSession).thenReturn(false);
 
       await container.read(authProvider.notifier).login(
             'test@example.com',
@@ -386,7 +401,8 @@ void main() {
     test('transitions to AuthUnauthenticated after logout', () async {
       await putInAuthenticatedState();
 
-      when(() => mockAuth.signOut()).thenAnswer((_) async {});
+      when(() => mockDataSource.signOutCurrentSession())
+          .thenAnswer((_) async {});
       when(() => mockSupabase.removeAllChannels())
           .thenAnswer((_) async => <String>[]);
 
@@ -478,7 +494,8 @@ void main() {
             'password',
           );
 
-      when(() => mockAuth.signOut()).thenAnswer((_) async {});
+      when(() => mockDataSource.signOutCurrentSession())
+          .thenAnswer((_) async {});
       when(() => mockSupabase.removeAllChannels())
           .thenAnswer((_) async => <String>[]);
       final rpcBuilder = _MockRpcBuilder();
@@ -490,7 +507,15 @@ void main() {
           .read(authProvider.notifier)
           .handleAccessDenied(reason: 'account_banned');
 
-      await Future.delayed(const Duration(milliseconds: 50));
+      // Bounded deterministic wait for the debounced logout chain to run
+      // its course (real timers inside logout's phases) — replaces a blind
+      // 50ms sleep that could flake on a slow CI runner.
+      final logoutSettledBy = DateTime.now().add(const Duration(seconds: 5));
+      await Future.doWhile(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        if (container.read(authProvider) is AuthUnauthenticated) return false;
+        return DateTime.now().isBefore(logoutSettledBy);
+      });
 
       expect(container.read(authProvider), isA<AuthUnauthenticated>());
       verify(() => mockEventBus.emit(any())).called(greaterThan(0));
@@ -625,6 +650,8 @@ void main() {
       when(() => mockUser.id).thenReturn('user-1');
       when(() => mockSession.user).thenReturn(mockUser);
       when(() => mockAuth.currentSession).thenReturn(mockSession);
+      when(() => mockDataSource.hasCurrentSession).thenReturn(true);
+      when(() => mockDataSource.currentSession).thenReturn(mockSession);
     }
 
     // Root cause of the previous "Expected AuthAuthenticated, Actual
@@ -717,6 +744,8 @@ void main() {
       when(() => mockUser.id).thenReturn('user-1');
       when(() => mockSession.user).thenReturn(mockUser);
       when(() => mockAuth.currentSession).thenReturn(mockSession);
+      when(() => mockDataSource.hasCurrentSession).thenReturn(true);
+      when(() => mockDataSource.currentSession).thenReturn(mockSession);
     }
 
     ProviderContainer buildDegradedContainer() {
@@ -761,14 +790,13 @@ void main() {
       );
       expect(state, isNot(isA<AuthUnauthenticated>()));
 
-      verifyNever(() => mockAuth.signOut());
-      verifyNever(() => mockAuth.signOut(scope: any(named: 'scope')));
+      verifyNever(() => mockDataSource.signOutCurrentSession());
     });
 
     test(
         'still resolves to AuthUnauthenticated(error:) on a transient '
         'error when there is no local session to protect', () async {
-      when(() => mockAuth.currentSession).thenReturn(null);
+      when(() => mockDataSource.hasCurrentSession).thenReturn(false);
 
       final mockUpdateService = _MockUpdateService();
       when(() => mockUpdateService.checkForUpdate(any()))
@@ -983,6 +1011,8 @@ void main() {
       when(() => mockUser.id).thenReturn('user-1');
       when(() => mockSession.user).thenReturn(mockUser);
       when(() => mockAuth.currentSession).thenReturn(mockSession);
+      when(() => mockDataSource.hasCurrentSession).thenReturn(true);
+      when(() => mockDataSource.currentSession).thenReturn(mockSession);
 
       when(() => mockDataSource.validateDeviceExists(any(), any()))
           .thenAnswer((_) async => true);
@@ -1070,6 +1100,8 @@ void main() {
       when(() => mockUser.id).thenReturn('user-1');
       when(() => mockSession.user).thenReturn(mockUser);
       when(() => mockAuth.currentSession).thenReturn(mockSession);
+      when(() => mockDataSource.hasCurrentSession).thenReturn(true);
+      when(() => mockDataSource.currentSession).thenReturn(mockSession);
 
       when(() => mockDataSource.validateDeviceExists(any(), any()))
           .thenAnswer((_) async => true);

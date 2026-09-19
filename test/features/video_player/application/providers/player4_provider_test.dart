@@ -93,8 +93,16 @@ void main() {
       final result1 = await container.read(player4VideoInfoProvider('video-2').future);
       expect(result1.title, 'Expired Video');
 
-      // Wait for expiration timer to fire
-      await Future.delayed(const Duration(milliseconds: 200));
+      // Wait for the 100ms self-expiry window to elapse. Bounded polling
+      // (instead of a blind Future.delayed) keeps the intent explicit and
+      // the wait bounded if the event loop stalls on a slow CI runner.
+      final expiryWindowEnd = DateTime.now().add(
+        const Duration(milliseconds: 200),
+      );
+      await Future.doWhile(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        return DateTime.now().isBefore(expiryWindowEnd);
+      });
 
       // Mock subsequent fetch returning new info
       final freshVideoInfo = StreamingVideoInfo(

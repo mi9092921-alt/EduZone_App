@@ -46,11 +46,11 @@ class TodoScreen extends ConsumerWidget {
           : null,
       onRetry: () => ref.read(todoProvider.notifier).fetchTodos(),
       floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
         child: FloatingActionButton(
           onPressed: () => _showAddTodoSheet(context),
           backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
+          foregroundColor: AppColors.neutral0,
           shape: const RoundedRectangleBorder(borderRadius: AppRadius.mdBorder),
           child: const Icon(AppIcons.add, size: 28),
         ),

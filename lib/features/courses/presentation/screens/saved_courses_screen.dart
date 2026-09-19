@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/components/course_card.dart';
 import '../../../../shared/models/course.dart';
@@ -88,8 +89,9 @@ class SavedCoursesScreen extends ConsumerWidget {
                       size: AppSizes.avatarSm,
                       iconSize: AppSizes.iconSm,
                     ),
-                    onTap: () =>
-                        context.push('/discover/course-preview/${course.id}'),
+                    onTap: () => context.push(
+                      '${AppRoutes.coursePreview}/${course.id}',
+                    ),
                   );
                 }, childCount: courses.isEmpty ? 0 : courses.length * 2 - 1),
               ),

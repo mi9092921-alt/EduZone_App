@@ -5,6 +5,7 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import '../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../../../shared/models/lesson_content.dart';
+import '../../../../shared/utils/player_ui_helpers.dart';
 import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/video_provider.dart';
 import 'youtube_player_widget.dart';
@@ -57,7 +58,7 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
   // 5-second throttle already used by Player4Wrapper._reportProgress()
   // for the same reason; the debounced DB/network sync inside
   // VideoProgress.updateProgress() is unaffected/unchanged by this.
-  DateTime _lastProgressReport = DateTime.fromMillisecondsSinceEpoch(0);
+  final PlayerProgressReporter _progressReporter = PlayerProgressReporter();
 
   /// Disposes the previous controller (if any) and creates a new one for
   /// [videoId].
@@ -108,11 +109,7 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
       _logLessonStarted();
     }
 
-    final now = DateTime.now();
-    if (now.difference(_lastProgressReport) < const Duration(seconds: 5)) {
-      return;
-    }
-    _lastProgressReport = now;
+    if (!_progressReporter.shouldReport(_controller!.value.position)) return;
 
     final duration = _controller!.metadata.duration;
     final position = _controller!.value.position;

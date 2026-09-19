@@ -95,7 +95,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         child: const Icon(
                           AppIcons.home,
                           size: 80,
-                          color: Colors.white,
+                          color: AppColors.neutral0,
                         ),
                       ),
                       const SizedBox(height: AppSpacing.lg),
@@ -188,8 +188,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           child: Row(
                             children: [
                               SizedBox(
-                                height: 24,
-                                width: 24,
+                                height: AppSpacing.xl,
+                                width: AppSpacing.xl,
                                 child: Checkbox(
                                   value: _agreedToTerms,
                                   activeColor: AppColors.primary,

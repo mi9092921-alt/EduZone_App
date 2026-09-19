@@ -1094,7 +1094,7 @@ abstract class AppLocalizations {
   /// **'Link unavailable'**
   String get errorLinkUnavailable;
 
-  /// No description provided for @modernLearningPlatform.
+  /// Short description of the platform used in the About dialog
   ///
   /// In en, this message translates to:
   /// **'Modern learning platform for students and teachers'**

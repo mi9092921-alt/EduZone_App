@@ -27,11 +27,18 @@ part 'offline_account_purge_listener.g.dart';
 StreamSubscription<void> offlineAccountPurgeListener(Ref ref) {
   final sub = ref.watch(eventBusProvider).stream.listen((event) {
     if (event is! AuthLoginEvent) return;
+    final userId = event.userId;
+    // A login event without a user id cannot be scoped to an account, so
+    // there is nothing safe to purge — skip instead of crashing on `!`.
+    if (userId == null) {
+      debugPrint('[Downloads] Offline purge skipped: login event has no userId');
+      return;
+    }
     unawaited(
       OfflineAccountGuard(
         localDataSource: ref.read(downloadLocalDataSourceProvider),
         encryptionService: ref.read(encryptionServiceProvider),
-      ).purgeDownloadsForOtherAccounts(event.userId!).catchError((e) {
+      ).purgeDownloadsForOtherAccounts(userId).catchError((e) {
         debugPrint(
           '[Downloads] Offline purge failed: ${e.runtimeType}',
         );

@@ -30,6 +30,23 @@ class NetworkExceptionMapper {
 
   /// Maps a raw caught error to an [AppException].
   static AppException map(Object error) {
+    // Datasources pre-convert `PostgrestException` to `ServerException`
+    // before this mapper ever sees the error (documented pattern in every
+    // feature datasource), which previously meant the session-revocation
+    // check below never ran for those calls. Inspect the pre-converted
+    // code/message with the same signatures the PostgrestException branch
+    // uses, BEFORE the generic AppException early-return swallows it.
+    // Note [SessionRevokedException] is a sibling of [ServerException]
+    // (both extend [AppException] directly), so a raw revoked exception
+    // arriving here falls through to the early-return below without
+    // re-notifying the hook.
+    if (error is ServerException &&
+        _isSessionRevocationSignature(error.code, error.message)) {
+      const revoked = SessionRevokedException();
+      SessionRevocationHook.notify(revoked);
+      return revoked;
+    }
+
     // Already a typed, deliberately-thrown business error (e.g.
     // MaxDevicesReachedException raised by a caller upstream) -- must
     // never be re-wrapped, or callers checking `error is XException`
@@ -74,10 +91,7 @@ class NetworkExceptionMapper {
       // ("invalid authorization") or the project's AUTH_REQUIRED business
       // error. These must trip the forced sign-out hook instead of
       // collapsing into a generic ServerException — see SessionRevocationHook.
-      final message = error.message.toLowerCase();
-      if (error.code == '28000' ||
-          message.contains('invalid user session') ||
-          message.contains('auth_required')) {
+      if (_isSessionRevocationSignature(error.code, error.message)) {
         const revoked = SessionRevokedException();
         SessionRevocationHook.notify(revoked);
         return revoked;
@@ -131,6 +145,20 @@ class NetworkExceptionMapper {
     }
 
     return ServerException(message); // check-ignore
+  }
+
+  /// Whether [code]/[message] carry one of the session-revocation
+  /// signatures the server emits when a live session is killed
+  /// (Postgres ERRCODE 28000, the project's AUTH_REQUIRED business error,
+  /// or an "invalid user session" message). Shared by the
+  /// [PostgrestException] branch and the pre-converted [ServerException]
+  /// branch so the two can never drift apart.
+  static bool _isSessionRevocationSignature(String? code, String message) {
+    final lower = message.toLowerCase();
+    return code == '28000' ||
+        code == 'AUTH_REQUIRED' ||
+        lower.contains('invalid user session') ||
+        lower.contains('auth_required');
   }
 
   /// Whether [error] represents a transient, connectivity-level failure

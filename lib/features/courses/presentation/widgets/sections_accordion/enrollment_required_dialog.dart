@@ -1,29 +1,22 @@
 import 'package:flutter/material.dart';
 
 import '../../../../../core/l10n/arb/app_localizations.dart';
-import '../../../../../design_system/design_system.dart';
+import '../../../../../shared/widgets/confirm_dialog.dart';
 
 /// Shown when a non-enrolled user taps a locked (non-preview) lesson.
 void showEnrollmentRequiredDialog(BuildContext context) {
   final l10n = AppLocalizations.of(context)!;
   showDialog(
     context: context,
-    builder: (context) => AlertDialog(
-      title: Text(l10n.enrollmentRequired),
-      content: Text(l10n.enrollToAccessLesson),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(l10n.closeButton),
-        ),
-        AppButton(
-          label: l10n.viewEnrollmentOptions,
-          onPressed: () {
-            Navigator.pop(context);
-            // Navigate to enrollment or show options
-          },
-        ),
-      ],
+    builder: (context) => ConfirmDialog(
+      title: l10n.enrollmentRequired,
+      description: l10n.enrollToAccessLesson,
+      confirmLabel: l10n.viewEnrollmentOptions,
+      cancelLabel: l10n.closeButton,
+      onConfirm: () {
+        Navigator.pop(context);
+        // Navigate to enrollment or show options
+      },
     ),
   );
 }

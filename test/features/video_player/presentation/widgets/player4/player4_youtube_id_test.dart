@@ -1,4 +1,4 @@
-import 'package:app/features/video_player/presentation/widgets/player4/player4_youtube_id.dart';
+import 'package:app/shared/utils/youtube_video_id.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -59,9 +59,14 @@ void main() {
       );
     });
 
-    test('passes through an unrecognized URL shape unchanged', () {
+    test('returns null for an unrecognized URL shape', () {
+      // Hardened semantics (shared with the modern player): the old
+      // player4 copy passed unrecognized input through unchanged, which
+      // let non-YouTube strings flow into the player. Anything that
+      // isn't a real YouTube id must resolve to null so the caller
+      // shows the "invalid video URL" state.
       const url = 'https://example.com/video/123';
-      expect(extractYoutubeVideoId(url), url);
+      expect(extractYoutubeVideoId(url), isNull);
     });
   });
 }

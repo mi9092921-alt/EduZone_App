@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../../design_system/design_system.dart';
-import 'player4_format.dart';
+import '../../../../../shared/utils/video_duration_format.dart';
 
 /// Bottom time labels + seek slider.
 ///
@@ -55,14 +55,14 @@ class Player4SeekBar extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      formatPlayer4Duration(position),
+                      formatVideoDuration(position),
                       style: AppTextStyles.bodySmall.copyWith(
                         color: Colors.white70,
                         fontFamily: 'monospace',
                       ),
                     ),
                     Text(
-                      formatPlayer4Duration(duration),
+                      formatVideoDuration(duration),
                       style: AppTextStyles.bodySmall.copyWith(
                         color: Colors.white70,
                         fontFamily: 'monospace',

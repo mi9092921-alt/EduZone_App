@@ -129,17 +129,17 @@ class NotificationTile extends StatelessWidget {
         body.contains('assignment') ||
         title.contains('واجب')) {
       iconData = Icons.assignment_rounded;
-      typeColor = Colors.orange;
+      typeColor = AppColors.warning;
     } else if (title.contains('update') ||
         body.contains('update') ||
         title.contains('تحديث')) {
       iconData = Icons.system_update_alt_rounded;
-      typeColor = Colors.blue;
+      typeColor = AppColors.info;
     } else if (title.contains('congrats') ||
         body.contains('congrats') ||
         title.contains('مبروك')) {
       iconData = Icons.emoji_events_rounded;
-      typeColor = Colors.green;
+      typeColor = AppColors.success;
     }
 
     return Semantics(

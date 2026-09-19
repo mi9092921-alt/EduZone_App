@@ -107,7 +107,15 @@ class CheckStudentAppAccessService {
             final newVersion = payload.newRecord['token_version'] as int?;
             final jwtVersion = _currentJwtTokenVersion;
 
-            debugPrint('[Security] Realtime change detected. DB Version: $newVersion, JWT Version: $jwtVersion');
+            // kDebugMode-gated: token_version values are security-relevant
+            // state; debugPrint survives release builds and would surface
+            // them in device logcat.
+            if (kDebugMode) {
+              debugPrint(
+                '[Security] Realtime change detected. '
+                'DB Version: $newVersion, JWT Version: $jwtVersion',
+              );
+            }
 
             // token_version bump = forced logout
             if (_isForcedLogoutVersionChange(
@@ -164,7 +172,11 @@ class CheckStudentAppAccessService {
 
       if (dbTokenVersion != null && jwtVersion != null) {
         if (dbTokenVersion > jwtVersion) {
-          debugPrint('[Security] Version mismatch: DB($dbTokenVersion) > JWT($jwtVersion)');
+          if (kDebugMode) {
+            debugPrint(
+              '[Security] Version mismatch: DB($dbTokenVersion) > JWT($jwtVersion)',
+            );
+          }
           _resetMissingJwtVersionStrikes();
           _onAccessDenied(reason: 'token_version_mismatch');
           return;
@@ -180,10 +192,13 @@ class CheckStudentAppAccessService {
         // it's not transient — force logout to keep the forced-logout
         // guarantee intact.
         _missingJwtVersionStrikeCount += 1;
-        debugPrint(
-          '[Security] jwtVersion is NULL. Strike $_missingJwtVersionStrikeCount/'
-          '$_maxMissingJwtVersionStrikes. Check Supabase Auth Hooks.',
-        );
+        if (kDebugMode) {
+          debugPrint(
+            '[Security] jwtVersion is NULL. Strike '
+            '$_missingJwtVersionStrikeCount/$_maxMissingJwtVersionStrikes. '
+            'Check Supabase Auth Hooks.',
+          );
+        }
 
         if (_missingJwtVersionStrikeCount >= _maxMissingJwtVersionStrikes) {
           debugPrint('[Security] Forced logout after consecutive missing jwtVersion checks.');
@@ -218,6 +233,26 @@ class CheckStudentAppAccessService {
         _onAccessDenied(reason: reason);
       }
     } catch (e, st) {
+      // A revoked session can surface here as a RAISED error rather than a
+      // returned `allowed: false` payload (e.g. the server-side session
+      // validation inside the RPC raises Postgres 28000 / AUTH_REQUIRED
+      // instead of answering). The mapper (or the datasource) classifies
+      // that as [SessionRevokedException]; treating it as a skip-and-retry
+      // tick would leave a revoked user issuing authenticated requests for
+      // as long as the poll keeps failing, so it must be handled as an
+      // access denial, exactly like the payload-driven path above.
+      final classified = NetworkExceptionMapper.map(e);
+      if (classified is SessionRevokedException) {
+        if (_active) {
+          debugPrint(
+            '[Security] Poll detected session revocation '
+            '(${classified.code}) — forcing sign-out.',
+          );
+          _onAccessDenied(reason: 'session_revoked');
+        }
+        return;
+      }
+
       // This is the background polling/Realtime security-monitoring loop
       // (token_version checks), not a user-triggered call — an unexpected
       // failure here directly affects whether revocation/version-mismatch
@@ -239,7 +274,6 @@ class CheckStudentAppAccessService {
       // `AuthErrorPolicy.isTransient` / `login()`'s catch block in
       // `auth_provider.dart` already keep connectivity failures out of
       // Sentry while still surfacing genuinely unexpected errors.
-      final classified = NetworkExceptionMapper.map(e);
       final isConnectivityFailure = classified is NoInternetException ||
           classified is RequestTimeoutException;
 

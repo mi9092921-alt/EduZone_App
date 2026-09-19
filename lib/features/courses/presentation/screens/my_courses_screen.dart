@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/feature_flags/feature_flag_keys.dart';
 import '../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
@@ -35,7 +36,7 @@ class MyCoursesScreen extends ConsumerWidget {
             .isEnabled(FeatureFlagKey.coursesDownloads))
           IconButton(
             icon: const Icon(Icons.download_rounded),
-            onPressed: () => context.push('/courses/downloads'),
+            onPressed: () => context.push(AppRoutes.downloads),
             tooltip: l10n.downloads,
           ),
       ],

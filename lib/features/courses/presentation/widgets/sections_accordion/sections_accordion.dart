@@ -8,19 +8,13 @@ import '../../../../../core/constants/app_constants.dart';
 import '../../../../../core/feature_flags/feature_flag_keys.dart';
 import '../../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../../core/l10n/arb/app_localizations.dart';
-// Documented architecture debt (5c): the lesson list needs per-lesson
-// download state (progress, video info for the quality picker). There is no
-// event/shared-model representation of download state, so this remains a
-// direct provider import (same debt class as the WorkManager isolate in the
-// downloads feature); playback of un-owned downloads is still enforced
-// server-side and by OfflinePolicyEngine.
-import '../../../../../features/downloads/application/providers/downloads_provider.dart'; // check-ignore: download state has no shared-model representation (documented debt)
 import '../../../../../shared/components/quality_selector.dart';
 import '../../../../../shared/models/download_enums.dart';
 import '../../../../../shared/models/lesson.dart';
 import '../../../../../shared/models/lesson_content.dart';
 import '../../../../../shared/models/section.dart';
 import '../../../../../shared/providers/download_network_policy_provider.dart';
+import '../../../../../shared/providers/lesson_downloads_gateway.dart';
 import '../../../../../shared/utils/app_snackbar.dart';
 import '../../../../../shared/utils/error_handler.dart';
 import '../../../../../shared/widgets/confirm_dialog.dart';
@@ -321,13 +315,21 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
       return;
     }
 
-    final remote = ref.read(downloadRemoteDataSourceProvider);
+    // Cross-feature seam: video metadata + download actions go through the
+    // shared LessonDownloadsGateway contract (implemented by the downloads
+    // feature, injected at the composition root) — courses does not import
+    // the downloads feature.
+    final gateway = ref.read(lessonDownloadsGatewayProvider);
+    if (gateway == null) {
+      AppSnackbar.showError(context: context, message: l10n.errorGeneric);
+      return;
+    }
     try {
       // lessonId lets video-info authorize this specific lesson instead of
       // trusting videoUrl alone -- see the comment on
       // DownloadRemoteDataSource.getVideoInfo.
-      final videoInfo = await remote.getVideoInfo(
-        videoUrl,
+      final videoInfo = await gateway.getVideoInfo(
+        videoUrl: videoUrl,
         lessonId: localLessonId,
       );
       if (!mounted) return;
@@ -364,17 +366,15 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
           FeedbackService.show(context, message: l10n.downloadStarting);
 
           try {
-            await ref
-                .read(downloadsProvider.notifier)
-                .startDownload(
-                  lessonId: localLessonId,
-                  courseId: localCourseId,
-                  courseTitle: widget.courseTitle,
-                  title: localLessonTitle,
-                  videoUrl: videoUrl,
-                  quality: quality,
-                  ignoreWifiOnly: ignoreWifiOnly,
-                );
+            await gateway.startDownload(
+              lessonId: localLessonId,
+              courseId: localCourseId,
+              courseTitle: widget.courseTitle,
+              title: localLessonTitle,
+              videoUrl: videoUrl,
+              quality: quality,
+              ignoreWifiOnly: ignoreWifiOnly,
+            );
             if (!mounted) return;
             AppSnackbar.showSuccess(
               context: context,

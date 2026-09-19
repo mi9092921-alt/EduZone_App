@@ -5,13 +5,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
-// Documented architecture debt (5c): home legitimately renders the
-// notifications unread badge, which is owned by the notifications feature's
-// provider. There is no event/shared-model representation of an unread
-// count, so this remains a direct provider import (same debt class as the
-// WorkManager isolate in the downloads feature) instead of a fake seam.
-import '../../../../features/notifications/application/providers/notifications_provider.dart'; // check-ignore: unread badge needs unreadCountProvider (documented debt)
 import '../../../../shared/models/auth_state.dart';
+import '../../../../shared/providers/home_notifications_gateway.dart';
 import '../../../auth/application/providers/auth_provider.dart';
 
 /// Welcome header showing personalized greeting + notification badge.
@@ -21,7 +16,12 @@ class WelcomeHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
-    final unreadCount = ref.watch(unreadCountProvider);
+    // Unread badge via the shared gateway contract (implemented by the
+    // notifications feature, injected at the composition root) — no direct
+    // import of that feature.
+    final gateway = ref.watch(homeNotificationsGatewayProvider);
+    final unreadCount =
+        gateway == null ? 0 : ref.watch(gateway.unreadCount);
     final l10n = AppLocalizations.of(context)!;
     final ds = AppColors.of(context);
 

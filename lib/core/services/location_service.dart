@@ -7,7 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../network/supabase_client.dart';
+import '../location/data/location_remote_ds.dart';
 import '../utils/device_info_helper.dart';
 
 part 'location_service.g.dart';
@@ -157,25 +157,21 @@ class LocationService {
         return 'accuracy_too_low';
       }
 
-      // ── 5. Call server-side RPC ────────────────────────────────────────────
+      // ── 5. Call server-side RPC (via the location data layer) ─────────────
       // NOTE: Do NOT send a client timestamp — the server uses NOW() so it
       // can't be manipulated by clock drift or timezone changes on the device.
       final source = _sourceFromPosition(position);
-      final client = SupabaseService.client;
-      final result = await client.rpc(
-        'log_app_open_location',
-        params: {
-          'p_latitude':    position.latitude,
-          'p_longitude':   position.longitude,
-          'p_accuracy':    position.accuracy,
-          'p_source':      source,
-          'p_device_info': DeviceInfoHelper.deviceInfoJson,
-          // p_min_interval_min defaults to 3 on the server
-          ...?sessionId != null ? {'p_session_id': sessionId} : null,
-        },
+      final result = await const LocationRemoteDs().logAppOpenLocation(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: position.accuracy,
+        source: source,
+        deviceInfo: DeviceInfoHelper.deviceInfoJson,
+        // p_min_interval_min defaults to 3 on the server
+        sessionId: sessionId,
       );
 
-      final resultStr = result?.toString() ?? 'unknown';
+      final resultStr = result ?? 'unknown';
       if (kDebugMode) debugPrint('[Location] RPC result: $resultStr');
 
       // ── 6. Persist timestamp only on a fresh successful insert ─────────────

@@ -71,7 +71,7 @@ void main() {
       'SECURITY (AUTH/WEBVIEW-01): substitutes an unsafe videoId instead of '
       'interpolating it unescaped',
       () {
-        // A caller that skips extractModernPlayerVideoId's validation (or a
+        // A caller that skips extractYoutubeVideoId's validation (or a
         // future refactor that does) must not be able to break out of the
         // JS string literal this value is interpolated into.
         const malicious = 'x"); alert(document.cookie); //';

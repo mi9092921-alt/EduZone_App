@@ -1,5 +1,6 @@
 import 'package:app/design_system/components/layout/app_screen.dart';
 import 'package:app/design_system/components/status/app_empty_state.dart';
+import 'package:app/design_system/components/status/app_skeleton.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -22,18 +23,22 @@ void main() {
     expect(find.text('Screen Content'), findsOneWidget);
   });
 
-  testWidgets('AppScreen displays loading overlay when isLoading is true', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: AppScreen(isLoading: true, child: Text('Under Loading')),
-      ),
-    );
+  testWidgets(
+    'AppScreen displays a skeleton-based loading surface when isLoading '
+    'is true (the old CircularProgressIndicator overlay was replaced)',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: AppScreen(isLoading: true, child: Text('Under Loading')),
+        ),
+      );
 
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    expect(find.text('Under Loading'), findsOneWidget);
-  });
+      expect(find.byType(AppSkeleton), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      // The real content stays mounted underneath the loading surface.
+      expect(find.text('Under Loading'), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'AppScreen shows an AppEmptyState with the error message instead of '

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/components/course_card.dart';
 import '../../../../shared/models/course.dart';
@@ -57,7 +58,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
-      ref.read(publicCoursesProvider.notifier).fetchNextPage();
+      // Explicitly unawaited: fetchNextPage() reports its own failure
+      // inline via the pagination footer (loadMoreError) and must never
+      // gate scrolling.
+      unawaited(ref.read(publicCoursesProvider.notifier).fetchNextPage());
     }
   }
 
@@ -75,10 +79,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     Course course,
     Set<String> enrolledIds,
   ) {
+    // Drill-down uses push (not go): every other entry point into these
+    // screens (course cards on home/my-courses/saved, discover cards) uses
+    // context.push, and go() from here would switch the active shell
+    // branch, making system-back land on the Courses tab root instead of
+    // the screen the user came from.
     if (enrolledIds.contains(course.id)) {
-      context.go('/courses/${course.id}');
+      context.push('${AppRoutes.courses}/${course.id}');
     } else {
-      context.go('/discover/course-preview/${course.id}');
+      context.push('${AppRoutes.coursePreview}/${course.id}');
     }
   }
 
@@ -146,7 +155,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
         IconButton(
           icon: const Icon(Icons.bookmark_border_rounded),
           tooltip: l10n.savedCoursesTitle,
-          onPressed: () => context.push('/discover/saved'),
+          onPressed: () => context.push('${AppRoutes.discover}/saved'),
         ),
       ],
       slivers: [
@@ -180,6 +189,11 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     return state.when(
       data: (data) {
         final query = _query;
+        // KNOWN LIMITATION: this filter only sees the already-fetched page
+        // (`data.items`), so a query can miss courses on pages that were
+        // never loaded. Proper server-side search would require an RPC
+        // contract change (see docs/EduZone_API_Design_v1.md) — do not
+        // "fix" this client-side.
         final filteredCourses = query.isEmpty
             ? data.items
             : data.items
@@ -319,6 +333,35 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
               child: Padding(
                 padding: EdgeInsets.all(AppSpacing.lg),
                 child: Center(child: CircularProgressIndicator()),
+              ),
+            )
+          else if (data.loadMoreError && data.hasMore)
+            // Inline retry footer for a failed next page: the loaded
+            // courses stay on screen (the provider keeps them on a
+            // fetchNextPage failure instead of wiping the state with an
+            // AsyncError).
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Column(
+                  children: [
+                    Text(
+                      l10n.errorGeneric,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.error,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    AppButton(
+                      label: l10n.retryButton,
+                      variant: AppButtonVariant.ghost,
+                      onPressed: () => ref
+                          .read(publicCoursesProvider.notifier)
+                          .fetchNextPage(),
+                    ),
+                  ],
+                ),
               ),
             ),
         ];

@@ -15,6 +15,7 @@ import '../../../../../core/services/encryption_service.dart'
     show detectContainerExt;
 import '../../../../../core/services/offline_playback_service.dart';
 import '../../../../../shared/models/downloaded_lesson.dart';
+import '../../../../../shared/utils/player_ui_helpers.dart';
 import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/downloads_provider.dart';
 import '../../../application/services/offline_clock_guard.dart';
@@ -108,7 +109,11 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
   StreamSubscription<String>? _errorSubscription;
   int? _videoWidth;
   int? _videoHeight;
-  Timer? _autoHideTimer;
+  late final _autoHideControlsTimer = AutoHideControlsTimer(
+    onHide: () {
+      if (mounted) setState(() => _showControls = false);
+    },
+  );
   String? _errorMessage;
 
   @override
@@ -261,7 +266,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
       // the user staring at a frozen last frame with no way to replay).
       _completedSubscription = player.stream.completed.listen((completed) {
         if (completed && mounted) {
-          _autoHideTimer?.cancel();
+          _autoHideControlsTimer.cancel();
           setState(() => _showControls = true);
         }
       });
@@ -390,7 +395,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
   /// cleanup done in [dispose], but synchronously resets state so
   /// `_initializePlayer` can run again.
   Future<void> _retry() async {
-    _autoHideTimer?.cancel();
+    _autoHideControlsTimer.cancel();
     await _playingSubscription?.cancel();
     await _widthSubscription?.cancel();
     await _heightSubscription?.cancel();
@@ -425,7 +430,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _autoHideTimer?.cancel();
+    _autoHideControlsTimer.dispose();
     _playingSubscription?.cancel();
     _widthSubscription?.cancel();
     _heightSubscription?.cancel();
@@ -616,7 +621,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
   }
 
   void _resetAutoHideTimer() {
-    _autoHideTimer?.cancel();
+    _autoHideControlsTimer.cancel();
     if (!mounted) return;
     setState(() => _showControls = true);
     // Only auto-hide while actually playing. While paused, controls should
@@ -624,9 +629,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
     // hiding them on a timer while paused made it easy to "lose" the play
     // button on a frozen frame.
     if (!_isPlaying) return;
-    _autoHideTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _showControls = false);
-    });
+    _autoHideControlsTimer.restart();
   }
 
   void _toggleControls() {

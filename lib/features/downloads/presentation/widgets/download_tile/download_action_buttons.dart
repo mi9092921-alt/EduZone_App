@@ -6,6 +6,7 @@ import 'package:app/shared/utils/error_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../../shared/widgets/confirm_dialog.dart';
 import '../../../application/providers/downloads_provider.dart';
 
 /// Runs a [DownloadsNotifier] action and surfaces a safe, user-facing
@@ -50,27 +51,21 @@ void showDownloadDeleteDialog(
     // the outer screen `context`, because that outer context is what
     // performDownloadAction needs to still be mounted after the dialog is
     // popped in order to show the error SnackBar.
-    builder: (dialogContext) => AlertDialog(
-      title: Text(l10n.downloadsDeleteTitle),
-      content: Text(l10n.downloadsDeleteMsg),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext),
-          child: Text(l10n.downloadsCancelBtn),
-        ),
-        TextButton(
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            performDownloadAction(
-              context,
-              () => ref.read(downloadsProvider.notifier).deleteDownload(
-                    downloadId,
-                  ),
-            );
-          },
-          child: Text(l10n.downloadsDeleteBtn),
-        ),
-      ],
+    builder: (dialogContext) => ConfirmDialog(
+      title: l10n.downloadsDeleteTitle,
+      description: l10n.downloadsDeleteMsg,
+      confirmLabel: l10n.downloadsDeleteBtn,
+      cancelLabel: l10n.downloadsCancelBtn,
+      isDangerous: true,
+      onConfirm: () {
+        Navigator.pop(dialogContext);
+        performDownloadAction(
+          context,
+          () => ref.read(downloadsProvider.notifier).deleteDownload(
+                downloadId,
+              ),
+        );
+      },
     ),
   );
 }

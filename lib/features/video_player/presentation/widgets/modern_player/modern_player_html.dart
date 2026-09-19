@@ -19,7 +19,7 @@ final RegExp _safeVideoIdShape = RegExp(r'^[A-Za-z0-9_-]{11}$');
 /// SECURITY (AUTH/WEBVIEW-01): [videoId] is interpolated directly into a
 /// JS string literal (`videoId: "$videoId"`) with no escaping. The
 /// primary defense is that callers are expected to have already run the
-/// value through `extractModernPlayerVideoId`, which only ever returns
+/// value through `extractYoutubeVideoId`, which only ever returns
 /// `null` or a strictly-shaped 11-character id. This function adds a
 /// real (non-`assert`-based, so it also applies in release builds)
 /// last-resort check: if [videoId] doesn't match that shape, it is

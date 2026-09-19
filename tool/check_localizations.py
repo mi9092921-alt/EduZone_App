@@ -21,6 +21,19 @@ check_localizations.py — Hardcoded-string guard for EduZone App.
      -- the exception's own built-in default message, hit whenever the
      caller doesn't override it.
 
+  5. `l10n?.someKey ?? 'English fallback'` -- a null-aware fallback onto a
+     hardcoded literal for what is by construction a user-facing string (it
+     has an l10n key). When AppLocalizations.of() returns null (e.g. before
+     localizations resolve above the widget), the English literal silently
+     leaks into the Arabic experience. The sanctioned pattern is to render
+     NO text (or no semantics label) when l10n is unavailable -- see
+     network_banner.dart. Scoped to lib/ OUTSIDE lib/design_system/:
+     design-system components intentionally render before localizations
+     resolve. Deliberately narrow (matches only on an identifier ending in
+     `l10n`/`L10n` followed by `?.key ??`): generic `?? 'fallback'` patterns
+     on data-layer fields (roles, mime types, error codes, status enums)
+     are NOT user-facing copy and must not be flagged.
+
 NOT flagged (these are not hardcoded UI copy):
   Text(l10n.someKey)             -- already using the localization system
   Text(widget.someLabel)         -- pass-through of a caller-supplied value
@@ -91,6 +104,15 @@ QUOTED_STRING_RE = re.compile(r"""(['"])((?:(?!\1).)*)\1""")
 # both Text(...) and `name: 'literal'`.
 MESSAGE_DEFAULT_RE = re.compile(r"""\bmessage\s*=\s*(['"])((?:(?!\1).)*)\1""")
 
+# `l10n?.someKey ?? 'English fallback'` -- null-aware fallback from an l10n
+# getter onto a hardcoded literal. The identifier must END in l10n/L10n
+# (l10n, localizations10n? no -- practical names: l10n, appL10n, ...) and be
+# followed by `?.key ??`, so data-layer fallbacks (`json['x'] ?? 'video'`,
+# `role ?? 'student'`) can never match. See pattern 5 in main().
+L10N_FALLBACK_RE = re.compile(
+    r"""\b\w*[lL]10n\?\.\w+\s*\?\?\s*(['"])((?:(?!\1).)*)\1"""
+)
+
 
 def extract_paren_block(text: str, open_paren_idx: int) -> str:
     """Returns the substring from `open_paren_idx` (a '(') through its
@@ -158,6 +180,13 @@ def main() -> None:
         for match in MESSAGE_DEFAULT_RE.finditer(text):
             if has_hardcoded_wording(match.group(2)):
                 candidates.append((*match.span(), match.group(0)))
+
+        # Pattern 5: `l10n?.someKey ?? 'English fallback'`. Scoped to lib/
+        # outside lib/design_system/ (see docstring above).
+        if not rel.startswith("lib/design_system"):
+            for match in L10N_FALLBACK_RE.finditer(text):
+                if has_hardcoded_wording(match.group(2)):
+                    candidates.append((*match.span(), match.group(0)))
 
         # Different patterns can catch the SAME underlying string literal
         # via spans that overlap but aren't identical -- e.g.

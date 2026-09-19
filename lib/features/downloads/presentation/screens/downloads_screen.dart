@@ -9,6 +9,7 @@ import '../../../../shared/models/download_enums.dart';
 import '../../../../shared/models/downloaded_lesson.dart';
 import '../../../../shared/utils/app_snackbar.dart';
 import '../../../../shared/utils/error_handler.dart';
+import '../../../../shared/widgets/confirm_dialog.dart';
 import '../../application/providers/downloads_provider.dart';
 import '../widgets/download_tile.dart';
 
@@ -345,22 +346,16 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       // Named dialogContext deliberately: it must not shadow the outer
       // screen `context`, since the error SnackBar needs a context that is
       // still mounted after this dialog is popped.
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.downloadsCleanupTitle),
-        content: Text(l10n.downloadsCleanupMsg),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(l10n.downloadsCancelBtn),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _performCleanup(context, l10n);
-            },
-            child: Text(l10n.downloadsCleanup),
-          ),
-        ],
+      builder: (dialogContext) => ConfirmDialog(
+        title: l10n.downloadsCleanupTitle,
+        description: l10n.downloadsCleanupMsg,
+        confirmLabel: l10n.downloadsCleanup,
+        cancelLabel: l10n.downloadsCancelBtn,
+        isDangerous: true,
+        onConfirm: () {
+          Navigator.pop(dialogContext);
+          _performCleanup(context, l10n);
+        },
       ),
     );
   }

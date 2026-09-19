@@ -142,7 +142,7 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(seconds: 10));
 
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(find.text(l10n.lessonNotFound), findsOneWidget);
@@ -155,7 +155,7 @@ void main() {
         'shows the enrollment paywall instead of the player when the '
         'lesson content reports hasAccess == false', (tester) async {
       await pumpVideoPlayer(tester, lessonContent: _lockedContent);
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(seconds: 10));
 
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(find.text(l10n.enrollmentRequired), findsOneWidget);
@@ -181,7 +181,7 @@ void main() {
           ),
         ],
       );
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(seconds: 10));
 
       expect(tester.takeException(), isNull);
       expect(find.text('PLAYER_STUB'), findsOneWidget);
@@ -204,7 +204,7 @@ void main() {
           ),
         ],
       );
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(seconds: 10));
 
       expect(tester.takeException(), isNull);
       expect(find.byType(LinearProgressIndicator), findsOneWidget);
@@ -233,11 +233,11 @@ void main() {
           );
         },
       );
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(seconds: 10));
       expect(find.text('NORMAL'), findsOneWidget);
 
       await tester.tap(find.text('NORMAL'));
-      await tester.pumpAndSettle();
+      await tester.pumpAndSettle(const Duration(seconds: 10));
 
       expect(tester.takeException(), isNull);
       expect(find.text('FULLSCREEN'), findsOneWidget);

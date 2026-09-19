@@ -1,3 +1,5 @@
+import 'package:app/design_system/design_system.dart';
+
 /// Layout/animation constants shared across the splash-screen sub-widgets.
 ///
 /// Extracted from `splash_screen.dart` (previously a private `_K` class)
@@ -7,17 +9,21 @@
 /// file redeclaring its own copy.
 abstract final class SplashConstants {
   // Logo
-  static const double logoSize = 120;
-  static const double logoRadius = 32;
-  static const double logoIconSize = 60;
-  static const double logoTranslateY = 96; // px عند بداية الانزلاق
+  static const double logoSize = AppSpacing.xxxl; // 120
+  // 32 — لا يوجد AppRadius بقيمة 32، فاستُخدم رمز AppSpacing بنفس القيمة
+  static const double logoRadius = AppSpacing.xl2;
+  static const double logoIconSize = 60; // no matching design token (v1)
+  static const double logoTranslateY = AppSpacing.xl12; // 96 px عند بداية الانزلاق
 
   // Brand text
+  // 30 — بين h1 (28) و display (36): no matching design token (v1)
   static const double fontSize = 30;
-  static const double letterHeight = 42; // مرتبط بـ fontSize + letterSpacing
+  // مرتبط بـ fontSize + letterSpacing — no matching design token (v1)
+  static const double letterHeight = 42;
 
   // Parallax
-  static const double parallaxRange = 10; // px
+  // 10 — القيمة مطابقة لرمز AppSpacing.alias وليست دلاليًا مسافة زر
+  static const double parallaxRange = AppSpacing.buttonPaddingV;
 }
 
 /// "cation" — الجزء المتحرك من "Education" الذي ينزلق حرفًا حرفًا.

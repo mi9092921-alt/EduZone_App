@@ -1,58 +1,58 @@
-import 'package:app/features/video_player/presentation/widgets/modern_player/modern_player_youtube_id.dart';
+import 'package:app/shared/utils/youtube_video_id.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('extractModernPlayerVideoId', () {
+  group('extractYoutubeVideoId', () {
     test('returns null for null input', () {
-      expect(extractModernPlayerVideoId(null), isNull);
+      expect(extractYoutubeVideoId(null), isNull);
     });
 
     test('returns null for empty input', () {
-      expect(extractModernPlayerVideoId(''), isNull);
+      expect(extractYoutubeVideoId(''), isNull);
     });
 
     test('returns a bare 11-char id unchanged', () {
-      expect(extractModernPlayerVideoId('dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+      expect(extractYoutubeVideoId('dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
     });
 
     test('extracts the id from a watch?v= URL', () {
       expect(
-        extractModernPlayerVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+        extractYoutubeVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
         'dQw4w9WgXcQ',
       );
     });
 
     test('extracts the id from a youtu.be short URL', () {
       expect(
-        extractModernPlayerVideoId('https://youtu.be/dQw4w9WgXcQ'),
+        extractYoutubeVideoId('https://youtu.be/dQw4w9WgXcQ'),
         'dQw4w9WgXcQ',
       );
     });
 
     test('extracts the id from an embed URL', () {
       expect(
-        extractModernPlayerVideoId('https://www.youtube.com/embed/dQw4w9WgXcQ'),
+        extractYoutubeVideoId('https://www.youtube.com/embed/dQw4w9WgXcQ'),
         'dQw4w9WgXcQ',
       );
     });
 
     test('extracts the id from a shorts URL', () {
       expect(
-        extractModernPlayerVideoId('https://www.youtube.com/shorts/dQw4w9WgXcQ'),
+        extractYoutubeVideoId('https://www.youtube.com/shorts/dQw4w9WgXcQ'),
         'dQw4w9WgXcQ',
       );
     });
 
     test('extracts the id from a live URL', () {
       expect(
-        extractModernPlayerVideoId('https://www.youtube.com/live/dQw4w9WgXcQ'),
+        extractYoutubeVideoId('https://www.youtube.com/live/dQw4w9WgXcQ'),
         'dQw4w9WgXcQ',
       );
     });
 
     test('extracts the id from a youtube-nocookie embed URL', () {
       expect(
-        extractModernPlayerVideoId(
+        extractYoutubeVideoId(
           'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
         ),
         'dQw4w9WgXcQ',
@@ -66,28 +66,28 @@ void main() {
       // YouTube id must resolve to null so the caller shows the
       // "invalid video URL" state instead of building a WebView.
       const url = 'https://example.com/video/123';
-      expect(extractModernPlayerVideoId(url), isNull);
+      expect(extractYoutubeVideoId(url), isNull);
     });
 
     test('returns null for a bare 11-char string with JS-breaking characters', () {
       // Same length as a real id, but not shaped like one (contains a
       // quote) -- must not be treated as safe just because the length
       // matches.
-      expect(extractModernPlayerVideoId('a"</scrpt>1'), isNull);
+      expect(extractYoutubeVideoId('a"</scrpt>1'), isNull);
     });
 
     test('returns null for a string that attempts JS string-literal breakout', () {
       const malicious = 'x"); alert(document.cookie); //';
-      expect(extractModernPlayerVideoId(malicious), isNull);
+      expect(extractYoutubeVideoId(malicious), isNull);
     });
 
     test('returns null for a string with a single-quote breakout attempt', () {
       const malicious = "x'); alert(1); //";
-      expect(extractModernPlayerVideoId(malicious), isNull);
+      expect(extractYoutubeVideoId(malicious), isNull);
     });
 
     test('rejects a video id containing whitespace', () {
-      expect(extractModernPlayerVideoId('dQw4w9WgX Q'), isNull);
+      expect(extractYoutubeVideoId('dQw4w9WgX Q'), isNull);
     });
   });
 }

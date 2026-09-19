@@ -134,6 +134,72 @@ void main() {
       });
     });
 
+    group('session revocation via pre-converted ServerException (datasource '
+        'catch blocks throw ServerException before the mapper runs)', () {
+      tearDown(() {
+        SessionRevocationHook.onSessionRevoked = null;
+      });
+
+      test('ServerException with code 28000 → SessionRevokedException + hook', () {
+        var hookCalls = 0;
+        SessionRevocationHook.onSessionRevoked = (_) => hookCalls++;
+
+        final mapped = NetworkExceptionMapper.map(
+          const ServerException('invalid user session', '28000'), // check-ignore
+        );
+
+        expect(mapped, isA<SessionRevokedException>());
+        expect((mapped as SessionRevokedException).code, 'SESSION_REVOKED');
+        expect(hookCalls, 1);
+      });
+
+      test('ServerException with code AUTH_REQUIRED → SessionRevokedException '
+          '+ hook', () {
+        var hookCalls = 0;
+        SessionRevocationHook.onSessionRevoked = (_) => hookCalls++;
+
+        final mapped = NetworkExceptionMapper.map(
+          const ServerException('Session validation failed', 'AUTH_REQUIRED'), // check-ignore
+        );
+
+        expect(mapped, isA<SessionRevokedException>());
+        expect(hookCalls, 1);
+      });
+
+      test('ServerException with an "invalid user session" message (no code) '
+          '→ SessionRevokedException', () {
+        final mapped = NetworkExceptionMapper.map(
+          const ServerException('Invalid user session: token_version bump'), // check-ignore
+        );
+
+        expect(mapped, isA<SessionRevokedException>());
+      });
+
+      test('a business ServerException is returned unchanged and the hook '
+          'stays silent', () {
+        var hookCalls = 0;
+        SessionRevocationHook.onSessionRevoked = (_) => hookCalls++;
+
+        const original = ServerException('Maximum devices reached', 'MAX_DEVICES_REACHED'); // check-ignore
+        final mapped = NetworkExceptionMapper.map(original);
+
+        expect(mapped, same(original));
+        expect(hookCalls, 0);
+      });
+
+      test('a raw SessionRevokedException is returned as-is without '
+          'double-notifying the hook', () {
+        var hookCalls = 0;
+        SessionRevocationHook.onSessionRevoked = (_) => hookCalls++;
+
+        const original = SessionRevokedException();
+        final mapped = NetworkExceptionMapper.map(original);
+
+        expect(mapped, same(original));
+        expect(hookCalls, 0);
+      });
+    });
+
     test('classifies FormatException without leaking parser internals', () {
       final mapped = NetworkExceptionMapper.map(
         const FormatException('Unexpected character at offset 42'),

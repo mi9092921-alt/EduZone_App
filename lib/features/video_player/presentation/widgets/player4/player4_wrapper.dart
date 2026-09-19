@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
@@ -10,6 +11,8 @@ import '../../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../../core/utils/device_info_helper.dart';
 import '../../../../../design_system/design_system.dart';
 import '../../../../../shared/models/lesson_content.dart';
+import '../../../../../shared/utils/player_ui_helpers.dart';
+import '../../../../../shared/utils/youtube_video_id.dart';
 import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/player4_provider.dart';
 import '../../../application/providers/video_provider.dart';
@@ -19,7 +22,6 @@ import 'player4_error_mapper.dart';
 import 'player4_error_view.dart';
 import 'player4_format_selection.dart';
 import 'player4_loading_overlay.dart';
-import 'player4_youtube_id.dart';
 
 /// Structure note: state management, Supabase/provider integration, and
 /// playback-control logic (quality switching, error-retry debouncing,
@@ -28,10 +30,10 @@ import 'player4_youtube_id.dart';
 /// and minimizing behavioral risk here matters more than file length. The
 /// purely-presentational pieces (top bar, center controls, seek bar,
 /// controls overlay shell, loading/error views) and the pure utility
-/// functions (duration formatting, YouTube id extraction, format
-/// selection, error-message mapping) have been extracted into sibling
-/// files in this folder — each independently testable with no direct
-/// dependency on `Player` or this State class.
+/// functions (format selection, error-message mapping) have been
+/// extracted into sibling files in this folder (duration formatting and
+/// YouTube id extraction live in `shared/utils/`) — each independently
+/// testable with no direct dependency on `Player` or this State class.
 class Player4Wrapper extends ConsumerStatefulWidget {
   final String courseId;
   final String lessonId;
@@ -69,7 +71,13 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
   String _errorMessage = '';
 
   bool _isMuted = false;
-  Timer? _hideTimer;
+  late final _hideControlsTimer = AutoHideControlsTimer(
+    onHide: () {
+      if (mounted) {
+        setState(() => _showControls = false);
+      }
+    },
+  );
   bool _showControls = true;
   double _playbackSpeed = 1.0;
   bool _loggedStarted = false;
@@ -100,7 +108,7 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
 
   // Throttles progress reporting so we don't hammer the provider (and
   // Supabase behind it) on every position tick (~4x/second from media_kit).
-  DateTime _lastProgressReport = DateTime.fromMillisecondsSinceEpoch(0);
+  final PlayerProgressReporter _progressReporter = PlayerProgressReporter();
 
   // Debounces full refetch-on-error handling. media_kit/mpv can emit
   // non-fatal error events (buffering hiccups, minor decode warnings) in
@@ -131,7 +139,7 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
 
   @override
   void dispose() {
-    _hideTimer?.cancel();
+    _hideControlsTimer.dispose();
     for (final sub in _subscriptions) {
       sub.cancel();
     }
@@ -140,12 +148,7 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
   }
 
   void _startHideTimer() {
-    _hideTimer?.cancel();
-    _hideTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted) {
-        setState(() => _showControls = false);
-      }
-    });
+    _hideControlsTimer.restart();
   }
 
   Future<void> _handleQualitySelected(StreamingFormat format) async {
@@ -227,8 +230,12 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
 
       await _playFormat(format, seekToCurrent: seekToCurrent);
     } catch (e, st) {
-      debugPrint('🔴 [_refreshAndPlay] Exception type: ${e.runtimeType}');
-      debugPrint('🔴 [_refreshAndPlay] StackTrace:\n$st');
+      // kDebugMode-gated: debugPrint survives release builds, and a full
+      // stack trace in device logcat exposes internal call structure.
+      if (kDebugMode) {
+        debugPrint('🔴 [_refreshAndPlay] Exception type: ${e.runtimeType}');
+        debugPrint('🔴 [_refreshAndPlay] StackTrace:\n$st');
+      }
       if (!mounted || _loadedVideoId != videoId) return;
       setState(() {
         _isLoadingVideoData = false;
@@ -315,10 +322,13 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
         }),
       );
     } catch (e, st) {
-      debugPrint(
-        '[_playFormat] quality=${format.quality} failed: ${e.runtimeType}',
-      );
-      debugPrint('[_playFormat] StackTrace:\n$st');
+      // kDebugMode-gated: stack traces must not reach release logcat.
+      if (kDebugMode) {
+        debugPrint(
+          '[_playFormat] quality=${format.quality} failed: ${e.runtimeType}',
+        );
+        debugPrint('[_playFormat] StackTrace:\n$st');
+      }
       if (mounted && requestId == _playRequestId) {
         setState(() {
           _isLoadingVideoData = false;
@@ -387,9 +397,7 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
     // Throttle: position ticks fire ~4x/second from media_kit. Reporting
     // progress that often is unnecessary network/battery cost; every 5s
     // is more than enough resolution for a "resume where you left off" feature.
-    final now = DateTime.now();
-    if (now.difference(_lastProgressReport) < const Duration(seconds: 5)) return;
-    _lastProgressReport = now;
+    if (!_progressReporter.shouldReport(_player.state.position)) return;
 
     final duration = _player.state.duration;
     final position = _player.state.position;

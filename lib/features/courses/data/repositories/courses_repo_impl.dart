@@ -186,7 +186,10 @@ class CoursesRepositoryImpl implements CoursesRepository {
       final ids = await _storageService.getBookmarkedCourseIds(userId);
       return Right(ids.toSet());
     } catch (e) {
-      return Left(CacheFailure(e.toString()));
+      // Local storage error: sanitized message, never raw exception text.
+      return const Left(
+        CacheFailure('Could not load bookmarks. Please try again.'), // check-ignore
+      );
     }
   }
 
@@ -198,7 +201,10 @@ class CoursesRepositoryImpl implements CoursesRepository {
       await _storageService.bookmarkCourse(userId, courseId);
       return const Right(null);
     } catch (e) {
-      return Left(CacheFailure(e.toString()));
+      // Local storage error: sanitized message, never raw exception text.
+      return const Left(
+        CacheFailure('Could not save bookmark. Please try again.'), // check-ignore
+      );
     }
   }
 
@@ -210,7 +216,10 @@ class CoursesRepositoryImpl implements CoursesRepository {
       await _storageService.unbookmarkCourse(userId, courseId);
       return const Right(null);
     } catch (e) {
-      return Left(CacheFailure(e.toString()));
+      // Local storage error: sanitized message, never raw exception text.
+      return const Left(
+        CacheFailure('Could not remove bookmark. Please try again.'), // check-ignore
+      );
     }
   }
 

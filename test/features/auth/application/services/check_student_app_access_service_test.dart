@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:app/core/error/exceptions.dart';
 import 'package:app/features/auth/application/services/check_student_app_access_service.dart';
 import 'package:app/features/auth/data/datasources/auth_remote_ds.dart';
 import 'package:app/shared/models/account_status.dart';
@@ -223,6 +224,30 @@ void main() {
 
       await service.checkNow(); // strike 3 -> forced logout
       expect(deniedReasons, ['token_version_mismatch']);
+    });
+
+    test('a raised SessionRevokedException is treated as an access denial '
+        '(session_revoked), not a skip tick', () async {
+      // A revoked session can surface from the raw check as a RAISED
+      // mapper-classified exception (Postgres 28000 / AUTH_REQUIRED) rather
+      // than an `allowed: false` payload — the poll must react immediately
+      // instead of waiting for the next tick.
+      checkError = const SessionRevokedException();
+      final service = buildService();
+
+      await expectLater(service.checkNow(), completes);
+      expect(deniedReasons, ['session_revoked']);
+    });
+
+    test('a generic (non-revocation) ServerException still only skips the '
+        'tick without denying access', () async {
+      checkError = const ServerException('boom', 'server_error'); // check-ignore
+      final service = buildService();
+
+      await expectLater(service.checkNow(), completes);
+      expect(deniedReasons, isEmpty,
+          reason: 'generic server errors are environment noise, not a denial '
+              'signal — the next poll retries');
     });
   });
 

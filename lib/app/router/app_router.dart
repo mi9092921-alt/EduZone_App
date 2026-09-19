@@ -8,6 +8,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/arb/app_localizations.dart';
 import '../../core/navigation/app_page_transition.dart';
+import '../../core/navigation/pending_deep_link_provider.dart';
 import '../../core/security/security_service.dart';
 import '../../features/auth/presentation/screens/banned_screen.dart';
 import '../../features/auth/presentation/screens/force_update_screen.dart';
@@ -44,11 +45,212 @@ part 'app_router.g.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
+/// Top-level path prefixes a deep link may target to be honourable after
+/// login. Anything else (login/splash itself, legal, guard screens,
+/// force-update, foreign paths like `//evil.com`) is discarded — this
+/// keeps the pending-deep-link restore from becoming an open redirect.
+const List<String> _deepLinkAllowedPrefixes = [
+  AppRoutes.home,
+  AppRoutes.discover,
+  AppRoutes.courses,
+  AppRoutes.todo,
+  AppRoutes.profile,
+];
+
+/// Whether [candidate] (a full location string, possibly with a query) is
+/// a protected app location worth restoring after the session resolves.
+bool _isHonourableDeepLink(String? candidate) {
+  if (candidate == null || !candidate.startsWith('/')) return false;
+  // Scheme-relative (`//host/...`) or absolute-URL forms are never paths.
+  if (candidate.startsWith('//')) return false;
+  final path = candidate.split('?').first;
+  return _deepLinkAllowedPrefixes.any(
+    (prefix) => path == prefix || path.startsWith('$prefix/'),
+  );
+}
+
+/// Read/write seam over [pendingDeepLinkProvider] so the redirect decision
+/// ([evaluateAppRedirect]) stays a pure, directly testable function without
+/// a Riverpod container.
+abstract interface class PendingLinkStore {
+  String? consume();
+  void stash(String location);
+  void clear();
+}
+
+class _ProviderPendingLinkStore implements PendingLinkStore {
+  _ProviderPendingLinkStore(this._ref);
+
+  final Ref _ref;
+
+  @override
+  String? consume() => _ref.read(pendingDeepLinkProvider.notifier).consume();
+
+  @override
+  void stash(String location) =>
+      _ref.read(pendingDeepLinkProvider.notifier).stash(location);
+
+  @override
+  void clear() => _ref.read(pendingDeepLinkProvider.notifier).clear();
+}
+
+/// The COMPLETE redirect decision for the app router, extracted as a pure
+/// function so every rule (kill switch, session states, deep-link stash/
+/// restore) is unit-testable headlessly — the go_router redirect closure
+/// below only adapts its inputs/outputs.
+///
+/// Navigation side effects on the pending deep link go through [linkStore].
+String? evaluateAppRedirect({
+  required AppAuthState appState,
+  required String location,
+  required bool killSwitchEngaged,
+  required String uri,
+  required PendingLinkStore linkStore,
+}) {
+  // Public routes — never redirect away from these. Note: AppRoutes.legal
+  // ('/legal') is a prefix, not a real route — only '/legal/:type' is
+  // declared; the exact-match below can never hit and the
+  // startsWith('/legal') check at the unauthenticated case does the
+  // real work.
+  final publicRoutes = {AppRoutes.login, AppRoutes.legal};
+
+  // Restricted-state routes (screens for banned/suspended/locked/maintenance)
+  final restrictedRoutes = {
+    AppRoutes.locked,
+    AppRoutes.appLocked,
+    AppRoutes.suspended,
+    AppRoutes.banned,
+    AppRoutes.maintenance,
+  };
+
+  void stashIfHonourable(String candidate) {
+    if (_isHonourableDeepLink(candidate)) {
+      linkStore.stash(candidate);
+    }
+  }
+
+  // Security kill switch — highest priority, checked before any appState
+  // branch. Once a RASP threat has fired, the ONLY permitted location is
+  // /locked for the lifetime of the process: the appState switch below
+  // would otherwise bounce an authenticated user from /locked straight
+  // back to /home, silently defeating the kill switch. Logout from the
+  // lock screen keeps the user here too (the flag outlives auth-state
+  // changes); a process restart clears it and the RASP guards re-evaluate
+  // from scratch.
+  if (killSwitchEngaged) {
+    return location == AppRoutes.locked ? null : AppRoutes.locked;
+  }
+
+  switch (appState) {
+    // Initializing: auth check in progress → stay on splash
+    case AppAuthState.initializing:
+      if (location != AppRoutes.splash) {
+        stashIfHonourable(uri);
+      }
+      return location == AppRoutes.splash ? null : AppRoutes.splash;
+
+    // Login form submitted, waiting for the server response. Stay
+    // put on /login (or /splash, if reached that way) instead of
+    // forcing a navigation to /splash — LoginScreen shows its own
+    // loading overlay for this state. See AppAuthState.authenticating.
+    case AppAuthState.authenticating:
+      if (location != AppRoutes.login && location != AppRoutes.splash) {
+        stashIfHonourable(uri);
+      }
+      return (location == AppRoutes.login || location == AppRoutes.splash)
+          ? null
+          : AppRoutes.splash;
+
+    // A local session exists but couldn't be verified yet because of
+    // a transient/network error — stay on splash and let the Auth
+    // notifier retry in the background. Deliberately NOT treated
+    // like `unauthenticated`: redirecting to /login here would be
+    // exactly the "network blip forces logout" behavior this state
+    // exists to prevent (see AuthDegraded's doc comment).
+    case AppAuthState.sessionVerificationPending:
+      if (location != AppRoutes.splash) {
+        stashIfHonourable(uri);
+      }
+      return location == AppRoutes.splash ? null : AppRoutes.splash;
+
+    // Force update: block ALL routes until the app is updated
+    case AppAuthState.forceUpdate:
+      return location == AppRoutes.forceUpdate
+          ? null
+          : AppRoutes.forceUpdate;
+
+    // Logging out: cleanup in progress → redirect to login immediately.
+    // Also drop any pending deep link: a destination requested under
+    // the outgoing session must not resurface for the next one.
+    case AppAuthState.loggingOut:
+      linkStore.clear();
+      if (location == AppRoutes.login) return null;
+      return AppRoutes.login;
+
+    // Unauthenticated: block all protected routes
+    case AppAuthState.unauthenticated:
+      if (publicRoutes.contains(location) ||
+          location.startsWith(AppRoutes.legal)) {
+        return null;
+      }
+      if (location != AppRoutes.login) {
+        // Preserve the requested destination so a successful login
+        // lands there instead of unconditionally on /home (fixes
+        // deep-link destination loss after login).
+        stashIfHonourable(uri);
+      }
+      return AppRoutes.login;
+
+    // Authenticated: block login/splash/restricted screens
+    case AppAuthState.authenticated:
+      if (location == AppRoutes.login ||
+          location == AppRoutes.splash ||
+          location == AppRoutes.forceUpdate ||
+          restrictedRoutes.contains(location)) {
+        // Restore a deep link intercepted while the session was still
+        // being established (or while unauthenticated), if any.
+        final pending = linkStore.consume();
+        if (pending != null &&
+            _isHonourableDeepLink(pending) &&
+            pending != location) {
+          return pending;
+        }
+        return AppRoutes.home;
+      }
+      return null;
+
+    // Account restriction states — redirect to dedicated screens
+    case AppAuthState.banned:
+      return location == AppRoutes.banned ? null : AppRoutes.banned;
+
+    case AppAuthState.suspended:
+      return location == AppRoutes.suspended ? null : AppRoutes.suspended;
+
+    case AppAuthState.locked:
+      return location == AppRoutes.locked ? null : AppRoutes.locked;
+
+    case AppAuthState.appLocked:
+      return location == AppRoutes.appLocked ? null : AppRoutes.appLocked;
+
+    case AppAuthState.maintenance:
+      return location == AppRoutes.maintenance
+          ? null
+          : AppRoutes.maintenance;
+  }
+}
+
 /// Wires [SecurityService.killAppHandler] to navigate to [AppRoutes.locked]
 /// via the root navigator key when a security threat is detected.
+///
+/// The handler MUST latch [SecurityService.killSwitchEngaged] before
+/// navigating: the redirect below honours that latch ahead of its
+/// appState switch, so the `/locked` destination survives instead of being
+/// bounced back to `/home` by the authenticated-state restricted-routes
+/// guard (which is exactly what happened before the latch existed).
 void wireSecurityKillHandler() {
   SecurityService.killAppHandler = (reason) {
     debugPrint('[SECURITY] Threat termination requested: $reason');
+    SecurityService.engageKillSwitch();
     final context = _rootNavigatorKey.currentContext;
     if (context != null && context.mounted) {
       GoRouter.of(context).go(AppRoutes.locked);
@@ -106,93 +308,16 @@ GoRouter router(Ref ref) {
     // hitting a bad link is still safely bounced to /login rather than home.
     errorBuilder: (context, state) => const _RouteNotFoundScreen(),
 
-    redirect: (context, state) {
-      final appState = ref.read(appStateProvider);
-      final location = state.matchedLocation;
+    // The full redirect decision lives in [evaluateAppRedirect] (pure,
+    // unit-testable); this closure only adapts go_router's inputs.
+    redirect: (context, state) => evaluateAppRedirect(
+          appState: ref.read(appStateProvider),
+          location: state.matchedLocation,
+          killSwitchEngaged: SecurityService.killSwitchEngaged,
+          uri: state.uri.toString(),
+          linkStore: _ProviderPendingLinkStore(ref),
+        ),
 
-      // Public routes — never redirect away from these
-      final publicRoutes = {AppRoutes.login, AppRoutes.legal};
-
-      // Restricted-state routes (screens for banned/suspended/locked/maintenance)
-      final restrictedRoutes = {
-        AppRoutes.locked,
-        AppRoutes.appLocked,
-        AppRoutes.suspended,
-        AppRoutes.banned,
-        AppRoutes.maintenance,
-      };
-
-      switch (appState) {
-        // Initializing: auth check in progress → stay on splash
-        case AppAuthState.initializing:
-          return location == AppRoutes.splash ? null : AppRoutes.splash;
-
-        // Login form submitted, waiting for the server response. Stay
-        // put on /login (or /splash, if reached that way) instead of
-        // forcing a navigation to /splash — LoginScreen shows its own
-        // loading overlay for this state. See AppAuthState.authenticating.
-        case AppAuthState.authenticating:
-          return (location == AppRoutes.login || location == AppRoutes.splash)
-              ? null
-              : AppRoutes.splash;
-
-        // A local session exists but couldn't be verified yet because of
-        // a transient/network error — stay on splash and let the Auth
-        // notifier retry in the background. Deliberately NOT treated
-        // like `unauthenticated`: redirecting to /login here would be
-        // exactly the "network blip forces logout" behavior this state
-        // exists to prevent (see AuthDegraded's doc comment).
-        case AppAuthState.sessionVerificationPending:
-          return location == AppRoutes.splash ? null : AppRoutes.splash;
-
-        // Force update: block ALL routes until the app is updated
-        case AppAuthState.forceUpdate:
-          return location == AppRoutes.forceUpdate
-              ? null
-              : AppRoutes.forceUpdate;
-
-        // Logging out: cleanup in progress → redirect to login immediately.
-        case AppAuthState.loggingOut:
-          if (location == AppRoutes.login) return null;
-          return AppRoutes.login;
-
-        // Unauthenticated: block all protected routes
-        case AppAuthState.unauthenticated:
-          if (publicRoutes.contains(location) ||
-              location.startsWith(AppRoutes.legal)) {
-            return null;
-          }
-          return AppRoutes.login;
-
-        // Authenticated: block login/splash/restricted screens
-        case AppAuthState.authenticated:
-          if (location == AppRoutes.login ||
-              location == AppRoutes.splash ||
-              location == AppRoutes.forceUpdate ||
-              restrictedRoutes.contains(location)) {
-            return AppRoutes.home;
-          }
-          return null;
-
-        // Account restriction states — redirect to dedicated screens
-        case AppAuthState.banned:
-          return location == AppRoutes.banned ? null : AppRoutes.banned;
-
-        case AppAuthState.suspended:
-          return location == AppRoutes.suspended ? null : AppRoutes.suspended;
-
-        case AppAuthState.locked:
-          return location == AppRoutes.locked ? null : AppRoutes.locked;
-
-        case AppAuthState.appLocked:
-          return location == AppRoutes.appLocked ? null : AppRoutes.appLocked;
-
-        case AppAuthState.maintenance:
-          return location == AppRoutes.maintenance
-              ? null
-              : AppRoutes.maintenance;
-      }
-    },
 
     routes: [
       GoRoute(

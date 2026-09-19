@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:http/io_client.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -17,6 +18,23 @@ class SupabaseService {
     }
 
     final certs = await loadPinnedCertificatesAsset();
+
+    // Fail fast instead of silently degrading: if BOTH pinned-cert assets
+    // are missing/mis-bundled in a release build, falling through to the
+    // default HTTP client would trust the device's full OS CA store —
+    // exactly the MITM surface pinning exists to close (SEC-001). Mirror
+    // the freeRASP misconfiguration fail-fast in freerasp_config.dart.
+    // Debug/profile builds intentionally bypass pinning (see
+    // loadPinnedCertificatesAsset) so local development keeps working.
+    if (kReleaseMode && certs.isEmpty) {
+      throw StateError(
+        'Certificate pinning assets failed to load in a release build '
+        '(assets/certs/supabase.pem + assets/certs/backup_ca.pem). '
+        'Refusing to start without TLS pinning — verify the assets are '
+        'declared under flutter/assets in pubspec.yaml and bundled.',
+      );
+    }
+
     final customClient = certs.isNotEmpty
         ? IOClient(createPinnedHttpClient(certs))
         : null;

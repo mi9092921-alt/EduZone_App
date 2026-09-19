@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../network/supabase_client.dart';
 import '../utils/device_info_helper.dart';
+import 'data/security_incident_remote_ds.dart';
 import 'guards/lifecycle_guard.dart';
 import 'guards/screenshot_guard.dart';
 
@@ -42,6 +43,31 @@ class SecurityService with WidgetsBindingObserver {
   ///   SecurityService.killAppHandler = (reason) =>
   ///       rootNavigatorKey.currentContext?.go('/security-blocked?reason=$reason');
   static void Function(String reason)? killAppHandler;
+
+  /// Latched "a security threat fired and the app-layer kill handler ran"
+  /// flag. The router redirect checks this BEFORE its appState switch:
+  /// without it, a `go(AppRoutes.locked)` issued while [AppAuthState] is
+  /// `authenticated` is bounced straight back to `/home` by the redirect's
+  /// restricted-routes guard, silently neutralising the kill switch (the
+  /// user keeps browsing on the compromised device). The flag is
+  /// intentionally in-memory only: it resets on process restart, where the
+  /// RASP guards re-evaluate and re-engage on their own.
+  static bool _killSwitchEngaged = false;
+  static bool get killSwitchEngaged => _killSwitchEngaged;
+
+  /// Latches the kill switch. Idempotent — multiple threat callbacks may
+  /// fire for the same event (freeRASP detector fan-out).
+  static void engageKillSwitch() {
+    _killSwitchEngaged = true;
+  }
+
+  /// Test-only reset. The flag is deliberately NOT auto-reset by the
+  /// router: once a threat is confirmed, navigation alone must not be able
+  /// to undo the lock for the lifetime of the process.
+  @visibleForTesting
+  static void resetKillSwitchForTest() {
+    _killSwitchEngaged = false;
+  }
 
   // Singleton pattern
   static final SecurityService _instance = SecurityService._internal();
@@ -187,9 +213,13 @@ class SecurityService with WidgetsBindingObserver {
     SupabaseClient client,
     Map<String, dynamic> payload,
   ) {
-    client
-        .from('security_incidents')
-        .insert(payload)
+    // The Supabase write itself lives in the security data layer
+    // (core/security/data) per the core data pattern; the `client`
+    // parameter is kept for the pre-insert Supabase.instance readiness
+    // probe in the caller (see the StateError/AssertionError note in
+    // _logThreatToSupabase).
+    const SecurityIncidentRemoteDs()
+        .insertIncident(payload)
         .then((_) {})
         .catchError((_) {
           _bufferThreatLocally(payload, status: 'insert_failed');

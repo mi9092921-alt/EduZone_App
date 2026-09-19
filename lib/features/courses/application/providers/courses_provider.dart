@@ -199,12 +199,19 @@ class PaginatedCoursesState {
   // continuously any time more pages could exist, even while idle.
   final bool isLoadingMore;
 
+  // True when the most recent fetchNextPage() request failed. The loaded
+  // pages are KEPT in [items] — the UI shows an inline retry footer for
+  // the next page instead of an AsyncError that would wipe the whole
+  // browsed list and force a page-1 refetch on retry.
+  final bool loadMoreError;
+
   PaginatedCoursesState({
     required this.items,
     required this.loadedIds,
     this.page = 1,
     this.hasMore = true,
     this.isLoadingMore = false,
+    this.loadMoreError = false,
   });
 
   PaginatedCoursesState copyWith({
@@ -213,6 +220,7 @@ class PaginatedCoursesState {
     int? page,
     bool? hasMore,
     bool? isLoadingMore,
+    bool? loadMoreError,
   }) {
     return PaginatedCoursesState(
       items: items ?? this.items,
@@ -220,6 +228,7 @@ class PaginatedCoursesState {
       page: page ?? this.page,
       hasMore: hasMore ?? this.hasMore,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      loadMoreError: loadMoreError ?? this.loadMoreError,
     );
   }
 }
@@ -255,7 +264,9 @@ class PublicCourses extends _$PublicCourses {
     final buildGeneration = _buildGeneration;
     final pageRequestGeneration = ++_pageRequestGeneration;
     _isLoadingPage = true;
-    state = AsyncData(currentState.copyWith(isLoadingMore: true));
+    state = AsyncData(
+      currentState.copyWith(isLoadingMore: true, loadMoreError: false),
+    );
     try {
       final nextPage = currentState.page + 1;
       final getPublicCourses = ref.read(getPublicCoursesProvider);
@@ -269,7 +280,13 @@ class PublicCourses extends _$PublicCourses {
 
       result.fold(
         (failure) {
-          state = AsyncError(failure.toAppException(), StackTrace.current);
+          // Keep the already-loaded pages and surface the failure as an
+          // inline flag for the pagination footer instead of replacing the
+          // whole state with AsyncError — previously a failed page 2+
+          // wiped the browsed list and a retry refetched from page 1.
+          state = AsyncData(
+            currentState.copyWith(isLoadingMore: false, loadMoreError: true),
+          );
         },
         (newCourses) {
           final Set<String> newIds = {...currentState.loadedIds};

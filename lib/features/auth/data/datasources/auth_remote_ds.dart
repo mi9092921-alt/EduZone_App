@@ -36,6 +36,29 @@ class AuthRemoteDataSource {
   AuthRemoteDataSource([SupabaseClient? client])
     : _client = client ?? SupabaseService.client;
 
+  // ─── Session-state accessors & lifecycle ────────────────────────────
+  //
+  // The auth provider must not reach into `supabaseClientProvider.auth`
+  // directly ("providers call repositories/datasources"); every session
+  // read/mutation it needs is surfaced here instead.
+
+  /// Current session snapshot, or null when no session is restored.
+  Session? get currentSession => _client.auth.currentSession;
+
+  /// Whether a session is currently restored on this client.
+  bool get hasCurrentSession => _client.auth.currentSession != null;
+
+  /// Current user id, or null when no session is restored.
+  String? get currentUserId => _client.auth.currentUser?.id;
+
+  /// Supabase auth state stream (signed-out / token-refreshed events feed
+  /// the passive-revocation listener in the auth provider).
+  Stream<AuthState> get authStateChanges => _client.auth.onAuthStateChange;
+
+  /// Signs the current session out of Supabase. Used for best-effort
+  /// teardown of a freshly-created-but-failed session on the login path.
+  Future<void> signOutCurrentSession() => _client.auth.signOut();
+
   // ─── check_student_app_access() ────────────────────────────────
 
   /// Calls the `check_student_app_access()` RPC and maps the response

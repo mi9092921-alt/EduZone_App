@@ -301,6 +301,9 @@
   },
   "errorLinkUnavailable": "Link unavailable",
   "modernLearningPlatform": "Modern learning platform for students and teachers",
+  "@modernLearningPlatform": {
+    "description": "Short description of the platform used in the About dialog"
+  },
   "ok": "OK",
   "copyrightFull": "EduZone Platform © {year}. All rights reserved.",
   "@copyrightFull": {

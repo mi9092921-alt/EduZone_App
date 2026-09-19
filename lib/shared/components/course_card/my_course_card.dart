@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../design_system/design_system.dart';
 import 'course_card_base.dart';
 import 'course_card_data.dart';
@@ -21,7 +22,7 @@ class MyCourseCard extends StatelessWidget {
   });
 
   void _defaultNavigation(BuildContext context) {
-    context.push('/courses/${data.id}');
+    context.push('${AppRoutes.courses}/${data.id}');
   }
 
   @override

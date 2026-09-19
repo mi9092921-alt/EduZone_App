@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../../core/l10n/arb/app_localizations.dart';
 import '../../../shared/widgets/app_refresh_indicator.dart';
 import '../../tokens/app_colors.dart';
+import '../../tokens/app_spacing.dart';
 import '../status/app_empty_state.dart';
+import '../status/app_skeleton.dart';
 
 /// A universal, flexible wrapper for all screens in the application.
 /// Enforces the baseline background color and handles common layout structures.
@@ -134,15 +136,36 @@ class AppScreen extends StatelessWidget {
     }
 
     if (isLoading) {
+      // Skeleton-based loading surface (replaces the former full-page
+      // CircularProgressIndicator): the real content stays mounted under a
+      // scrim while a shimmering AppSkeleton placeholder is centered on
+      // top, consistent with every other loading state in the app.
       content = Stack(
         fit: StackFit.expand,
         children: [
           content,
           const Positioned.fill(
+            // AppColors.scrim (black @ 30%) is the design-system backdrop
+            // for full-screen blocking loaders — replaces Colors.black26.
             child: ColoredBox(
-              color: Colors.black26,
+              color: AppColors.scrim,
               child: Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
+                child: AppSkeleton(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AppSkeletonTile(
+                        height: AppSpacing.xl2,
+                        width: AppSpacing.xl12,
+                      ),
+                      SizedBox(height: AppSpacing.md),
+                      // height defaults to 16 == AppSpacing.lg.
+                      AppSkeletonTile(width: AppSpacing.xl6),
+                      SizedBox(height: AppSpacing.md),
+                      AppSkeletonTile(width: AppSpacing.xl6),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

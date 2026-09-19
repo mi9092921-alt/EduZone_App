@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
 import '../../../../shared/models/course.dart';
@@ -86,7 +87,7 @@ class CourseCurriculumPreview extends StatelessWidget {
                     return InkWell(
                       onTap: canPreview
                           ? () => context.push(
-                              '/courses/${course.id}/lesson/${lesson.id}',
+                              '${AppRoutes.courses}/${course.id}/lesson/${lesson.id}',
                             )
                           : null,
                       borderRadius: BorderRadius.circular(AppRadius.sm),

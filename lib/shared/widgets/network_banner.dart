@@ -83,8 +83,8 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
                   margin:
                       const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.buttonPaddingV,
                   ),
                   decoration: BoxDecoration(
                     color: ds.error,
@@ -96,21 +96,24 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
                     children: [
                       const Icon(
                         AppIcons.wifiOff,
-                        color: Colors.white,
+                        color: AppColors.neutral0,
                         size: 18,
                       ),
                       const SizedBox(width: AppSpacing.md),
                       Expanded(
                         child: Builder(
                           builder: (ctx) {
-                            // Use Builder to get context with localizations
+                            // Use Builder to get context with localizations.
+                            // If l10n is not yet available, render no text at
+                            // all (visual-only banner) — never an English
+                            // fallback string.
                             final l10n = AppLocalizations.of(ctx);
-                            final text = l10n?.noInternetBanner ??
-                                'No internet connection';
+                            final text = l10n?.noInternetBanner;
+                            if (text == null) return const SizedBox.shrink();
                             return Text(
                               text,
                               style: AppTextStyles.label.copyWith(
-                                color: Colors.white,
+                                color: AppColors.neutral0,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 13,
                               ),
@@ -126,9 +129,11 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
                       Builder(
                         builder: (ctx) {
                           final l10n = AppLocalizations.of(ctx);
+                          // No English fallback: when l10n is unavailable the
+                          // button renders without a semantics label instead.
                           return Semantics(
                             button: true,
-                            label: l10n?.dismissOfflineNotice ?? 'Dismiss offline notice',
+                            label: l10n?.dismissOfflineNotice,
                             child: InkWell(
                               borderRadius: AppRadius.lgBorder,
                               onTap: () => ref
@@ -138,7 +143,7 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
                                 padding: EdgeInsets.all(AppSpacing.xs2), // check-ignore -- already a token; false positive
                                 child: Icon(
                                   AppIcons.close,
-                                  color: Colors.white,
+                                  color: AppColors.neutral0,
                                   size: 16,
                                 ),
                               ),

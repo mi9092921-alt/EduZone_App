@@ -196,8 +196,7 @@ class Auth extends _$Auth {
       }
 
       // ── Step 2: Normal auth session check ───────────────────────────────
-      final client = ref.read(supabaseClientProvider);
-      final session = client.auth.currentSession;
+      final session = _remoteDataSource.currentSession;
 
       if (session == null) {
         _safeSetStateIfStillPending(const AuthUnauthenticated());
@@ -220,7 +219,7 @@ class Auth extends _$Auth {
         debugPrint(
           '[Auth] Session device is no longer authorized. Wiping session.',
         );
-        await _forceLocalSignOutOnly(client);
+        await _forceLocalSignOutOnly();
         _safeSetStateIfStillPending(const AuthUnauthenticated());
         return;
       }
@@ -235,7 +234,7 @@ class Auth extends _$Auth {
           if (!_isCurrentAuthOperation(operationGeneration)) return;
           if (!_isStudentUser(appUser)) {
             debugPrint('[Auth] Non-student user blocked from student app.');
-            await _forceLocalSignOutOnly(client);
+            await _forceLocalSignOutOnly();
             _safeSetStateIfStillPending(const AuthUnauthenticated());
             return;
           }
@@ -306,9 +305,8 @@ class Auth extends _$Auth {
         if (access.status == AccountStatus.locked ||
             access.status == AccountStatus.banned ||
             access.status == AccountStatus.suspended) {
-          final client = ref.read(supabaseClientProvider);
           try {
-            await _forceLocalSignOutOnly(client);
+            await _forceLocalSignOutOnly();
           } catch (e, st) {
             GlobalErrorHandler.logError(e, st);
             debugPrint(
@@ -330,8 +328,7 @@ class Auth extends _$Auth {
         // out" — see EduZone_Authentication_Session_Security_Architecture.md
         // Phase 18. `currentSession` is read from local persisted state
         // by the Supabase SDK and does not itself require network access.
-        final hasLocalSession =
-            ref.read(supabaseClientProvider).auth.currentSession != null;
+        final hasLocalSession = _remoteDataSource.hasCurrentSession;
 
         if (hasLocalSession) {
           debugPrint(
@@ -358,6 +355,38 @@ class Auth extends _$Auth {
       // worth investigating).
       GlobalErrorHandler.logError(e, st);
       debugPrint('[Auth] Session initialization failed with ${e.runtimeType}');
+
+      // Session-revocation hygiene: a revoked/stale session surfaces here
+      // as a non-transient failure of validateDeviceExists /
+      // getCurrentUser / checkStudentAppAccess (the mapper classifies the
+      // server's 28000 / AUTH_REQUIRED / invalid-session signatures as
+      // [SessionRevokedException]). Mirror the locked/banned/suspended
+      // hygiene above (audit P0/M11): a denied session must never keep a
+      // live JWT in secure storage, so clear it locally (no server
+      // revocation attempt — the session is already dead server-side).
+      // Without this, every subsequent cold start replays the same
+      // failing path until a fresh login overwrites the stored session.
+      // Scoped to revocation signatures ONLY: an unrelated server fault
+      // (e.g. the update check or a schema-cache error) must not wipe a
+      // perfectly valid local session.
+      if (e is SessionRevokedException) {
+        try {
+          if (_remoteDataSource.hasCurrentSession) {
+            debugPrint(
+              '[Auth] Cold-start verification hit session revocation — '
+              'wiping the dead local session.',
+            );
+            await _forceLocalSignOutOnly();
+          }
+        } catch (cleanupError, cleanupSt) {
+          GlobalErrorHandler.logError(cleanupError, cleanupSt);
+          debugPrint(
+            '[Auth] Cold-start revocation cleanup failed: '
+            '${cleanupError.runtimeType}',
+          );
+        }
+      }
+
       _safeSetStateIfStillPending(const AuthUnauthenticated());
     }
   }
@@ -419,10 +448,8 @@ class Auth extends _$Auth {
   // ─── Supabase Auth Stream ────────────────────────────────────────────────
 
   void _listenToSupabaseAuthChanges() {
-    final client = ref.read(supabaseClientProvider);
-
     _authSubscription?.cancel();
-    _authSubscription = client.auth.onAuthStateChange.listen((data) {
+    _authSubscription = _remoteDataSource.authStateChanges.listen((data) {
       // Server-side token revocation detected → force logout
       if (data.event == AuthChangeEvent.signedOut ||
           (data.event == AuthChangeEvent.tokenRefreshed &&
@@ -485,14 +512,14 @@ class Auth extends _$Auth {
             const ServerException('User profile not found'), // check-ignore
             StackTrace.current,
           );
-          await _forceLocalSignOutOnly(ref.read(supabaseClientProvider));
+          await _forceLocalSignOutOnly();
           _safeSetState(const AuthUnauthenticated(error: 'errorGeneric'));
           return;
         }
 
         if (!_isStudentUser(appUser)) {
           debugPrint('[Auth] Non-student login blocked from student app.');
-          await _forceLocalSignOutOnly(ref.read(supabaseClientProvider));
+          await _forceLocalSignOutOnly();
           _safeSetState(const AuthUnauthenticated(error: 'errorAuth'));
           return;
         }
@@ -562,9 +589,8 @@ class Auth extends _$Auth {
         if (access.status == AccountStatus.locked ||
             access.status == AccountStatus.banned ||
             access.status == AccountStatus.suspended) {
-          final client = ref.read(supabaseClientProvider);
           try {
-            await client.auth.signOut();
+            await _remoteDataSource.signOutCurrentSession();
           } catch (e, st) {
             // A restricted account's client-side sign-out failing is
             // worth knowing about: the UI still shows the restricted
@@ -642,9 +668,8 @@ class Auth extends _$Auth {
       // affect the matrix's "show error, do not sign out" guarantee for
       // any previously bound session on this or another device.
       try {
-        final client = ref.read(supabaseClientProvider);
-        if (client.auth.currentSession != null) {
-          await client.auth.signOut();
+        if (_remoteDataSource.hasCurrentSession) {
+          await _remoteDataSource.signOutCurrentSession();
         }
       } catch (_) {
         // check-ignore -- documented above: best-effort, non-critical cleanup.
@@ -695,7 +720,7 @@ class Auth extends _$Auth {
         if (appUser != null) {
           if (!_isStudentUser(appUser)) {
             debugPrint('[Auth] Non-student user blocked during access verify.');
-            await _forceLocalSignOutOnly(ref.read(supabaseClientProvider));
+            await _forceLocalSignOutOnly();
             _safeSetState(const AuthUnauthenticated(error: 'errorAuth'));
             return;
           }
@@ -780,7 +805,7 @@ class Auth extends _$Auth {
     _safeSetState(AuthRestricted(status: access.status, access: access));
   }
 
-  Future<void> _forceLocalSignOutOnly(SupabaseClient client) async {
+  Future<void> _forceLocalSignOutOnly() async {
     final orchestrator = LogoutOrchestrator(
       authRemoteDataSource: _remoteDataSource,
       secureStorage: hardenedSecureStorage,
@@ -819,8 +844,7 @@ class Auth extends _$Auth {
     // newer session.
     final generation = _beginAuthOperation();
 
-    final client = ref.read(supabaseClientProvider);
-    final userId = client.auth.currentUser?.id;
+    final userId = _remoteDataSource.currentUserId;
 
     // ── Phase 1: Set Logging Out state ──────────────────────────────────────
     _safeSetState(const AuthLoggingOut());

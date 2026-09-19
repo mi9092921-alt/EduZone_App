@@ -1,26 +1,15 @@
 import 'package:app/core/feature_flags/feature_flag_keys.dart';
 import 'package:app/features/courses/presentation/widgets/sections_accordion/lesson_tile_wrapper.dart';
-import 'package:app/features/downloads/application/providers/downloads_provider.dart';
 import 'package:app/shared/models/download_enums.dart';
 import 'package:app/shared/models/downloaded_lesson.dart';
 import 'package:app/shared/models/lesson.dart';
+import 'package:app/shared/providers/lesson_downloads_gateway.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../../../../helpers/fake_gateways.dart';
 import '../../../../../helpers/feature_flag_overrides.dart';
 import 'sections_accordion_test_helpers.dart';
-
-/// Fake notifier returning a fixed list without touching any repository —
-/// `DownloadsNotifier.build()` normally calls
-/// `ref.watch(downloadRepositoryProvider)`, which needs real platform
-/// services this test sandbox doesn't have.
-class _FakeDownloadsNotifier extends DownloadsNotifier {
-  _FakeDownloadsNotifier(this._downloads);
-  final List<DownloadedLesson> _downloads;
-
-  @override
-  Future<List<DownloadedLesson>> build() async => _downloads;
-}
 
 DownloadedLesson _download({
   required String lessonId,
@@ -71,8 +60,34 @@ void main() {
             onDownload: () {},
           ),
           overrides: [
-            downloadsProvider.overrideWith(() => _FakeDownloadsNotifier(const [])),
+            lessonDownloadsGatewayProvider
+                .overrideWithValue(FakeLessonDownloadsGateway()),
           ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Intro to Widgets'), findsOneWidget);
+    });
+
+    testWidgets('renders the tile when the downloads gateway is unavailable', (
+      WidgetTester tester,
+    ) async {
+      // Null gateway default (bare container): the tile degrades to "no
+      // download data" without crashing.
+      await tester.pumpWidget(
+        buildTestableWidget(
+          LessonTileWrapper(
+            lesson: _lesson(),
+            courseId: 'course_1',
+            courseTitle: 'Flutter Basics',
+            isEnrolled: true,
+            isCompleted: false,
+            isLastWatched: false,
+            onTap: () {},
+            onToggleCompleted: (_) {},
+            onDownload: () {},
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -99,7 +114,8 @@ void main() {
             onDownload: () {},
           ),
           overrides: [
-            downloadsProvider.overrideWith(() => _FakeDownloadsNotifier(const [])),
+            lessonDownloadsGatewayProvider
+                .overrideWithValue(FakeLessonDownloadsGateway()),
           ],
         ),
       );
@@ -133,8 +149,8 @@ void main() {
             onDownload: () {},
           ),
           overrides: [
-            downloadsProvider.overrideWith(
-              () => _FakeDownloadsNotifier([download]),
+            lessonDownloadsGatewayProvider.overrideWithValue(
+              FakeLessonDownloadsGateway(initialDownloads: [download]),
             ),
           ],
         ),
@@ -169,8 +185,8 @@ void main() {
             onDownload: () {},
           ),
           overrides: [
-            downloadsProvider.overrideWith(
-              () => _FakeDownloadsNotifier([otherDownload]),
+            lessonDownloadsGatewayProvider.overrideWithValue(
+              FakeLessonDownloadsGateway(initialDownloads: [otherDownload]),
             ),
           ],
         ),
@@ -199,7 +215,8 @@ void main() {
             onDownload: () {},
           ),
           overrides: [
-            downloadsProvider.overrideWith(() => _FakeDownloadsNotifier(const [])),
+            lessonDownloadsGatewayProvider
+                .overrideWithValue(FakeLessonDownloadsGateway()),
           ],
         ),
       );
@@ -226,7 +243,8 @@ void main() {
             onDownload: () {},
           ),
           overrides: [
-            downloadsProvider.overrideWith(() => _FakeDownloadsNotifier(const [])),
+            lessonDownloadsGatewayProvider
+                .overrideWithValue(FakeLessonDownloadsGateway()),
             featureFlagsOverride({FeatureFlagKey.coursesDownloads: false}),
           ],
         ),

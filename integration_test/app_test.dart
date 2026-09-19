@@ -15,6 +15,7 @@ import 'package:app/core/l10n/arb/app_localizations_ar.dart';
 import 'package:app/core/l10n/arb/app_localizations_en.dart';
 import 'package:app/core/logging/infrastructure/event_dispatcher.dart' as logging;
 import 'package:app/core/logging/logging_providers.dart';
+import 'package:app/design_system/design_system.dart';
 import 'package:app/features/auth/application/providers/auth_provider.dart';
 import 'package:app/features/auth/presentation/screens/banned_screen.dart';
 import 'package:app/features/auth/presentation/screens/force_update_screen.dart';
@@ -27,23 +28,47 @@ import 'package:app/features/courses/domain/entities/course_enrollment.dart';
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
 import 'package:app/features/courses/presentation/screens/course_details_screen.dart';
 import 'package:app/features/courses/presentation/screens/my_courses_screen.dart';
+import 'package:app/features/downloads/application/providers/downloads_provider.dart';
+import 'package:app/features/downloads/application/services/lesson_downloads_gateway_impl.dart';
+import 'package:app/features/downloads/domain/entities/download_progress.dart';
+import 'package:app/features/downloads/domain/repositories/download_repository.dart';
+import 'package:app/features/downloads/presentation/screens/downloads_screen.dart';
+import 'package:app/features/downloads/presentation/screens/offline_player_screen.dart';
+import 'package:app/features/downloads/presentation/widgets/offline_player_wrapper.dart';
 import 'package:app/features/home/application/providers/home_provider.dart';
 import 'package:app/features/home/presentation/screens/home_screen.dart';
 import 'package:app/features/notifications/application/providers/notifications_provider.dart';
+import 'package:app/features/notifications/application/services/home_notifications_gateway_impl.dart';
 import 'package:app/features/notifications/domain/repositories/notifications_repository.dart';
 import 'package:app/features/notifications/presentation/screens/notifications_screen.dart';
 import 'package:app/features/profile/application/providers/profile_provider.dart';
 import 'package:app/features/profile/domain/entities/student_profile.dart';
+import 'package:app/features/profile/domain/repositories/profile_repository.dart';
+import 'package:app/features/profile/presentation/screens/profile_screen.dart';
+import 'package:app/features/profile/presentation/widgets/edit_profile_bottom_sheet.dart';
+import 'package:app/features/profile/presentation/widgets/user_info_card.dart';
+import 'package:app/features/todo/application/providers/todo_provider.dart';
+import 'package:app/features/todo/domain/repositories/todo_repository.dart';
+import 'package:app/features/todo/presentation/screens/todo_screen.dart';
+import 'package:app/features/todo/presentation/widgets/add_todo_bottom_sheet.dart';
+import 'package:app/features/todo/presentation/widgets/variants/todo_list_tile.dart';
+import 'package:app/shared/components/todo/todo_checkbox.dart';
 import 'package:app/shared/models/account_status.dart';
 import 'package:app/shared/models/app_notification.dart';
 import 'package:app/shared/models/app_user.dart';
 import 'package:app/shared/models/auth_state.dart';
 import 'package:app/shared/models/course.dart';
+import 'package:app/shared/models/download_enums.dart';
+import 'package:app/shared/models/downloaded_lesson.dart';
 import 'package:app/shared/models/lesson.dart';
 import 'package:app/shared/models/section.dart';
+import 'package:app/shared/models/todo_item.dart';
 import 'package:app/shared/models/update_info.dart';
 import 'package:app/shared/models/user_access.dart';
 import 'package:app/shared/models/user_role.dart';
+import 'package:app/shared/providers/home_notifications_gateway.dart';
+import 'package:app/shared/providers/lesson_downloads_gateway.dart';
+import 'package:app/shared/widgets/confirm_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -168,6 +193,24 @@ AppNotification _notification({required bool isRead}) => AppNotification(
       ),
     );
 
+/// Completed download fixture rendered by the downloads manager and
+/// resolved by the offline player route.
+final _download = DownloadedLesson(
+  id: 'download-1',
+  lessonId: 'lesson-9',
+  courseId: 'course-1',
+  courseTitle: 'Flutter Mastery',
+  title: 'Offline Lesson',
+  localPath: '/tmp/downloads/local.mp4',
+  encryptedPath: '/tmp/downloads/enc.bin',
+  videoUrl: 'https://example.com/lesson-9.mp4',
+  quality: VideoQuality.p720,
+  fileSize: 13212057, // ~12.6 MB, matches the storage-indicator assertion
+  status: DownloadStatus.completed,
+  downloadedAt: DateTime(2024),
+  expiresAt: DateTime(2030),
+);
+
 /// Records calls made through [NotificationsRepository] so the "mark all
 /// read" integration test can assert the real user id flowed all the way
 /// from the authenticated [AuthState] through the tapped button to the
@@ -175,6 +218,7 @@ AppNotification _notification({required bool isRead}) => AppNotification(
 /// — Section 6/8: no direct backend-singleton reads from widget code).
 class _RecordingNotificationsRepository implements NotificationsRepository {
   String? lastMarkedAllAsReadUserId;
+  String? lastMarkAsReadId;
 
   @override
   Future<Either<Failure, List<AppNotification>>> getNotifications(
@@ -186,14 +230,209 @@ class _RecordingNotificationsRepository implements NotificationsRepository {
   Stream<void> watchChanges(String userId) => const Stream<void>.empty();
 
   @override
-  Future<Either<Failure, void>> markAsRead(String notificationId) async =>
-      const Right(null);
+  Future<Either<Failure, void>> markAsRead(String notificationId) async {
+    lastMarkAsReadId = notificationId;
+    return const Right(null);
+  }
 
   @override
   Future<Either<Failure, void>> markAllAsRead(String userId) async {
     lastMarkedAllAsReadUserId = userId;
     return const Right(null);
   }
+}
+
+/// Stand-in for [DownloadRepository] at the external backend boundary.
+///
+/// The downloads feature never touches Supabase directly — everything goes
+/// through this interface — so faking here keeps the whole notifier →
+/// usecase → repository chain real. [downloads] is mutated by the scenario
+/// and (re)served on every read so the notifier's change-stream listener
+/// observes the mutation the same way the real [DownloadRepositoryImpl]'s
+/// broadcast stream + database reload would.
+class _FakeDownloadsRepository implements DownloadRepository {
+  final List<DownloadedLesson> downloads = [];
+
+  /// When set, [getDownloadById] awaits this gate forever. Used to hold the
+  /// offline player screen on its loading skeleton without ever
+  /// instantiating real playback (see the offline-player scenario for the
+  /// exact boundary).
+  Completer<DownloadedLesson?>? getDownloadByIdGate;
+
+  final _changes = StreamController<void>.broadcast();
+
+  /// Mirrors the real repository's change notification (insert/update/
+  /// delete on the downloads table → [changeStream] event → notifier
+  /// reload).
+  void emitChange() => _changes.add(null);
+
+  void dispose() => _changes.close();
+
+  @override
+  Future<Either<Failure, List<DownloadedLesson>>> getDownloads() async =>
+      Right(List.of(downloads));
+
+  @override
+  Future<Either<Failure, DownloadedLesson?>> getDownloadByLessonId(
+    String lessonId,
+  ) async => Right(
+        downloads.where((d) => d.lessonId == lessonId).firstOrNull,
+      );
+
+  @override
+  Future<Either<Failure, DownloadedLesson?>> getDownloadById(
+    String downloadId,
+  ) async {
+    final gate = getDownloadByIdGate;
+    if (gate != null) {
+      final download = await gate.future;
+      return Right(download);
+    }
+    return Right(
+      downloads.where((d) => d.id == downloadId).firstOrNull,
+    );
+  }
+
+  @override
+  Future<Either<Failure, List<DownloadedLesson>>> getDownloadsByCourse(
+    String courseId,
+  ) async => Right(downloads.where((d) => d.courseId == courseId).toList());
+
+  @override
+  Future<Either<Failure, List<DownloadedLesson>>> getDownloadsByStatus(
+    DownloadStatus status,
+  ) async => Right(downloads.where((d) => d.status == status).toList());
+
+  @override
+  Stream<DownloadProgress> watchProgress(String downloadId) =>
+      const Stream<DownloadProgress>.empty();
+
+  @override
+  Future<Either<Failure, List<DownloadedLesson>>> getExpiredDownloads()
+      async => const Right([]);
+
+  @override
+  Future<Either<Failure, int>> cleanupExpiredDownloads() async =>
+      const Right(0);
+
+  @override
+  Future<Either<Failure, int>> getTotalStorageUsed() async => Right(
+        downloads.fold(0, (total, download) => total + download.fileSize),
+      );
+
+  @override
+  Future<Either<Failure, void>> updateLastAccessed(String downloadId) async =>
+      const Right(null);
+
+  @override
+  Stream<void> get changeStream => _changes.stream;
+
+  // Mutations below are unreachable from the scenarios under test (no
+  // download is started/paused/cancelled/deleted there); they fail loudly
+  // rather than silently pretending success.
+  @override
+  Future<Either<Failure, DownloadedLesson>> startDownload({
+    required String lessonId,
+    required String courseId,
+    required String courseTitle,
+    required String title,
+    required String videoUrl,
+    required VideoQuality quality,
+  }) async => const Left(ServerFailure('startDownload not used in test'));
+
+  @override
+  Future<Either<Failure, void>> pauseDownload(String downloadId) async =>
+      const Left(ServerFailure('pauseDownload not used in test'));
+
+  @override
+  Future<Either<Failure, void>> resumeDownload(String downloadId) async =>
+      const Left(ServerFailure('resumeDownload not used in test'));
+
+  @override
+  Future<Either<Failure, void>> cancelDownload(String downloadId) async =>
+      const Left(ServerFailure('cancelDownload not used in test'));
+
+  @override
+  Future<Either<Failure, void>> deleteDownload(String downloadId) async =>
+      const Left(ServerFailure('deleteDownload not used in test'));
+}
+
+/// Stand-in for [TodoRepository] at the external backend boundary: the
+/// real usecases (GetTodos/AddTodo/ToggleTodo/DeleteTodo/UpdateTodo) and
+/// [TodoNotifier] run against this in-memory store.
+class _FakeTodoRepository implements TodoRepository {
+  final List<TodoItem> todos = [];
+
+  /// Recorded toggle calls as (todoId, newIsCompleted).
+  final List<(String, bool)> toggleCalls = [];
+  String? lastDeletedId;
+  List<TodoItem>? lastUpdatedWith;
+
+  @override
+  Future<Either<Failure, List<TodoItem>>> fetchTodos() async =>
+      Right(List.of(todos));
+
+  @override
+  Future<Either<Failure, void>> toggleTodoStatus(
+    String todoId,
+    bool isCompleted,
+  ) async {
+    toggleCalls.add((todoId, isCompleted));
+    final index = todos.indexWhere((t) => t.id == todoId);
+    if (index != -1) {
+      todos[index] = todos[index].copyWith(isCompleted: isCompleted);
+    }
+    return const Right(null);
+  }
+
+  @override
+  Future<Either<Failure, void>> addTodo(TodoItem todo) async {
+    todos.insert(0, todo);
+    return const Right(null);
+  }
+
+  @override
+  Future<Either<Failure, void>> deleteTodo(String todoId) async {
+    lastDeletedId = todoId;
+    todos.removeWhere((t) => t.id == todoId);
+    return const Right(null);
+  }
+
+  @override
+  Future<Either<Failure, void>> updateTodo(TodoItem todo) async {
+    (lastUpdatedWith ??= []).add(todo);
+    final index = todos.indexWhere((t) => t.id == todo.id);
+    if (index != -1) todos[index] = todo;
+    return const Right(null);
+  }
+}
+
+/// Stand-in for [ProfileRepository] at the external backend boundary. The
+/// real [GetProfile]/[UpdateProfile] usecases and [ProfileActions] run
+/// against this store; [updateProfile] applies only the non-null params,
+/// exactly like the RPC-backed implementation contract.
+class _FakeProfileRepository implements ProfileRepository {
+  _FakeProfileRepository(this.profile);
+
+  StudentProfile profile;
+  int updateCalls = 0;
+
+  @override
+  Future<StudentProfile> getProfile() async => profile;
+
+  @override
+  Future<StudentProfile> updateProfile({
+    String? firstName,
+    String? lastName,
+  }) async {
+    updateCalls++;
+    profile = profile.copyWith(firstName: firstName, lastName: lastName);
+    return profile;
+  }
+
+  @override
+  Future<String> uploadAvatar(String filePath) async =>
+      'https://example.com/avatar.png';
 }
 
 class _ScenarioAuth extends Auth {
@@ -206,11 +445,26 @@ class _ScenarioAuth extends Auth {
   AuthState? logoutResult;
   AuthState? retryResult;
 
+  /// When set, [refreshUser] swaps the authenticated user for this one —
+  /// mirroring the real `Auth.refreshUser()` contract (re-read the user and
+  /// re-emit [AuthAuthenticated]) without touching the Supabase-backed
+  /// getCurrentUser chain. Consumed by the profile edit-name scenario.
+  AppUser? refreshUserResult;
+
   @override
   AuthState build() => _initialState;
 
   void transitionTo(AuthState nextState) {
     state = nextState;
+  }
+
+  @override
+  Future<void> refreshUser() async {
+    final updated = refreshUserResult;
+    final current = state;
+    if (updated != null && current is AuthAuthenticated) {
+      state = AuthAuthenticated(user: updated, access: current.access);
+    }
   }
 
   @override
@@ -247,6 +501,7 @@ ProviderContainer _containerFor(
   _ScenarioAuth? auth,
   Locale locale = const Locale('en'),
   List<Override> extraOverrides = const [],
+  bool useRealProfileProvider = false,
 }) {
   return ProviderContainer(
     overrides: [
@@ -258,7 +513,8 @@ ProviderContainer _containerFor(
       resumeLessonProvider.overrideWith((ref) async => null),
       recentCoursesProvider.overrideWith((ref) async => const []),
       recentTodosProvider.overrideWith((ref) async => const []),
-      profileProvider.overrideWith((ref) async => _profile),
+      if (!useRealProfileProvider)
+        profileProvider.overrideWith((ref) async => _profile),
       notificationsProvider.overrideWith((ref) async => const []),
       eventDispatcherProvider.overrideWithValue(
         logging.EventDispatcher(const []),
@@ -601,6 +857,142 @@ void main() {
             (ref) async => [_notification(isRead: false)],
           ),
           notificationsRepositoryProvider.overrideWithValue(repository),
+          // Composition-root gateway wiring (mirrors main.dart): the home
+          // dashboard preview must render the same unread notification the
+          // full screen shows, through the shared contract implemented by
+          // the real notifications-feature gateway on top of the
+          // [_RecordingNotificationsRepository].
+          homeNotificationsGatewayProvider.overrideWith(
+            (ref) => HomeNotificationsGatewayImpl(ref),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await _pumpApp(tester, container);
+      await _pumpUntil(tester, find.byType(MainShell));
+
+      // The home dashboard preview (NotificationsPreview) is fed through
+      // the shared gateway and renders the unread fixture notification
+      // before any navigation happens.
+      expect(find.text('New lesson available'), findsOneWidget);
+
+      final router = container.read(routerProvider);
+      unawaited(router.push(AppRoutes.notifications));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotificationsScreen), findsOneWidget);
+      // The title now renders twice: once in the home preview (the shell
+      // branch stays alive behind the pushed screen) and once in the full
+      // NotificationsScreen.
+      expect(find.text('New lesson available'), findsNWidgets(2));
+
+      final l10n = AppLocalizationsEn();
+      await tester.tap(find.text(l10n.markAllRead));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(repository.lastMarkedAllAsReadUserId, _user.id);
+    });
+
+    testWidgets(
+        'downloads manager starts empty, renders a completed download '
+        'broadcast by the repository change stream, and opens the offline '
+        'player route up to its loading boundary', (tester) async {
+      final repository = _FakeDownloadsRepository();
+      final container = _containerFor(
+        const AuthAuthenticated(user: _user, access: _activeAccess),
+        extraOverrides: [
+          downloadRepositoryProvider.overrideWithValue(repository),
+          // Composition-root gateway wiring (mirrors main.dart): the
+          // courses feature reads per-lesson download state through the
+          // shared LessonDownloadsGateway contract implemented by the
+          // real downloads-feature gateway on top of the faked repository.
+          lessonDownloadsGatewayProvider.overrideWith(
+            (ref) => LessonDownloadsGatewayImpl(ref),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      addTearDown(repository.dispose);
+
+      await _pumpApp(tester, container);
+      await _pumpUntil(tester, find.byType(MainShell));
+
+      final router = container.read(routerProvider);
+      final routeInfo = router.routeInformationProvider;
+      router.go(AppRoutes.downloads);
+      await _pumpUntil(tester, find.byType(DownloadsScreen));
+
+      final l10n = AppLocalizationsEn();
+
+      // 1. Empty state before anything was downloaded.
+      expect(find.text(l10n.downloadsEmpty), findsOneWidget);
+
+      // 2. A completed download arrives through the repository's broadcast
+      //    change stream — the same notification path the real
+      //    DownloadRepositoryImpl uses for database insert/update events.
+      //    DownloadsNotifier reloads through the REAL
+      //    downloadsProvider/downloadRepository chain against the fake.
+      //
+      //    The getDownloadById gate is armed BEFORE navigation: it holds
+      //    the offline player screen on its loading skeleton without ever
+      //    instantiating real playback (see the boundary note below).
+      repository.getDownloadByIdGate = Completer<DownloadedLesson?>();
+      repository.downloads.add(_download);
+      repository.emitChange();
+      await _pumpUntil(tester, find.text(_download.title));
+
+      expect(find.text(_download.title), findsOneWidget);
+      expect(find.text(l10n.downloadStatusCompleted), findsOneWidget);
+      // Storage indicator reflects the fixture's ~12.6 MB file size.
+      expect(find.textContaining('Storage Used: 12.6 MB'), findsOneWidget);
+
+      // 3. Tapping the completed tile pushes the offline player route
+      //    (the real DownloadTile onTap → context.push flow).
+      await tester.tap(find.text(_download.title));
+      await _pumpUntil(tester, find.byType(OfflinePlayerScreen));
+
+      expect(
+        routeInfo.value.uri.path,
+        '${AppRoutes.downloads}/offline-player/${_download.id}',
+      );
+      expect(find.byType(OfflinePlayerScreen), findsOneWidget);
+
+      // FAKE BOUNDARY — offline playback stops here, deliberately. The
+      // screen resolves the download through the REAL downloadByIdProvider
+      // chain, but the fake repository's getDownloadById gate (armed above,
+      // before navigation) never completes, so the screen stays on its
+      // AppSkeleton loading state: the player widget itself is never
+      // built. Instantiating it would read encryptionService/
+      // downloadLocalDataSource/downloadRemoteDataSource (the latter
+      // resolves supabaseClientProvider → SupabaseService.client, which
+      // throws without a live Supabase.initialize), then run
+      // OfflinePolicyEngine entitlement revalidation over the network and
+      // drive media_kit's libmpv via platform channels — none of which can
+      // initialize in the widget-test environment. Documented in
+      // integration_test/README_TEST_GAPS.md.
+      expect(
+        find.descendant(
+          of: find.byType(OfflinePlayerScreen),
+          matching: find.byType(AppSkeleton),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(OfflinePlayerWrapper), findsNothing);
+      expect(find.text(l10n.offlineModeLabel), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+        'authenticated user adds a todo from the real bottom sheet, toggles '
+        'it complete, and deletes it through the ConfirmDialog flow',
+        (tester) async {
+      final todoRepository = _FakeTodoRepository();
+      final container = _containerFor(
+        const AuthAuthenticated(user: _user, access: _activeAccess),
+        extraOverrides: [
+          todoRepositoryProvider.overrideWithValue(todoRepository),
         ],
       );
       addTearDown(container.dispose);
@@ -609,18 +1001,201 @@ void main() {
       await _pumpUntil(tester, find.byType(MainShell));
 
       final router = container.read(routerProvider);
-      unawaited(router.push('${AppRoutes.home}/notifications'));
-      await tester.pumpAndSettle();
-
-      expect(find.byType(NotificationsScreen), findsOneWidget);
-      expect(find.text('New lesson available'), findsOneWidget);
+      router.go(AppRoutes.todo);
+      await _pumpUntil(tester, find.byType(TodoScreen));
 
       final l10n = AppLocalizationsEn();
-      await tester.tap(find.text(l10n.markAllRead));
-      await tester.pumpAndSettle();
 
+      // 1. Empty state.
+      await _pumpUntil(tester, find.text(l10n.noTasks));
+      expect(find.text(l10n.noTasks), findsOneWidget);
+
+      // 2. Add through the real AddTodoBottomSheet: FAB → sheet → title →
+      //    Add. The sheet sources userId/tenantId from the authenticated
+      //    auth state machine, so the fake receives the real session ids.
+      await tester.tap(find.byType(FloatingActionButton));
+      await _pumpUntil(tester, find.byType(AddTodoBottomSheet));
+
+      final sheetFields = find.descendant(
+        of: find.byType(AddTodoBottomSheet),
+        matching: find.byType(TextFormField),
+      );
+      await tester.enterText(sheetFields.first, 'Buy groceries');
+      await tester.tap(find.text(l10n.addBtn));
+      // The success feedback appears once the mutation (and its queued
+      // post-success work) settles; the optimistic list update always
+      // precedes it, so waiting on the snackbar is race-free.
+      await _pumpUntil(tester, find.text(l10n.taskAdded));
+
+      expect(find.text('Buy groceries'), findsOneWidget);
+      // Let the bottom-sheet exit animation finish before asserting it is
+      // gone (the pop runs alongside the success feedback).
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(find.byType(AddTodoBottomSheet), findsNothing);
+      final stored = todoRepository.todos.single;
+      expect(stored.title, 'Buy groceries');
+      expect(stored.userId, _user.id);
+      expect(stored.tenantId, _user.tenantId);
+      // Success feedback surfaced by FeedbackService through the app-level
+      // scaffold messenger.
+      expect(find.text(l10n.taskAdded), findsOneWidget);
+
+      // 3. Toggle complete via the real TodoCheckbox → optimistic notifier
+      //    update → ToggleTodo usecase → fake repository.
+      final todoId = container.read(todoProvider).todos.single.id;
+      final checkboxFinder = find.descendant(
+        of: find.byType(TodoListTile),
+        matching: find.byType(TodoCheckbox),
+      );
+      expect(tester.widget<TodoCheckbox>(checkboxFinder).value, isFalse);
+      await tester.tap(checkboxFinder);
+      // Two pumps so the optimistic notifier update lands in the tile.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(tester.widget<TodoCheckbox>(checkboxFinder).value, isTrue);
+      expect(todoRepository.toggleCalls.single, (todoId, true));
+
+      // 4. Delete via the real Dismissible → ConfirmDialog flow. The
+      //    tile's swipe background carries the same 'Delete' label as the
+      //    dialog button, so taps are scoped to the dialog.
+      final tileFinder = find.byKey(ValueKey('dismiss_$todoId'));
+      await tester.fling(tileFinder, const Offset(-400, 0), 1200);
+      await _pumpUntil(tester, find.text(l10n.confirmDeleteTitle));
+
+      expect(find.text(l10n.confirmDeleteMsg), findsOneWidget);
+      // Cancel keeps the todo.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(ConfirmDialog),
+          matching: find.text(l10n.cancel),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Buy groceries'), findsOneWidget);
+      expect(todoRepository.lastDeletedId, isNull);
+
+      // Swipe again and confirm for real.
+      await tester.fling(tileFinder, const Offset(-400, 0), 1200);
+      await _pumpUntil(tester, find.text(l10n.confirmDeleteTitle));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(ConfirmDialog),
+          matching: find.text(l10n.deleteButton),
+        ),
+      );
+      // The delete's post-success refresh runs inside the mutation, so the
+      // empty state appears first, then the deletion feedback.
+      await _pumpUntil(tester, find.text(l10n.noTasks));
+      await _pumpUntil(tester, find.text(l10n.taskDeleted));
+
+      expect(find.text('Buy groceries'), findsNothing);
+      expect(todoRepository.lastDeletedId, todoId);
+      expect(find.text(l10n.taskDeleted), findsOneWidget);
       expect(tester.takeException(), isNull);
-      expect(repository.lastMarkedAllAsReadUserId, _user.id);
+    });
+
+    testWidgets(
+        'profile screen renders the fake profile and the edit-name flow '
+        'updates the display, the session user, and shows success feedback',
+        (tester) async {
+      final repository = _FakeProfileRepository(
+        StudentProfile(
+          id: _user.id,
+          email: _user.email,
+          firstName: _user.firstName,
+          lastName: _user.lastName,
+          tenantId: _user.tenantId,
+        ),
+      );
+      final auth = _ScenarioAuth(
+        const AuthAuthenticated(user: _user, access: _activeAccess),
+      );
+      // The real ProfileActions.updateName refreshes the global auth user
+      // after a successful backend write; the scenario auth mirrors that
+      // contract with an updated session user instead of the Supabase
+      // getCurrentUser chain.
+      auth.refreshUserResult = AppUser(
+        id: _user.id,
+        email: _user.email,
+        firstName: 'Nova',
+        lastName: 'User',
+        tenantId: _user.tenantId,
+      );
+      final container = _containerFor(
+        const AuthAuthenticated(user: _user, access: _activeAccess),
+        auth: auth,
+        // The real profileProvider (→ GetProfile usecase → fake
+        // repository) replaces the base container's static override.
+        useRealProfileProvider: true,
+        extraOverrides: [
+          profileRepositoryProvider.overrideWithValue(repository),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await _pumpApp(tester, container);
+      await _pumpUntil(tester, find.byType(MainShell));
+
+      final router = container.read(routerProvider);
+      router.go(AppRoutes.profile);
+      await _pumpUntil(tester, find.byType(ProfileScreen));
+
+      final l10n = AppLocalizationsEn();
+
+      // 1. Name and email render from the fake profile through the real
+      //    profileProvider → GetProfile → repository chain.
+      await _pumpUntil(tester, find.text('Integration User'));
+      expect(find.text('Integration User'), findsOneWidget);
+      expect(find.text(_user.email), findsOneWidget);
+
+      // 2. Open the real EditProfileBottomSheet from the user card's edit
+      //    (camera) affordance.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(UserInfoCard),
+          matching: find.byIcon(AppIcons.camera),
+        ),
+      );
+      await _pumpUntil(tester, find.text(l10n.editProfile));
+
+      // 3. Change the first name and submit through the real
+      //    ProfileActions.updateName flow.
+      final sheetFields = find.descendant(
+        of: find.byType(EditProfileBottomSheet),
+        matching: find.byType(TextFormField),
+      );
+      expect(sheetFields, findsNWidgets(2));
+      expect(
+        tester.widget<TextFormField>(sheetFields.first).controller!.text,
+        'Integration',
+      );
+      await tester.enterText(sheetFields.first, 'Nova');
+      await tester.tap(find.text(l10n.saveChanges));
+      // Success feedback + sheet pop happen after the backend write, the
+      // profile refetch, and the auth-user refresh have all settled.
+      await _pumpUntil(tester, find.text(l10n.profileUpdated));
+      await _pumpUntil(tester, find.text('Nova User'));
+
+      expect(find.text('Nova User'), findsOneWidget);
+      expect(find.text('Integration User'), findsNothing);
+      expect(find.text(l10n.profileUpdated), findsOneWidget);
+      // Let the bottom-sheet exit animation finish before asserting it is
+      // gone.
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(find.byType(EditProfileBottomSheet), findsNothing);
+      expect(repository.updateCalls, 1);
+      expect(repository.profile.firstName, 'Nova');
+      // The successful update propagated to the auth state machine.
+      final authState = container.read(authProvider);
+      expect(authState, isA<AuthAuthenticated>());
+      expect(
+        (authState as AuthAuthenticated).user.firstName,
+        'Nova',
+      );
+      expect(tester.takeException(), isNull);
     });
 
     group('feature flags (core/feature_flags)', () {

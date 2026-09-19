@@ -4,14 +4,20 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../network/network_config.dart';
-import '../network/supabase_client.dart';
+import '../push_tokens/data/push_token_remote_ds.dart';
 import '../utils/device_info_helper.dart';
 import '../utils/global_error_handler.dart';
 
 /// Shared authenticated push-token lifecycle for auth and FCM.
-/// All database mutations go through the guarded RPCs.
+///
+/// Pure orchestration layer: FCM token retrieval, retry policy and
+/// telemetry swallowing. All database mutations go through the guarded
+/// RPCs via [PushTokenRemoteDs] (core data pattern — no direct Supabase
+/// calls from application services).
 class PushTokenRegistrationService {
   const PushTokenRegistrationService._();
+
+  static const PushTokenRemoteDs _remoteDs = PushTokenRemoteDs();
 
   static Future<void> requestPermissionAndRegister() async {
     try {
@@ -39,20 +45,17 @@ class PushTokenRegistrationService {
         final token = await FirebaseMessaging.instance
             .getToken()
             .timeout(NetworkConfig.telemetryTimeout);
-        if (token == null || SupabaseService.client.auth.currentUser == null) {
+        if (token == null || !_remoteDs.hasAuthenticatedSession) {
           return;
         }
         final packageInfo = await PackageInfo.fromPlatform();
-        await SupabaseService.client.rpc(
-          'register_push_token',
-          params: {
-            'p_token': token,
-            'p_device_id': DeviceInfoHelper.fingerprint,
-            'p_platform': DeviceInfoHelper.platform,
-            'p_device_info': DeviceInfoHelper.deviceInfoJson,
-            'p_app_version': packageInfo.version,
-          },
-        ).timeout(NetworkConfig.telemetryTimeout);
+        await _remoteDs.registerPushToken(
+          token: token,
+          deviceId: DeviceInfoHelper.fingerprint,
+          platform: DeviceInfoHelper.platform,
+          deviceInfo: DeviceInfoHelper.deviceInfoJson,
+          appVersion: packageInfo.version,
+        );
         return;
       } catch (error, stackTrace) {
         if (attempt == 2) {
@@ -68,18 +71,15 @@ class PushTokenRegistrationService {
   }
 
   static Future<void> deactivateCurrentUserToken() async {
-    if (SupabaseService.client.auth.currentUser == null) return;
+    if (!_remoteDs.hasAuthenticatedSession) return;
     try {
       final token = await FirebaseMessaging.instance
           .getToken()
           .timeout(NetworkConfig.telemetryTimeout);
-      await SupabaseService.client.rpc(
-        'deactivate_push_token',
-        params: {
-          'p_token': token,
-          'p_device_id': DeviceInfoHelper.fingerprint,
-        },
-      ).timeout(NetworkConfig.telemetryTimeout);
+      await _remoteDs.deactivatePushToken(
+        token: token,
+        deviceId: DeviceInfoHelper.fingerprint,
+      );
     } catch (error, stackTrace) {
       debugPrint('Push token deactivation failed: ${error.runtimeType}');
       GlobalErrorHandler.logError(error, stackTrace);

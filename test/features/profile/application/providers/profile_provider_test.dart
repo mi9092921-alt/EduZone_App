@@ -158,4 +158,41 @@ void main() {
       expect(state.successMessage, 'profile_updated');
     });
   });
+
+  group('ProfileActions.uploadAvatar', () {
+    test('success path: returns true, sets avatar_updated, and refreshes '
+        'auth', () async {
+      when(() => repository.uploadAvatar(any()))
+          .thenAnswer((_) async => 'https://cdn.example.com/avatar.png');
+      container.listen(profileActionsProvider, (_, _) {});
+      final notifier = container.read(profileActionsProvider.notifier);
+
+      final result = await notifier.uploadAvatar('/tmp/avatar.png');
+
+      expect(result, isTrue);
+      await _settle();
+      final state = container.read(profileActionsProvider);
+      expect(state.isUploadingAvatar, isFalse);
+      expect(state.error, isNull);
+      expect(state.successMessage, 'avatar_updated');
+      verify(() => repository.uploadAvatar('/tmp/avatar.png')).called(1);
+    });
+
+    test('failure path: returns false, stores the error, no success message',
+        () async {
+      final error = Exception('storage upload blocked');
+      when(() => repository.uploadAvatar(any())).thenThrow(error);
+      container.listen(profileActionsProvider, (_, _) {});
+      final notifier = container.read(profileActionsProvider.notifier);
+
+      final result = await notifier.uploadAvatar('/tmp/avatar.png');
+
+      expect(result, isFalse);
+      await _settle();
+      final state = container.read(profileActionsProvider);
+      expect(state.isUploadingAvatar, isFalse);
+      expect(state.error, same(error));
+      expect(state.successMessage, isNull);
+    });
+  });
 }

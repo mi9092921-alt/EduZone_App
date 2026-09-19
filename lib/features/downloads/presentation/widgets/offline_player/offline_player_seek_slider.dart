@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../../design_system/design_system.dart';
-import 'offline_player_format.dart';
+import '../../../../../shared/utils/video_duration_format.dart';
 
 /// Seek slider + elapsed/total time row.
 ///
@@ -97,13 +97,13 @@ class _OfflinePlayerSeekSliderState extends State<OfflinePlayerSeekSlider> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    formatPlayerDuration(currentPosition),
+                    formatVideoDurationPadded(currentPosition),
                     style: AppTextStyles.bodySmall.copyWith(
                       color: Colors.white70,
                     ),
                   ),
                   Text(
-                    formatPlayerDuration(duration),
+                    formatVideoDurationPadded(duration),
                     style: AppTextStyles.bodySmall.copyWith(
                       color: Colors.white70,
                     ),

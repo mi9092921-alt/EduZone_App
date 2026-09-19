@@ -16,26 +16,40 @@ class VideoPlayerSkeleton extends StatelessWidget {
       scrollable: false,
       appBar: AppBar(
         elevation: 0,
-        title: Container(width: 150, height: 20, color: Colors.white),
+        // check-ignore: no pure-black design token exists (v1); skeleton
+        // placeholder surfaces intentionally stay neutral0/black.
+        title: Container(
+          width: 150, // no matching design token (v1)
+          height: 20, // no matching design token (v1)
+          color: AppColors.neutral0,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const AspectRatio(
             aspectRatio: 16 / 9,
+            // check-ignore: no pure-black design token exists (v1).
             child: ColoredBox(color: Colors.black),
           ),
           Padding(
             padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Container(height: 24, color: Colors.white),
+            child: Container(height: AppSpacing.xl, color: AppColors.neutral0),
           ),
           const Divider(height: 1),
           Expanded(
             child: ListView.builder(
               itemCount: 5,
               itemBuilder: (_, i) => ListTile(
-                leading: Container(width: 40, height: 40, color: Colors.white),
-                title: Container(height: 16, color: Colors.white),
+                leading: Container(
+                  width: AppSpacing.xl3,
+                  height: AppSpacing.xl3,
+                  color: AppColors.neutral0,
+                ),
+                title: Container(
+                  height: AppSpacing.lg,
+                  color: AppColors.neutral0,
+                ),
               ),
             ),
           ),

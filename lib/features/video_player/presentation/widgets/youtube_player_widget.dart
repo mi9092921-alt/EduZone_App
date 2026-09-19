@@ -1,7 +1,7 @@
-import 'dart:async';
-
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/design_system/design_system.dart';
+import 'package:app/shared/utils/player_ui_helpers.dart';
+import 'package:app/shared/utils/video_duration_format.dart';
 import 'package:flutter/material.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
@@ -23,7 +23,15 @@ class CustomYoutubePlayer extends StatefulWidget {
 
 class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
   bool _showOverlay = true;
-  Timer? _hideTimer;
+  late final _hideControlsTimer = AutoHideControlsTimer(
+    onHide: () {
+      if (mounted && widget.controller.value.isPlaying) {
+        setState(() {
+          _showOverlay = false;
+        });
+      }
+    },
+  );
 
   @override
   void initState() {
@@ -33,19 +41,12 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
 
   @override
   void dispose() {
-    _hideTimer?.cancel();
+    _hideControlsTimer.dispose();
     super.dispose();
   }
 
   void _startHideTimer() {
-    _hideTimer?.cancel();
-    _hideTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted && widget.controller.value.isPlaying) {
-        setState(() {
-          _showOverlay = false;
-        });
-      }
-    });
+    _hideControlsTimer.restart();
   }
 
   void _toggleOverlay() {
@@ -55,7 +56,7 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
     if (_showOverlay) {
       _startHideTimer();
     } else {
-      _hideTimer?.cancel();
+      _hideControlsTimer.cancel();
     }
   }
 
@@ -69,7 +70,7 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
   void _togglePlayPause() {
     if (widget.controller.value.isPlaying) {
       widget.controller.pause();
-      _hideTimer?.cancel();
+      _hideControlsTimer.cancel();
       setState(() {
         _showOverlay = true;
       });
@@ -192,7 +193,9 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
                 child: Row(
                   children: [
                     Text(
-                      _formatDuration(widget.controller.value.position),
+                      formatVideoDurationPadded(
+                        widget.controller.value.position,
+                      ),
                       style: AppTextStyles.bodySmall.copyWith(
                         color: Colors.white,
                       ),
@@ -204,7 +207,9 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
                       ),
                     ),
                     Text(
-                      _formatDuration(widget.controller.metadata.duration),
+                      formatVideoDurationPadded(
+                        widget.controller.metadata.duration,
+                      ),
                       style: AppTextStyles.bodySmall.copyWith(
                         color: Colors.white.withValues(alpha: 0.6),
                       ),
@@ -240,16 +245,5 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
         ),
       ],
     );
-  }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
-    final String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
-    if (duration.inHours > 0) {
-      return '${duration.inHours}:$twoDigitMinutes:$twoDigitSeconds';
-    } else {
-      return '$twoDigitMinutes:$twoDigitSeconds';
-    }
   }
 }

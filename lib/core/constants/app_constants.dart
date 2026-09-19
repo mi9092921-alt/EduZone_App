@@ -22,12 +22,17 @@ class AppRoutes {
   static const home = '/home';
   static const courses = '/courses';
   static const discover = '/discover';
-  static const coursePreview = '/course-preview';
   static const todo = '/todo';
-  static const notifications = '/notifications';
   static const profile = '/profile';
   static const legal = '/legal';
-  static const downloads = '/downloads';
+
+  // Shell-branch children — MUST match the paths declared in
+  // app_router.dart. (Previously these pointed at top-level paths like
+  // '/notifications' that no route declared: navigating with them hit the
+  // 404 screen.)
+  static const notifications = '/home/notifications';
+  static const downloads = '/courses/downloads';
+  static const coursePreview = '/discover/course-preview';
 }
 
 class StorageKeys {

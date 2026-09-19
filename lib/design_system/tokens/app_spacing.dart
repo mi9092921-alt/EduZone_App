@@ -13,6 +13,7 @@ class AppSpacing {
   static const double xl4 = 48.0; // بين الأقسام الرئيسية للصفحة
   static const double xl6 = 64.0; // هامش أفقي للصفحة على الجهاز اللوحي
   static const double xl12 = 96.0; // هامش أفقي للصفحة على سطح المكتب
+  static const double xxxl = 120.0; // مسافة كبيرة أسفل المحتوى (footer spacer في تفاصيل الكورس)
 
   // Semantic aliases
   static const double buttonPaddingH = lg; // 16

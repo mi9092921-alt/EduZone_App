@@ -44,18 +44,4 @@ abstract final class AdaptiveValue {
   /// Maximum width for main content areas on tablet/desktop, so lists and
   /// cards don't stretch edge-to-edge on wide windows.
   static const double maxContentWidth = 840;
-
-  /// Horizontal padding for page-level content per breakpoint.
-  static double pagePadding(BuildContext context) {
-    if (Breakpoints.isMobile(context)) return 16;
-    if (Breakpoints.isTablet(context)) return 24;
-    return 32;
-  }
-
-  /// Number of columns for card grids per breakpoint.
-  static int gridColumns(BuildContext context) {
-    if (Breakpoints.isMobile(context)) return 2;
-    if (Breakpoints.isTablet(context)) return 3;
-    return 4;
-  }
 }

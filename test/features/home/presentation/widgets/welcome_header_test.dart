@@ -1,15 +1,16 @@
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/features/auth/application/providers/auth_provider.dart';
 import 'package:app/features/home/presentation/widgets/welcome_header.dart';
-import 'package:app/features/notifications/application/providers/notifications_provider.dart';
 import 'package:app/shared/models/account_status.dart';
-import 'package:app/shared/models/app_notification.dart';
 import 'package:app/shared/models/app_user.dart';
 import 'package:app/shared/models/auth_state.dart';
 import 'package:app/shared/models/user_access.dart';
+import 'package:app/shared/providers/home_notifications_gateway.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../../../helpers/fake_gateways.dart';
 
 void main() {
   // NOTE: the notification bell icon calls `context.push(...)` (go_router),
@@ -21,6 +22,11 @@ void main() {
   // (AppUser) — NOT from the profile feature — so these tests seed an
   // authenticated auth state directly via `overrideWithValue` and never
   // touch Supabase.
+  //
+  // The unread badge is read through the shared HomeNotificationsGateway
+  // contract (implemented by the notifications feature in the real app),
+  // so these tests override the gateway with an in-memory fake. When the
+  // gateway is NOT overridden (null default) the badge must be absent.
   Widget buildTestableWidget(Widget child) {
     return MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -28,13 +34,6 @@ void main() {
       home: Scaffold(body: child),
     );
   }
-
-  AppNotification unreadNotification(String id) => AppNotification(
-        id: id,
-        userId: 'u1',
-        tenantId: 't1',
-        createdAt: DateTime(2024),
-      );
 
   AuthAuthenticated authenticatedUser({String? firstName}) =>
       AuthAuthenticated(
@@ -55,7 +54,9 @@ void main() {
             overrides: [
               authProvider
                   .overrideWithValue(authenticatedUser(firstName: 'Jane')),
-              notificationsProvider.overrideWith((ref) async => []),
+              homeNotificationsGatewayProvider.overrideWithValue(
+                FakeHomeNotificationsGateway(),
+              ),
             ],
             child: const WelcomeHeader(),
           ),
@@ -75,7 +76,9 @@ void main() {
           ProviderScope(
             overrides: [
               authProvider.overrideWithValue(authenticatedUser()),
-              notificationsProvider.overrideWith((ref) async => []),
+              homeNotificationsGatewayProvider.overrideWithValue(
+                FakeHomeNotificationsGateway(),
+              ),
             ],
             child: const WelcomeHeader(),
           ),
@@ -86,6 +89,25 @@ void main() {
       expect(find.text('Welcome, jane.doe 👋'), findsOneWidget);
     });
 
+    testWidgets('shows no badge when the notifications gateway is unavailable',
+        (WidgetTester tester) async {
+      // Null gateway default (bare container): unreadCount degrades to 0.
+      await tester.pumpWidget(
+        buildTestableWidget(
+          ProviderScope(
+            overrides: [
+              authProvider
+                  .overrideWithValue(authenticatedUser(firstName: 'Sam')),
+            ],
+            child: const WelcomeHeader(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Badge), findsNothing);
+    });
+
     testWidgets('shows no badge when there are no unread notifications',
         (WidgetTester tester) async {
       await tester.pumpWidget(
@@ -94,7 +116,9 @@ void main() {
             overrides: [
               authProvider
                   .overrideWithValue(authenticatedUser(firstName: 'Sam')),
-              notificationsProvider.overrideWith((ref) async => []),
+              homeNotificationsGatewayProvider.overrideWithValue(
+                FakeHomeNotificationsGateway(),
+              ),
             ],
             child: const WelcomeHeader(),
           ),
@@ -113,8 +137,13 @@ void main() {
             overrides: [
               authProvider
                   .overrideWithValue(authenticatedUser(firstName: 'Sam')),
-              notificationsProvider.overrideWith(
-                (ref) async => [unreadNotification('n1'), unreadNotification('n2')],
+              homeNotificationsGatewayProvider.overrideWithValue(
+                FakeHomeNotificationsGateway(
+                  initial: [
+                    buildNotification(),
+                    buildNotification(id: 'n2'),
+                  ],
+                ),
               ),
             ],
             child: const WelcomeHeader(),
@@ -129,8 +158,7 @@ void main() {
 
     testWidgets('caps the displayed badge count at "99+"',
         (WidgetTester tester) async {
-      final manyNotifications =
-          List.generate(120, (i) => unreadNotification('n$i'));
+      final manyNotifications = List.generate(120, (i) => buildNotification(id: 'n$i'));
 
       await tester.pumpWidget(
         buildTestableWidget(
@@ -138,7 +166,9 @@ void main() {
             overrides: [
               authProvider
                   .overrideWithValue(authenticatedUser(firstName: 'Sam')),
-              notificationsProvider.overrideWith((ref) async => manyNotifications),
+              homeNotificationsGatewayProvider.overrideWithValue(
+                FakeHomeNotificationsGateway(initial: manyNotifications),
+              ),
             ],
             child: const WelcomeHeader(),
           ),

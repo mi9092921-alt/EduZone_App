@@ -221,9 +221,13 @@ void main() {
     // future regression is caught by the exception type/code, not just
     // "some ServerException got thrown".
     test(
-      'throws ServerException with code AUTH_REQUIRED when RPC rejects '
-      'with AUTH_REQUIRED (validate_user_session() failing server-side)',
-      () async {
+      'escalates an AUTH_REQUIRED RPC rejection to SessionRevokedException '
+      '(validate_user_session() failing server-side)', () async {
+        // Audit change: the mapper now treats the server's AUTH_REQUIRED
+        // signature as a session-revocation signal and escalates it (fires
+        // SessionRevocationHook) instead of surfacing a plain
+        // ServerException — a revoked session must force sign-out rather
+        // than look like an ordinary business error.
         stubRpcThrows(
           'bind_device_for_current_user',
           const PostgrestException(message: 'AUTH_REQUIRED'),
@@ -233,11 +237,7 @@ void main() {
         await expectLater(
           () => dataSource.bindDevice(tDeviceId, tDeviceInfo, tPlatform),
           throwsA(
-            isA<ServerException>().having(
-              (e) => e.code,
-              'code',
-              'AUTH_REQUIRED',
-            ),
+            isA<SessionRevokedException>(),
           ),
         );
       },
@@ -420,8 +420,8 @@ void main() {
       ).called(1);
     });
 
-    test('maps AUTH_REQUIRED PostgrestException to a typed exception',
-        () async {
+    test('escalates AUTH_REQUIRED PostgrestException to a typed revocation '
+        'exception', () async {
       stubRpcThrows(
         'record_current_session',
         const PostgrestException(message: 'AUTH_REQUIRED', code: 'P0001'),
@@ -431,11 +431,7 @@ void main() {
       await expectLater(
         () => dataSource.recordSession(deviceFingerprint: 'fp-123'),
         throwsA(
-          isA<ServerException>().having(
-            (e) => e.code,
-            'code',
-            'AUTH_REQUIRED',
-          ),
+          isA<SessionRevokedException>(),
         ),
       );
     });

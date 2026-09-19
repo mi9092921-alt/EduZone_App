@@ -4,8 +4,6 @@ import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
 import 'package:app/features/courses/presentation/widgets/sections_accordion.dart';
-import 'package:app/features/downloads/application/providers/downloads_provider.dart';
-import 'package:app/features/downloads/domain/repositories/download_repository.dart';
 import 'package:app/shared/models/lesson.dart';
 import 'package:app/shared/models/section.dart';
 import 'package:app/shared/utils/app_snackbar.dart';
@@ -23,15 +21,13 @@ import '../../../../../helpers/feature_flag_overrides.dart';
 // enrollment gate on lesson tap, and the optimistic watched-toggle +
 // revert-on-server-failure path (Section 6/14: no silent catch, no raw
 // exception leaked to the UI). The download flow this widget also kicks
-// off (_handleDownload -> quality selector -> downloadsProvider) is
+// off (_handleDownload -> quality selector -> LessonDownloadsGateway) is
 // deliberately NOT exercised here — it duplicates the surface already
 // owned by the downloads-subsystem test suite, and pulling it in would
 // mean stubbing download-remote-datasource/quality-selector machinery
 // this file has no real responsibility for validating.
 
 class MockCoursesRepository extends Mock implements CoursesRepository {}
-
-class MockDownloadRepository extends Mock implements DownloadRepository {}
 
 const _previewLesson = Lesson(
   id: 'lesson-preview',
@@ -56,14 +52,12 @@ const _section = Section(
 
 Widget _wrap({
   required CoursesRepository coursesRepository,
-  required DownloadRepository downloadRepository,
   bool isEnrolled = false,
   List<Override> extraOverrides = const [],
 }) {
   return ProviderScope(
     overrides: [
       coursesRepositoryProvider.overrideWithValue(coursesRepository),
-      downloadRepositoryProvider.overrideWithValue(downloadRepository),
       ...extraOverrides,
     ],
     child: MaterialApp(
@@ -84,23 +78,17 @@ Widget _wrap({
 
 void main() {
   late MockCoursesRepository coursesRepository;
-  late MockDownloadRepository downloadRepository;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     coursesRepository = MockCoursesRepository();
-    downloadRepository = MockDownloadRepository();
-    when(() => downloadRepository.getDownloads())
-        .thenAnswer((_) async => const Right([]));
-    when(() => downloadRepository.changeStream)
-        .thenAnswer((_) => const Stream.empty());
   });
 
   group('SectionsAccordion — rendering', () {
     testWidgets('shows the section title, lesson count, and expands to show lessons',
         (tester) async {
       await tester.pumpWidget(
-        _wrap(coursesRepository: coursesRepository, downloadRepository: downloadRepository),
+        _wrap(coursesRepository: coursesRepository),
       );
       await tester.pumpAndSettle();
 
@@ -118,7 +106,7 @@ void main() {
     testWidgets('a locked lesson (unenrolled, non-preview) has no checkbox, only a lock icon',
         (tester) async {
       await tester.pumpWidget(
-        _wrap(coursesRepository: coursesRepository, downloadRepository: downloadRepository),
+        _wrap(coursesRepository: coursesRepository),
       );
       await tester.tap(find.text('Getting Started'));
       await tester.pumpAndSettle();
@@ -133,7 +121,7 @@ void main() {
         'tapping a locked lesson while unenrolled shows the enrollment-required '
         'dialog and never touches progress or watched status', (tester) async {
       await tester.pumpWidget(
-        _wrap(coursesRepository: coursesRepository, downloadRepository: downloadRepository),
+        _wrap(coursesRepository: coursesRepository),
       );
       await tester.tap(find.text('Getting Started'));
       await tester.pumpAndSettle();
@@ -169,7 +157,7 @@ void main() {
       ).thenAnswer((_) async => const Right(null));
 
       await tester.pumpWidget(
-        _wrap(coursesRepository: coursesRepository, downloadRepository: downloadRepository),
+        _wrap(coursesRepository: coursesRepository),
       );
       await tester.tap(find.text('Getting Started'));
       await tester.pumpAndSettle();
@@ -212,7 +200,6 @@ void main() {
       await tester.pumpWidget(
         _wrap(
           coursesRepository: coursesRepository,
-          downloadRepository: downloadRepository,
           extraOverrides: [
             featureFlagsOverride({
               FeatureFlagKey.playerYoutube: false,
@@ -250,7 +237,6 @@ void main() {
       await tester.pumpWidget(
         _wrap(
           coursesRepository: coursesRepository,
-          downloadRepository: downloadRepository,
           isEnrolled: true,
         ),
       );
@@ -292,7 +278,6 @@ void main() {
       await tester.pumpWidget(
         _wrap(
           coursesRepository: coursesRepository,
-          downloadRepository: downloadRepository,
           isEnrolled: true,
         ),
       );

@@ -10,17 +10,13 @@ import '../../../../core/feature_flags/feature_flag_keys.dart';
 import '../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
-// Documented architecture debt (5c): the home dashboard refreshes the
-// notifications list after realtime pushes; there is no event/shared-model
-// representation of that list, so this remains a direct provider import
-// (same debt class as the WorkManager isolate in the downloads feature).
-import '../../../../features/notifications/application/providers/notifications_provider.dart'; // check-ignore: home dashboard refresh needs the notifications list (documented debt)
 import '../../../../shared/components/course_card.dart';
 import '../../../../shared/components/optional_update_dialog.dart';
 import '../../../../shared/components/todo/todo_preview_tile.dart';
 import '../../../../shared/models/auth_state.dart';
 import '../../../../shared/models/todo_item.dart';
 import '../../../../shared/models/update_info.dart';
+import '../../../../shared/providers/home_notifications_gateway.dart';
 import '../../../../shared/utils/error_handler.dart';
 import '../../../../shared/widgets/error_state.dart';
 import '../../../auth/application/providers/auth_provider.dart';
@@ -78,7 +74,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ref.invalidate(resumeLessonsProvider);
         ref.invalidate(recentCoursesProvider);
         ref.invalidate(recentTodosProvider);
-        ref.invalidate(notificationsProvider);
+        // Notifications refresh via the shared gateway contract — home
+        // does not import the notifications feature directly.
+        ref.read(homeNotificationsGatewayProvider)?.refresh();
       },
       child: Column(
         children: [
@@ -312,7 +310,7 @@ class _RecentCoursesSection extends ConsumerWidget {
               itemCount: 3,
               separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.md),
               itemBuilder: (_, index) =>
-                  const SizedBox(width: 180, child: RecentCourseCardShimmer()),
+                  const SizedBox(width: 208, child: RecentCourseCardShimmer()),
             ),
             error: (err, _) => ErrorState(
               message: ErrorHandler.getMessage(context, err),

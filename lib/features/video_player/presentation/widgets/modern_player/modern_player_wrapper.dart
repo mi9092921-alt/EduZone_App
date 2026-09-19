@@ -11,12 +11,13 @@ import '../../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../../core/utils/device_info_helper.dart';
 import '../../../../../design_system/design_system.dart';
 import '../../../../../shared/models/lesson_content.dart';
+import '../../../../../shared/utils/player_ui_helpers.dart';
+import '../../../../../shared/utils/youtube_video_id.dart';
 import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/video_provider.dart';
 import 'modern_player_error_overlay.dart';
 import 'modern_player_fullscreen_exit_button.dart';
 import 'modern_player_html.dart';
-import 'modern_player_youtube_id.dart';
 
 /// Strict shape of a real YouTube video id -- see the SECURITY
 /// (AUTH/WEBVIEW-01) note on [_ModernPlayerWrapperState._switchVideo].
@@ -30,10 +31,11 @@ final RegExp _safeVideoIdPattern = RegExp(r'^[A-Za-z0-9_-]{11}$');
 /// reload) stays in this file — it's one cohesive unit driven by
 /// `setState`/`mounted`/a native `InAppWebViewController`, and (like the
 /// other split player wrappers) minimizing behavioral risk here matters
-/// more than file length. The HTML/JS document builder, YouTube-id
-/// extraction, and the small presentational pieces (error overlay,
-/// fullscreen-exit button) have been extracted into sibling files in this
-/// folder — each independently testable with no dependency on
+/// more than file length. The HTML/JS document builder and the small
+/// presentational pieces (error overlay, fullscreen-exit button) have
+/// been extracted into sibling files in this folder (YouTube-id
+/// extraction lives in `shared/utils/youtube_video_id.dart`) — each
+/// independently testable with no dependency on
 /// `InAppWebViewController` or this State class.
 class ModernPlayerWrapper extends ConsumerStatefulWidget {
   final String courseId;
@@ -86,7 +88,7 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
   // and YoutubePlayerWrapper._videoListener() for the same reason; the
   // debounced DB/network sync inside VideoProgress.updateProgress() is
   // unaffected/unchanged by this.
-  DateTime _lastProgressReport = DateTime.fromMillisecondsSinceEpoch(0);
+  final PlayerProgressReporter _progressReporter = PlayerProgressReporter();
 
   @override
   void initState() {
@@ -185,7 +187,7 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
 
     // SECURITY (AUTH/WEBVIEW-01): videoId is interpolated unescaped into
     // JS evaluated inside the WebView (`loadVideo('$videoId')`). It is
-    // expected to already be validated by extractModernPlayerVideoId
+    // expected to already be validated by extractYoutubeVideoId
     // upstream (in build()), which only ever hands this method null or a
     // strictly-shaped 11-char id. This is a last-resort guard in case a
     // future call site skips that validation -- fail safe by ignoring
@@ -247,10 +249,9 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
           final duration = double.tryParse(state['duration']?.toString() ?? '') ?? 0.0;
 
           if (duration > 0) {
-            final now = DateTime.now();
-            if (now.difference(_lastProgressReport) >=
-                const Duration(seconds: 5)) {
-              _lastProgressReport = now;
+            if (_progressReporter.shouldReport(
+              Duration(seconds: current.toInt()),
+            )) {
               final pct = ((current / duration) * 100.0).clamp(0.0, 100.0);
               ref
                   .read(
@@ -289,7 +290,7 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _logLessonStarted());
 
-    final videoId = extractModernPlayerVideoId(content.videoUrl);
+    final videoId = extractYoutubeVideoId(content.videoUrl);
     if (videoId == null || videoId.isEmpty) {
       return Center(
         child: Text(

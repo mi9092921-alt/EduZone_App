@@ -32,7 +32,7 @@ class EditProfileBottomSheet extends ConsumerStatefulWidget {
       isScrollControlled: true,
       useSafeArea: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.md)),
       ),
       builder: (_) => EditProfileBottomSheet(profile: profile),
     );

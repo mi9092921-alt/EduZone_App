@@ -9,6 +9,7 @@ import '../../../../../shared/components/todo/todo_priority_indicator.dart';
 import '../../../../../shared/components/todo/todo_ui_extension.dart';
 import '../../../../../shared/components/todo/todo_ui_mapper.dart';
 import '../../../../../shared/models/todo_item.dart';
+import '../../../../../shared/widgets/confirm_dialog.dart';
 import '../components/todo_content.dart';
 import '../components/todo_meta_info.dart';
 import '../components/todo_swipe_background.dart';
@@ -36,7 +37,7 @@ class TodoListTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.md,
-        vertical: 4,
+        vertical: AppSpacing.xs2,
       ),
       child: Dismissible(
         key: ValueKey('dismiss_${todo.id}'),
@@ -114,20 +115,16 @@ class TodoListTile extends StatelessWidget {
   ) {
     return showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.confirmDeleteTitle),
-        content: Text(l10n.confirmDeleteMsg),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: Text(l10n.deleteButton),
-          ),
-        ],
+      builder: (ctx) => ConfirmDialog(
+        title: l10n.confirmDeleteTitle,
+        description: l10n.confirmDeleteMsg,
+        confirmLabel: l10n.deleteButton,
+        cancelLabel: l10n.cancel,
+        isDangerous: true,
+        // Cancel pops with null (ConfirmDialog default); the Dismissible
+        // confirmDismiss caller only acts on `true`, so behavior is
+        // identical to the previous pop(false).
+        onConfirm: () => Navigator.of(ctx).pop(true),
       ),
     );
   }

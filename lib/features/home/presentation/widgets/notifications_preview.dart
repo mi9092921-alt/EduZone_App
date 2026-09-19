@@ -3,19 +3,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
-// Documented architecture debt (5c): home reads the notifications list for
-// its dashboard preview; there is no event/shared-model representation of
-// that list, so this remains a direct provider import (same debt class as
-// the WorkManager isolate in the downloads feature).
-import '../../../../features/notifications/application/providers/notifications_provider.dart'; // check-ignore: home dashboard preview reads the notifications list (documented debt)
 import '../../../../shared/components/notification_tile.dart';
+import '../../../../shared/providers/home_notifications_gateway.dart';
 
 class NotificationsPreview extends ConsumerWidget {
   const NotificationsPreview({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final notificationsAsync = ref.watch(notificationsProvider);
+    // Cross-feature seam: notifications state is read through the shared
+    // gateway contract (implemented by the notifications feature, injected
+    // at the composition root) instead of importing that feature directly.
+    final gateway = ref.watch(homeNotificationsGatewayProvider);
+    if (gateway == null) return const SizedBox.shrink();
+    final notificationsAsync = ref.watch(gateway.notifications);
     final l10n = AppLocalizations.of(context);
 
     return notificationsAsync.when(
@@ -61,13 +62,11 @@ class NotificationsPreview extends ConsumerWidget {
                     .map((n) => NotificationTile(
                           notification: n,
                           onMarkAsRead: () async {
-                            final result = await ref
-                                .read(markAsReadProvider)
-                                .call(n.id, n.userId);
-                            result.fold(
-                              (_) {},
-                              (_) => ref.invalidate(notificationsProvider),
+                            final success = await gateway.markAsRead(
+                              notificationId: n.id,
+                              userId: n.userId,
                             );
+                            if (success) gateway.refresh();
                           },
                         ))
                     .toList(),

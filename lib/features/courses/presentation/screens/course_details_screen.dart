@@ -104,7 +104,7 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
                   child: CircleAvatar(
                     backgroundColor: Colors.black.withValues(alpha: 0.3),
                     child: BackButton(
-                      color: Colors.white,
+                      color: AppColors.neutral0,
                       // Audit P1 (M4): go_router instead of Navigator.
                       onPressed: () => context.pop(),
                     ),
@@ -245,7 +245,9 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
             ],
 
             // Extra space for sticky footer
-            const SliverToBoxAdapter(child: SizedBox(height: 120)),
+            const SliverToBoxAdapter(
+              child: SizedBox(height: AppSpacing.xxxl),
+            ),
           ],
         ),
 

@@ -3,21 +3,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../core/feature_flags/feature_flag_keys.dart';
 import '../../../../../core/feature_flags/feature_flags_provider.dart';
-// Documented architecture debt (5c): the lesson list needs per-lesson
-// download status; there is no event/shared-model representation of
-// download state, so this remains a direct provider import (same debt
-// class as the WorkManager isolate in the downloads feature).
-import '../../../../../features/downloads/application/providers/downloads_provider.dart'; // check-ignore: download state has no shared-model representation (documented debt)
 import '../../../../../shared/components/lesson_tile.dart';
 import '../../../../../shared/models/download_enums.dart';
 import '../../../../../shared/models/downloaded_lesson.dart';
 import '../../../../../shared/models/lesson.dart';
+import '../../../../../shared/providers/lesson_downloads_gateway.dart';
 
-/// Wires a [Lesson] + its live download status (from [downloadsProvider] /
-/// [downloadProgressProvider]) into a [LessonTile].
+/// Wires a [Lesson] + its live download status (from the shared
+/// [LessonDownloadsGateway] contract) into a [LessonTile].
 ///
 /// Self-contained: doesn't touch `SectionsAccordion`'s private state, so it
 /// moves out unchanged — a pure relocation, not a restructuring.
+///
+/// Download state is read through the shared gateway (implemented by the
+/// downloads feature, injected at the composition root) — courses does not
+/// import the downloads feature. A null gateway (downloads surface
+/// unavailable, bare test container) degrades to "no download data".
 class LessonTileWrapper extends ConsumerWidget {
   final Lesson lesson;
   final String courseId;
@@ -44,7 +45,10 @@ class LessonTileWrapper extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final downloadsAsync = ref.watch(downloadsProvider);
+    final gateway = ref.watch(lessonDownloadsGatewayProvider);
+    final downloadsAsync = gateway == null
+        ? const AsyncValue<List<DownloadedLesson>>.data([])
+        : ref.watch(gateway.downloads);
     final downloads = downloadsAsync.value ?? [];
 
     DownloadedLesson? download;
@@ -61,17 +65,18 @@ class LessonTileWrapper extends ConsumerWidget {
     bool downloadFailed = download?.status == DownloadStatus.failed;
     double progressPct = download?.progress ?? 0.0;
 
-    if (download != null &&
+    if (gateway != null &&
+        download != null &&
         (download.status == DownloadStatus.downloading ||
             download.status == DownloadStatus.pending)) {
-      final progressAsync = ref.watch(downloadProgressProvider(download.id));
-      final progress = progressAsync.value;
-      if (progress != null) {
-        isDownloading = progress.status == DownloadStatus.downloading ||
-            progress.status == DownloadStatus.pending;
-        isDownloaded = progress.status == DownloadStatus.completed;
-        downloadFailed = progress.status == DownloadStatus.failed;
-        progressPct = progress.progress;
+      final progressAsync = ref.watch(gateway.progress(download.id));
+      final snapshot = progressAsync.value;
+      if (snapshot != null) {
+        isDownloading = snapshot.status == DownloadStatus.downloading ||
+            snapshot.status == DownloadStatus.pending;
+        isDownloaded = snapshot.status == DownloadStatus.completed;
+        downloadFailed = snapshot.status == DownloadStatus.failed;
+        progressPct = snapshot.progress;
       }
     }
 
