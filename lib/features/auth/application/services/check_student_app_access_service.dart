@@ -201,7 +201,12 @@ class CheckStudentAppAccessService {
         }
 
         if (_missingJwtVersionStrikeCount >= _maxMissingJwtVersionStrikes) {
-          debugPrint('[Security] Forced logout after consecutive missing jwtVersion checks.');
+          if (kDebugMode) {
+          debugPrint(
+            '[Security] Forced logout after consecutive missing '
+            'jwtVersion checks.',
+          );
+        }
           _onAccessDenied(reason: 'token_version_mismatch');
           return;
         }

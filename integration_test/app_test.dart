@@ -15,6 +15,8 @@ import 'package:app/core/l10n/arb/app_localizations_ar.dart';
 import 'package:app/core/l10n/arb/app_localizations_en.dart';
 import 'package:app/core/logging/infrastructure/event_dispatcher.dart' as logging;
 import 'package:app/core/logging/logging_providers.dart';
+import 'package:app/core/navigation/pending_deep_link_store.dart';
+import 'package:app/core/utils/device_info_helper.dart';
 import 'package:app/design_system/design_system.dart';
 import 'package:app/features/auth/application/providers/auth_provider.dart';
 import 'package:app/features/auth/presentation/screens/banned_screen.dart';
@@ -78,6 +80,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 const _user = AppUser(
   id: 'integration-user',
@@ -528,6 +531,11 @@ Future<void> _pumpApp(
   WidgetTester tester,
   ProviderContainer container,
 ) async {
+  // The router's pending deep-link store is process-wide static (it must
+  // be, for the redirect to mutate it during the build phase) — reset it
+  // per scenario so a destination stashed by an earlier scenario can never
+  // hijack this scenario's initial redirect.
+  PendingDeepLinkStore.resetForTest();
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
@@ -541,7 +549,7 @@ Future<void> _pumpUntil(
   WidgetTester tester,
   Finder finder, {
   Duration step = const Duration(milliseconds: 100),
-  int maxPumps = 40,
+  int maxPumps = 200,
 }) async {
   for (var i = 0; i < maxPumps && finder.evaluate().isEmpty; i++) {
     await tester.pump(step);
@@ -550,6 +558,11 @@ Future<void> _pumpUntil(
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  // FLAG_KEEP_SCREEN_ON via the app itself: when the device display turns
+  // off mid-run, no frames are produced and every tester.pump() blocks
+  // until the whole suite times out ("did not complete"). The wakelock is
+  // released automatically when the app process ends.
+  unawaited(WakelockPlus.enable());
   PackageInfo.setMockInitialValues(
     appName: 'EduZone',
     packageName: 'com.eduzone.app',
@@ -874,7 +887,22 @@ void main() {
 
       // The home dashboard preview (NotificationsPreview) is fed through
       // the shared gateway and renders the unread fixture notification
-      // before any navigation happens.
+      // before any navigation happens. On a device viewport it can sit
+      // below the fold (unbuilt sliver children are not in the tree), so
+      // scroll the home list until it exists — bounded and silent if it
+      // never appears; the expectation below is the real assertion.
+      for (var i = 0;
+          i < 10 &&
+              find.text('New lesson available').evaluate().isEmpty;
+          i++) {
+        await tester.drag(
+          find.byType(Scrollable).first,
+          const Offset(0, -250),
+        );
+        // pump (NOT pumpAndSettle): loading skeletons use infinite shimmer
+        // animations, so pumpAndSettle would never settle here.
+        await tester.pump(const Duration(milliseconds: 150));
+      }
       expect(find.text('New lesson available'), findsOneWidget);
 
       final router = container.read(routerProvider);
@@ -882,10 +910,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(NotificationsScreen), findsOneWidget);
-      // The title now renders twice: once in the home preview (the shell
-      // branch stays alive behind the pushed screen) and once in the full
-      // NotificationsScreen.
-      expect(find.text('New lesson available'), findsNWidgets(2));
+      // The title renders twice: once in the home preview (the shell branch
+      // stays alive behind the pushed screen — OFFSTAGE, so default finders
+      // skip it) and once in the full NotificationsScreen.
+      expect(
+        find.text('New lesson available', skipOffstage: false),
+        findsNWidgets(2),
+      );
 
       final l10n = AppLocalizationsEn();
       await tester.tap(find.text(l10n.markAllRead));
@@ -920,7 +951,6 @@ void main() {
       await _pumpUntil(tester, find.byType(MainShell));
 
       final router = container.read(routerProvider);
-      final routeInfo = router.routeInformationProvider;
       router.go(AppRoutes.downloads);
       await _pumpUntil(tester, find.byType(DownloadsScreen));
 
@@ -950,11 +980,22 @@ void main() {
 
       // 3. Tapping the completed tile pushes the offline player route
       //    (the real DownloadTile onTap → context.push flow).
+      await tester.ensureVisible(find.text(_download.title));
+      // pump, not pumpAndSettle — shimmer skeletons never settle.
+      await tester.pump(const Duration(milliseconds: 150));
       await tester.tap(find.text(_download.title));
       await _pumpUntil(tester, find.byType(OfflinePlayerScreen));
 
+      // NOTE: routeInformationProvider.value does NOT reflect routes added
+      // via push() (the tile uses context.push) on the device binding —
+      // read the delegate's matched configuration instead.
       expect(
-        routeInfo.value.uri.path,
+        container
+            .read(routerProvider)
+            .routerDelegate
+            .currentConfiguration
+            .last
+            .matchedLocation,
         '${AppRoutes.downloads}/offline-player/${_download.id}',
       );
       expect(find.byType(OfflinePlayerScreen), findsOneWidget);
@@ -1134,6 +1175,12 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
+
+      // DeviceInfoWidget on the profile screen asserts DeviceInfoHelper was
+      // initialized (the real app inits it in AppInitializer before
+      // runApp). On a real device the platform channels are live, so run
+      // the real init here.
+      await DeviceInfoHelper.init();
 
       await _pumpApp(tester, container);
       await _pumpUntil(tester, find.byType(MainShell));

@@ -8,7 +8,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/l10n/arb/app_localizations.dart';
 import '../../core/navigation/app_page_transition.dart';
-import '../../core/navigation/pending_deep_link_provider.dart';
+import '../../core/navigation/pending_deep_link_store.dart';
 import '../../core/security/security_service.dart';
 import '../../features/auth/presentation/screens/banned_screen.dart';
 import '../../features/auth/presentation/screens/force_update_screen.dart';
@@ -69,29 +69,29 @@ bool _isHonourableDeepLink(String? candidate) {
   );
 }
 
-/// Read/write seam over [pendingDeepLinkProvider] so the redirect decision
-/// ([evaluateAppRedirect]) stays a pure, directly testable function without
-/// a Riverpod container.
+/// Read/write seam so the redirect decision ([evaluateAppRedirect]) stays
+/// a pure, directly testable function.
 abstract interface class PendingLinkStore {
   String? consume();
   void stash(String location);
   void clear();
 }
 
-class _ProviderPendingLinkStore implements PendingLinkStore {
-  _ProviderPendingLinkStore(this._ref);
-
-  final Ref _ref;
-
-  @override
-  String? consume() => _ref.read(pendingDeepLinkProvider.notifier).consume();
-
-  @override
-  void stash(String location) =>
-      _ref.read(pendingDeepLinkProvider.notifier).stash(location);
+/// Backed by the static [PendingDeepLinkStore]: a plain static write is the
+/// only safe mutation from inside the redirect callback, which go_router
+/// evaluates during the widget-tree build phase (mutating provider state
+/// there throws, leaving the initial redirect silently unresolved).
+class _StaticPendingLinkStore implements PendingLinkStore {
+  const _StaticPendingLinkStore();
 
   @override
-  void clear() => _ref.read(pendingDeepLinkProvider.notifier).clear();
+  String? consume() => PendingDeepLinkStore.consume();
+
+  @override
+  void stash(String location) => PendingDeepLinkStore.stash(location);
+
+  @override
+  void clear() => PendingDeepLinkStore.clear();
 }
 
 /// The COMPLETE redirect decision for the app router, extracted as a pure
@@ -315,7 +315,7 @@ GoRouter router(Ref ref) {
           location: state.matchedLocation,
           killSwitchEngaged: SecurityService.killSwitchEngaged,
           uri: state.uri.toString(),
-          linkStore: _ProviderPendingLinkStore(ref),
+          linkStore: const _StaticPendingLinkStore(),
         ),
 
 

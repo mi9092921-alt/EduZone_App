@@ -36,12 +36,10 @@ class SecurityService with WidgetsBindingObserver {
   /// a threat requires terminating access (e.g. navigate to a dedicated
   /// "device not secure" lock screen via the app's router).
   ///
-  /// Not wired up yet — this is intentionally left as an injection point
-  /// rather than guessing at navigation/router integration. Recommended:
-  /// set this once in `main.dart`/`app_initializer.dart` after the router
-  /// is available, e.g.:
-  ///   SecurityService.killAppHandler = (reason) =>
-  ///       rootNavigatorKey.currentContext?.go('/security-blocked?reason=$reason');
+  /// Wired by the router (`app_router.dart`'s wireSecurityKillHandler): it
+  /// latches [killSwitchEngaged] first — the redirect honours that latch
+  /// ahead of its appState switch, so the /locked destination sticks —
+  /// then navigates to /locked via the root navigator key.
   static void Function(String reason)? killAppHandler;
 
   /// Latched "a security threat fired and the app-layer kill handler ran"
