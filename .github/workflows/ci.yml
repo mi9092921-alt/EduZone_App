@@ -46,6 +46,7 @@ jobs:
             'supabase/schema/09_rls.sql'
             'supabase/schema/10_permissions.sql'
             'supabase/schema/11_seed_reference.sql'
+            'supabase/schema/12_seed_qa_demo.sql'
             'supabase/schema/VALIDATION.sql'
             'supabase/schema/README.md'
           )
@@ -138,58 +139,8 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src ghcr.io/google/osv-scanner:v2.3.8 \
             scan --lockfile=pubspec.lock
 
-  integration_test:
-    # These tests exercise the real EduZoneApp widget tree, Riverpod state,
-    # and GoRouter redirects while replacing only external backend/platform
-    # boundaries with deterministic test doubles. `integration_test` requires
-    # a target device, so CI provisions an Android emulator rather than
-    # attempting to run the suite with no supported device.
-    # GitHub-hosted runners expose no KVM (`-accel off`), so the emulator
-    # runs under full TCG software emulation: ~13 min boot + ~8 min Gradle +
-    # ~8 min APK install locally-observed, tests ~10x slower than hardware.
-    # The suite completes in ~2-3h under TCG; 4h bounds a genuine hang
-    # without truncating a healthy run (default is 6h of silent hanging).
-    runs-on: ubuntu-latest
-    timeout-minutes: 240
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 3.44.8
-      - name: Install dependencies
-        run: flutter pub get
-      - name: Generate l10n
-        run: flutter gen-l10n
-      - name: Run integration tests on Android emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          arch: x86_64
-          profile: pixel_2
-          target: google_apis
-          force-avd-creation: true
-          ram-size: 4096M
-          disk-size: 8192M
-          disable-spellchecker: true
-          # The emulator already boots on the hosted Linux runner, but the
-          # action's post-boot animation settings can race the ADB transport
-          # and terminate an otherwise healthy emulator with a broken pipe.
-          # These integration tests do not require animations to be disabled.
-          disable-animations: false
-          emulator-boot-timeout: 1200
-          # Pin the emulator binary so SDK-image updates cannot silently
-          # change the headless ADB/graphics path used by this job.
-          emulator-build: 12895296
-          # Use the fully software renderer for headless CI. This avoids
-          # renderer/ADB instability while the APK is installed and launched.
-          emulator-options: >-
-            -no-window -gpu software -no-snapshot-load
-            -no-snapshot-save -noaudio -no-boot-anim -no-metrics
-            -camera-back none -camera-front none
-          script: |
-            adb wait-for-device
-            adb shell getprop sys.boot_completed
-            flutter test integration_test/app_test.dart -d emulator-5554
+  # The integration_test job lives in integration-tests.yml (nightly +
+  # manual) so a 2-3h emulator run cannot turn CI red on every push.
 
   golden_test:
     # Golden images are strict regression evidence. They run on the Windows
