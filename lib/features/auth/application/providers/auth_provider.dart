@@ -573,6 +573,15 @@ class Auth extends _$Auth {
               skipBind: true,
               recordSession: true,
             );
+        // Concurrency guard (mirrors _initializeSession's equivalent call
+        // above): if a logout()/passive-revocation superseded this login
+        // while the trailing background sync was in flight, the coroutine
+        // must stop here — restarting security monitoring for a session
+        // that was just revoked leaves a monitor polling dead sessions
+        // (each tick surfaces a denial whose logout is already closed),
+        // and firing AuthLoginEvent/logOnAppOpen after cleanup un-does the
+        // boundary the logout just established.
+        if (!_isCurrentAuthOperation(generation)) return;
 
         // Start security monitoring (polling + Realtime token_version check)
         _startAccessMonitoring(appUser.id, appUser.tenantId);
@@ -924,7 +933,30 @@ class Auth extends _$Auth {
 
     // A new login/passive revocation may have superseded this logout while
     // server cleanup was in flight. Do not clear the newer session locally.
-    if (!_isCurrentAuthOperation(generation)) return;
+    if (!_isCurrentAuthOperation(generation)) {
+      // The newer operation owns the session now — forceLocalCleanup below
+      // would be a silent no-op for the outgoing session but would wipe the
+      // NEWER session's stored credentials, and no final state write is
+      // allowed (the newer operation owns the state machine). Two
+      // account-agnostic isolation steps must still happen before bailing:
+      //
+      //   1. Discard this account's queued progress WITHOUT flushing:
+      //      flushes carry the AMBIENT Supabase user id, which by now
+      //      belongs to the next account — retrying under it would corrupt
+      //      THEIR progress data, not just leak ours (same reasoning as the
+      //      normal path's flushAndClose, which here would flush under the
+      //      wrong user).
+      //   2. Drop all cached user-scoped provider state: isolation is
+      //      account-agnostic — without it, a re-login inside this window
+      //      (e.g. an offline revoke timing out at 3s) leaves the outgoing
+      //      account's cached courses/notifications/profile/todo/home data
+      //      in memory for the incoming account. The incoming session
+      //      re-fetches lazily; feature flags re-fetch via the auth flow's
+      //      refresh hook.
+      closeUserProgressSession(ref);
+      _invalidateAllUserProviders();
+      return;
+    }
 
     // Flush any pending lesson-progress writes while the about-to-be-cleared
     // session's token is still valid, then close the shared queue so it

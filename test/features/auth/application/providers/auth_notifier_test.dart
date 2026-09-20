@@ -9,6 +9,8 @@ import 'package:app/features/auth/application/providers/auth_provider.dart';
 import 'package:app/features/auth/application/services/update_service.dart';
 import 'package:app/features/auth/data/datasources/auth_remote_ds.dart';
 import 'package:app/features/auth/domain/entities/bind_device_result.dart';
+import 'package:app/features/video_player/application/providers/video_provider.dart';
+import 'package:app/features/video_player/domain/entities/lesson_progress_sync_item.dart';
 import 'package:app/shared/models/account_status.dart';
 import 'package:app/shared/models/app_user.dart';
 import 'package:app/shared/models/auth_state.dart';
@@ -1022,6 +1024,126 @@ void main() {
       final state = container.read(authProvider);
       expect(state, isA<AuthAuthenticated>());
       expect((state as AuthAuthenticated).user, _tUser);
+    });
+  });
+
+  // ─── session race: logout() during in-flight login() ─────────────────────
+  //
+  // Regression tests for the two logout/login interleavings where the
+  // logout begins AFTER login already resolved AuthAuthenticated (user
+  // snapped to /home and immediately tapped logout) and after login
+  // already began its post-AuthAuthenticated trailing work, and where a
+  // NEWER LOGIN begins while the stale logout's server cleanup is still
+  // in flight (the app is on /login while AuthLoggingOut continues
+  // cleanup, so submitting credentials during that window is reachable).
+  group('session race: logout() during in-flight login()', () {
+    test(
+        'a logout beginning during login trailing work wins — the login '
+        'coroutine stops: no AuthLoginEvent, no monitoring restart',
+        () async {
+      container.read(authProvider);
+      await _settleInitialization();
+
+      stubSuccessfulLogin();
+      final notifier = container.read(authProvider.notifier);
+
+      // Block login's post-AuthAuthenticated trailing sync.
+      final syncGate = Completer<void>();
+      when(() => mockDataSource.syncUserActivity(
+            userId: any(named: 'userId'),
+            tenantId: any(named: 'tenantId'),
+            deviceFingerprint: any(named: 'deviceFingerprint'),
+      )).thenAnswer((_) => syncGate.future);
+
+      final loginFuture = notifier.login('first@example.com', 'password');
+      await _settleInitialization();
+
+      // login resolved AuthAuthenticated and is now parked on the
+      // trailing sync gate.
+      expect(container.read(authProvider), isA<AuthAuthenticated>());
+
+      final logoutFuture = notifier.logout();
+      await Future<void>.delayed(Duration.zero);
+      syncGate.complete();
+      await Future.wait([loginFuture, logoutFuture]);
+
+      expect(container.read(authProvider), isA<AuthUnauthenticated>());
+      // Fix 1: the stale login must never fire AuthLoginEvent (or restart
+      // security monitoring / logOnAppOpen) after the logout boundary.
+      verifyNever(() => mockEventBus.emit(any(that: isA<AuthLoginEvent>())));
+      // The logout itself still completed its local teardown exactly once.
+      verify(() => mockDataSource.signOutLocally()).called(1);
+    });
+
+    test(
+        'a newer login supersedes the stale logout — queued progress '
+        'discarded, incoming stored credentials kept, isolation still runs',
+        () async {
+      container.read(authProvider);
+      await _settleInitialization();
+
+      stubSuccessfulLogin();
+      await container.read(authProvider.notifier).login(
+            'first@example.com',
+            'password',
+          );
+
+      // Pin the autoDispose sync engine so enqueue and the fix's discard
+      // hit the same instance.
+      container.listen(lessonProgressSyncEngineProvider, (_, _) {});
+      container.read(lessonProgressSyncEngineProvider).enqueue(
+            const LessonProgressSyncItem(
+              courseId: 'c1',
+              lessonId: 'l1',
+              completed: false,
+              progressPct: 0.5,
+            ),
+          );
+      expect(
+        container.read(lessonProgressSyncEngineProvider).pendingCount,
+        1,
+      );
+
+      // Gate the stale logout's server cleanup.
+      final revokeGate = Completer<void>();
+      when(() => mockDataSource.revokeCurrentSession())
+          .thenAnswer((_) => revokeGate.future);
+
+      final notifier = container.read(authProvider.notifier);
+      final logoutFuture = notifier.logout();
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(authProvider), isA<AuthLoggingOut>());
+
+      // Newer login as a different user bumps the generation during the
+      // stale logout's cleanup window.
+      const secondUser = AppUser(
+        id: 'user-second',
+        email: 'second@example.com',
+        tenantId: 'tenant-1',
+      );
+      when(() => mockDataSource.getCurrentUser())
+          .thenAnswer((_) async => secondUser);
+      final loginFuture = notifier.login('second@example.com', 'password');
+      await _settleInitialization();
+
+      // Release the stale logout's cleanup.
+      revokeGate.complete();
+      await Future.wait([logoutFuture, loginFuture]);
+
+      final state = container.read(authProvider);
+      expect(state, isA<AuthAuthenticated>());
+      expect((state as AuthAuthenticated).user.id, 'user-second');
+      // Fix 2: the stale logout must still drop the outgoing user's queued
+      // write instead of letting it flush under the incoming user's
+      // session.
+      expect(
+        container.read(lessonProgressSyncEngineProvider).pendingCount,
+        0,
+        reason: 'queued progress of the outgoing user must never flush '
+            'under the incoming user',
+      );
+      // And it must NOT wipe the incoming session's stored credentials.
+      verifyNever(() => mockDataSource.signOutLocally());
     });
   });
 
