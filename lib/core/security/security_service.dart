@@ -13,6 +13,7 @@ import '../utils/device_info_helper.dart';
 import 'data/security_incident_remote_ds.dart';
 import 'guards/lifecycle_guard.dart';
 import 'guards/screenshot_guard.dart';
+import 'threat_policy.dart';
 
 part 'freerasp_config.dart';
 part 'guards/screen_share_guard.dart';
@@ -36,6 +37,30 @@ class SecurityService with WidgetsBindingObserver {
         // ignore: avoid_redundant_argument_values
         defaultValue: true,
       );
+
+  /// Direct-APK distribution switch (owner decision, 2026-09-20: distribution
+  /// is a direct APK, intentionally and temporarily — there is no store yet).
+  ///
+  /// freeRASP reports "Installed from Unofficial Store" for every install that
+  /// did not come from a supported store, which is EVERY sideloaded APK. With
+  /// `SECURITY_ALLOW_SIDELOAD=true` that one threat becomes telemetry-only.
+  /// Any other value — including the blank line in `.env.example` and an
+  /// omitted define — keeps it strict (terminating), which is what a store
+  /// build must ship. Compared as a string (not `bool.fromEnvironment`) so a
+  /// blank value can never be misread as "allow".
+  ///
+  /// This relaxes ONLY the store check. Repackaging/tampering is still caught
+  /// by `onAppIntegrity` (signing-certificate hash) and still terminates.
+  static const bool _allowSideload =
+      String.fromEnvironment('SECURITY_ALLOW_SIDELOAD') == 'true';
+
+  /// Test-only overrides for the two compile-time flags above, so the
+  /// dispatch in [_onThreatDetected] can be exercised in both modes from a
+  /// unit test. Production code never sets these.
+  @visibleForTesting
+  static bool? enforceOverrideForTest;
+  @visibleForTesting
+  static bool? allowSideloadOverrideForTest;
 
   /// Optional app-layer hook, called instead of the raw platform kill when
   /// a threat requires terminating access (e.g. navigate to a dedicated
@@ -135,15 +160,74 @@ class SecurityService with WidgetsBindingObserver {
     LifecycleGuard.instance.didChangeAppLifecycleState(state);
   }
 
-  static void _onThreatDetected(String threatName) {
-    _logThreatToSupabase(threatName);
+  /// Single entry point for every threat (freeRASP callbacks and guards).
+  ///
+  /// Always reports to `security_incidents`; terminates ONLY when
+  /// [ThreatPolicy] says the threat terminates for this build AND
+  /// enforcement is on. [subject] is the specific package for package-scoped
+  /// threats. [source] records what produced the signal.
+  ///
+  /// Returns the telemetry future so tests (and guards) can await delivery;
+  /// production callers deliberately do not await it.
+  static Future<void> _onThreatDetected(
+    SecurityThreat threat, {
+    String? subject,
+    String source = 'freerasp',
+  }) {
+    final allowSideload = allowSideloadOverrideForTest ?? _allowSideload;
+    final enforce = enforceOverrideForTest ?? _enforceThreatTermination;
+    final policy = ThreatPolicy.resolve(threat, allowSideload: allowSideload);
+    final terminate = ThreatPolicy.shouldTerminate(
+      threat,
+      allowSideload: allowSideload,
+      enforce: enforce,
+    );
+    final name = threat.reportName(subject);
 
-    if (!_enforceThreatTermination) {
-      debugPrint('[SECURITY] threat detected; enforcement disabled for this build.');
-      return;
+    final logged = _logThreatToSupabase(
+      name,
+      details: <String, dynamic>{
+        'detection_source': source,
+        'policy': policy == ThreatAction.terminate
+            ? 'terminate'
+            : 'telemetry_only',
+        'enforced': enforce,
+        'action_taken': terminate ? 'terminated' : 'reported_only',
+        if (threat == SecurityThreat.unofficialStore)
+          'sideload_allowed': allowSideload,
+      },
+    );
+
+    if (!terminate) {
+      debugPrint(
+        '[SECURITY] threat detected; not terminating '
+        '(policy=${policy.name}, enforce=$enforce).',
+      );
+      return logged;
     }
 
-    _killApp(threatName);
+    _killApp(name);
+    return logged;
+  }
+
+  /// Test-only entry point for [_onThreatDetected].
+  @visibleForTesting
+  static Future<void> reportThreatForTest(
+    SecurityThreat threat, {
+    String? subject,
+    String source = 'test',
+  }) =>
+      _onThreatDetected(threat, subject: subject, source: source);
+
+  /// Test-only reset of the telemetry state (per-session dedupe set, local
+  /// buffer, sender override, flag overrides).
+  @visibleForTesting
+  static void resetTelemetryStateForTest() {
+    _reportedThisSession.clear();
+    _localThreatBuffer.clear();
+    incidentSenderForTest = null;
+    enforceOverrideForTest = null;
+    allowSideloadOverrideForTest = null;
   }
 
   static Future<void> _runStartupStep({
@@ -155,7 +239,14 @@ class SecurityService with WidgetsBindingObserver {
     } catch (e, stack) {
       debugPrint('[SECURITY] $name failed during startup: ${e.runtimeType}');
       debugPrintStack(stackTrace: stack);
-      _logThreatToSupabase('Security Startup Step Failed: $name');
+      unawaited(_logThreatToSupabase(
+        'Security Startup Step Failed: $name',
+        details: const <String, dynamic>{
+          'detection_source': 'startup',
+          'policy': 'telemetry_only',
+          'action_taken': 'reported_only',
+        },
+      ));
       // Deliberate misconfiguration must fail fast in a release build, not
       // degrade to "RASP silently disabled": freeRASP's config throws
       // StateError when the release signing hash / team id / watcher mail
@@ -176,7 +267,32 @@ class SecurityService with WidgetsBindingObserver {
   static final List<Map<String, dynamic>> _localThreatBuffer = [];
   static const int _localThreatBufferMax = 50;
 
-  static void _logThreatToSupabase(String threat) {
+  /// Threat labels already reported (or in flight) in this process.
+  ///
+  /// "At most one insert per (device, threat, session)": the device
+  /// fingerprint is constant for the life of the process and a session is a
+  /// process, so the report name is the whole key. freeRASP re-fires its
+  /// callbacks and the screen-share scan re-runs on every launch; without this
+  /// one bad device produced dozens of identical rows. An entry is REMOVED
+  /// again if delivery fails, so a later occurrence in the same session can
+  /// still land (the failure is also kept in [_localThreatBuffer]).
+  static final Set<String> _reportedThisSession = <String>{};
+
+  /// Test-only replacement for the Supabase write. When set, no Supabase
+  /// readiness probe or RPC happens.
+  @visibleForTesting
+  static Future<void> Function(Map<String, dynamic> payload)?
+      incidentSenderForTest;
+
+  static Future<void> _logThreatToSupabase(
+    String threat, {
+    Map<String, dynamic>? details,
+  }) async {
+    if (!_reportedThisSession.add(threat)) {
+      debugPrint('[SECURITY] duplicate threat report suppressed this session.');
+      return;
+    }
+
     final payload = <String, dynamic>{
       'threat': threat,
       'platform': Platform.operatingSystem,
@@ -189,25 +305,40 @@ class SecurityService with WidgetsBindingObserver {
       // hasn't been initialized yet (e.g. an early startup-step failure
       // before step 4 in AppInitializer runs).
       'device_fingerprint': _safeDeviceFingerprint(),
+      // Structured, PII-free context (policy, enforced, action taken,
+      // detection source, installer package). Validated server-side as a
+      // JSON object under 4 KB by report_security_incident().
+      'details': <String, dynamic>{...?details},
     };
 
-    // Fire-and-forget: we do not await or block execution.
+    final sender = incidentSenderForTest;
     try {
-      final client = SupabaseService.client;
       // No session gate: report_security_incident() accepts pre-auth callers
       // by design (anon → user_id NULL server-side) — capturing pre-login
       // RASP events is exactly its purpose (2026-09-19 product/security
       // decision). The RPC validates shape and absorbs volume abuse
       // server-side; local buffering below handles transport failures only.
-      pip.PackageInfo.fromPlatform().then((packageInfo) {
+      // The client read is the Supabase readiness probe (it throws before
+      // Supabase.initialize() has run) and is skipped under a test sender.
+      final client = sender == null ? SupabaseService.client : null;
+
+      String? installer;
+      try {
+        final packageInfo = await pip.PackageInfo.fromPlatform();
         payload['app_version'] = packageInfo.version;
         payload['app_build_number'] = packageInfo.buildNumber;
-        _insertIncident(client, payload);
-      }).catchError((_) {
+        installer = packageInfo.installerStore;
+      } catch (_) {
         payload['app_version'] = 'unknown';
         payload['app_build_number'] = 'unknown';
-        _insertIncident(client, payload);
-      });
+      }
+      // Package name of the installer (e.g. com.android.vending, or the
+      // system package installer for a sideloaded APK). Not PII.
+      if (installer != null && installer.isNotEmpty) {
+        (payload['details'] as Map<String, dynamic>)['installer'] = installer;
+      }
+
+      await _insertIncident(client, payload, sender);
     } on StateError catch (_) {
       // Kept alongside AssertionError below in case a future
       // supabase_flutter version changes which type it throws here — see
@@ -217,39 +348,49 @@ class SecurityService with WidgetsBindingObserver {
       // actually throws AssertionError, not StateError, before
       // Supabase.initialize() has run.
       debugPrint('[SECURITY] Supabase not ready for logging.');
+      _reportedThisSession.remove(threat);
       _bufferThreatLocally(payload, status: 'supabase_not_ready');
     } on AssertionError catch (_) {
       // Supabase not initialized yet; keep locally instead of dropping it.
       debugPrint('[SECURITY] Supabase not ready for logging.');
+      _reportedThisSession.remove(threat);
       _bufferThreatLocally(payload, status: 'supabase_not_ready');
     } catch (_) {
+      _reportedThisSession.remove(threat);
       _bufferThreatLocally(payload, status: 'unknown_error');
     }
   }
 
-  static void _insertIncident(
-    SupabaseClient client,
+  static Future<void> _insertIncident(
+    SupabaseClient? client,
     Map<String, dynamic> payload,
-  ) {
+    Future<void> Function(Map<String, dynamic> payload)? sender,
+  ) async {
     // The Supabase write itself lives in the security data layer
     // (core/security/data) per the core data pattern; the `client`
     // parameter is kept for the pre-insert Supabase.instance readiness
     // probe in the caller (see the StateError/AssertionError note in
     // _logThreatToSupabase).
-    const SecurityIncidentRemoteDs()
-        .reportIncident(
-          threat: payload['threat'] as String? ?? 'unknown',
-          platform: payload['platform'] as String? ?? 'unknown',
-          platformVersion: payload['platform_version'] as String?,
-          isReleaseBuild: payload['is_release_build'] as bool? ?? false,
-          deviceFingerprint: payload['device_fingerprint'] as String?,
-          appVersion: payload['app_version'] as String?,
-          appBuildNumber: payload['app_build_number'] as String?,
-        )
-        .then((_) {})
-        .catchError((_) {
-          _bufferThreatLocally(payload, status: 'insert_failed');
-        });
+    try {
+      if (sender != null) {
+        await sender(payload);
+        return;
+      }
+      await const SecurityIncidentRemoteDs().reportIncident(
+        threat: payload['threat'] as String? ?? 'unknown',
+        platform: payload['platform'] as String? ?? 'unknown',
+        platformVersion: payload['platform_version'] as String?,
+        isReleaseBuild: payload['is_release_build'] as bool? ?? false,
+        deviceFingerprint: payload['device_fingerprint'] as String?,
+        appVersion: payload['app_version'] as String?,
+        appBuildNumber: payload['app_build_number'] as String?,
+        details: payload['details'] as Map<String, dynamic>?,
+      );
+    } catch (_) {
+      // Allow a later occurrence in this session to retry delivery.
+      _reportedThisSession.remove(payload['threat']);
+      _bufferThreatLocally(payload, status: 'insert_failed');
+    }
   }
 
   static String? _safeDeviceFingerprint() {

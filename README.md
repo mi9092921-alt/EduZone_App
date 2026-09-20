@@ -284,6 +284,7 @@ flutter run --release --dart-define-from-file=.env
 | `SECURITY_IOS_BUNDLE_ID` | — | Bundle ID | freeRASP iOS bundle check |
 | `SECURITY_WATCHER_MAIL` | release | Email | Talsec threat-alert recipient |
 | `SECURITY_ENFORCE_THREAT_TERMINATION` | — | `true` · `false` | Terminate app on detected threat (release builds only; default `true` in release, `false` = telemetry-only) |
+| `SECURITY_ALLOW_SIDELOAD` | — | `true` · blank | Direct-APK builds only: makes the "Installed from Unofficial Store" threat telemetry-only. Blank/omitted = strict (terminates) — required for store builds. Only the exact value `true` enables it |
 
 > **Note:** The `service_role` key is **never** used in the app. All sensitive operations are routed through Supabase Edge Functions on the server side.
 
@@ -294,14 +295,20 @@ flutter run --release --dart-define-from-file=.env
 ### Android
 
 ```bash
-# APK for testing
+# APK for testing / direct distribution
+# --build-number must increase with every build you hand out (it is the
+# Android versionCode and is what security_incidents.app_build_number records;
+# without it every build reports "1"). `make build-prod` does this for you;
+# by hand, use e.g. the output of `git rev-list --count HEAD` for <N>.
 flutter build apk --release \
   --dart-define-from-file=.env \
-  --target-platform android-arm64
+  --target-platform android-arm64 \
+  --build-number=<N>
 
-# App Bundle for Google Play
+# App Bundle for Google Play (CI passes --build-number=$GITHUB_RUN_NUMBER)
 flutter build appbundle --release \
-  --dart-define-from-file=.env
+  --dart-define-from-file=.env \
+  --build-number=<N>
 
 # Analyze bundle size
 flutter build apk --analyze-size

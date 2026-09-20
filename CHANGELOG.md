@@ -9,6 +9,33 @@
 
 ### Added / Fixed
 
+- **الأمان (2026-09-20)**: سياسة تهديدات مركزية بدل «كل تهديد يُنهي التطبيق»
+  (`lib/core/security/threat_policy.dart`):
+  - الإنهاء فقط لـ App Integrity وHooks وPrivileged Access (root). أما
+    Debugger وSimulator وNo Secure Passcode وSecure Hardware وDevice
+    Binding/ID وObfuscation Issues فصارت تسجيلًا فقط (telemetry) — كانت كلها
+    تُقفل التطبيق في بناء release.
+  - «Installed from Unofficial Store» ينهي افتراضيًا (صارم)، ويصبح تسجيلًا فقط
+    عند البناء بـ `SECURITY_ALLOW_SIDELOAD=true` (التوزيع الحالي APK مباشر
+    ومؤقت). موثّق في `.env.example` وREADME.md وSECURITY.md.
+  - حارس مشاركة الشاشة: وجود حزمة (Discord/Zoom/…) على الجهاز ليس «مشاركة
+    فعلية»، فأصبح تسجيلًا فقط باسم `Screen Share App Installed: <package>` بدل
+    `Blacklisted Screen Share App Active: <package>`، ولا يُنهي التطبيق ولا يحجب
+    الدخول. صار قابلًا للاختبار بحقن استعلام الحزم والمنصّة (كان فرع المطابقة
+    غير قابل للوصول من `flutter test`). الحماية الفعلية تبقى `FLAG_SECURE`.
+  - نظافة `security_incidents`: صف واحد كحد أقصى لكل (جهاز، تهديد، جلسة)؛
+    عمود `details` يُملأ الآن (`detection_source`, `policy`, `enforced`,
+    `action_taken`, `installer`, `sideload_allowed`) بلا بيانات شخصية؛ وفشل
+    الإرسال لا يستهلك خانة الجلسة فتُعاد المحاولة عند التكرار.
+  - رقم البناء: `make build-prod` و`deploy.yml` يمرّران `--build-number`
+    (كان كل صف يسجّل `app_build_number = 1`).
+  - اختبارات جديدة: `threat_policy_test.dart`، وتوسعة
+    `screen_share_guard_test.dart` و`security_service_test.dart`.
+  - **لم يُنفَّذ بعد**: تعطيل «Obfuscation Issues» (R8 مفعّل أصلًا؛ المشتبه به
+    قاعدة `-keep` لـ Talsec في `proguard-rules.pro` ويحتاج تجربة بناء حقيقية)،
+    و`--obfuscate --split-debug-info` (يحتاج رفع رموز إلى Sentry أولًا)، وربط
+    `onScreenshot/onScreenRecording`.
+
 - **التهيئة (2026-09-18)**: دُمجت كل ملفات البيئة في ملف `.env` واحد:
   - `.env` الوحيد أصبح يحمل إعدادات Supabase + زوج النكهة `APP_ENV`/`SENTRY_DSN`
     + مفاتيح RASP الأمنية `SECURITY_*` (التي كانت في `.env.security`).

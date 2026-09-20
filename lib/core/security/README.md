@@ -52,6 +52,22 @@ flutter build ipa --release --dart-define-from-file=.env
 2. راقب جدول `security_incidents` في Supabase لمدة أسبوع على الأقل، تأكد من معدل false-positive منخفض.
 3. أزِل التعيين (أو عيّن `true`) في الإصدار التالي لتفعيل الإنهاء.
 
+## 3.1 سياسة التهديدات: ما الذي يُنهي التطبيق وما الذي يُسجَّل فقط
+
+قرار المالك (2026-09-20). القرار مركزي في `threat_policy.dart` (`SecurityThreat` / `ThreatPolicy`):
+
+- **إنهاء (Terminate)** عند تفعيل الإنفاذ: App Integrity، Hooks، Privileged Access (root).
+- **مشروط:** «Installed from Unofficial Store» ينهي التطبيق افتراضيًا (وضع صارم مناسب لبناء المتجر)، ويصبح تسجيلًا فقط عند `SECURITY_ALLOW_SIDELOAD=true`.
+- **تسجيل فقط (Telemetry):** Debugger، Simulator، No Secure Passcode، Secure Hardware، Device Binding، Device ID، Obfuscation Issues، و`Screen Share App Installed: <package>` — لا إنهاء ولا حجب دخول ولا إخفاء محتوى.
+
+### التوزيع بـ APK مباشر (`SECURITY_ALLOW_SIDELOAD`)
+
+التوزيع حاليًا APK مباشر — مقصود ومؤقت ولا يوجد متجر. `SECURITY_ALLOW_SIDELOAD=true` يجعل تهديد المتجر غير الرسمي تسجيلًا فقط. القيمة الافتراضية صارمة: الفراغ أو الحذف = يُنهي (وهذا هو المطلوب لأي بناء متجر مستقبلي). فقط القيمة `true` بالضبط تُفعّله. لا يُخفَّف إلا فحص المتجر؛ إعادة التغليف/التوقيع تكشفها `onAppIntegrity` وتُنهي التطبيق كما كانت.
+
+### حارس مشاركة الشاشة
+
+وجود حزمة (Discord/Zoom/Teams…) على الجهاز **ليس** مشاركة شاشة فعلية؛ لذلك يُسجَّل كـ `Screen Share App Installed` ولا يُنهي شيئًا. الحماية الفعلية هي `FLAG_SECURE` (في `MainActivity.kt` و`ScreenshotGuard`). لم يُتحقق منه على جهاز حقيقي أن مشغّلات الفيديو تظهر سوداء أثناء تسجيل/مشاركة فعلية.
+
 ## 4. iOS — عمل غير مكتمل بعد
 
 `SecurityService.killAppHandler` نقطة حقن اختيارية تسمح بالانتقال لشاشة "الجهاز غير آمن" بدل `exit(0)` (المستخدَم افتراضيًا لأندرويد فقط الآن). **لم يُربط بعد بأي شاشة فعلية** — يحتاج الفريق لربطه بمسار في `AppRouter` (مثال في تعليق الكود داخل `security_service.dart`). حتى ذلك الحين، سيُسجَّل تحذير في السجلات على iOS دون إنهاء فعلي للتطبيق عند اكتشاف تهديد.

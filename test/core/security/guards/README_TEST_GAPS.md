@@ -44,16 +44,15 @@ See `security_service_test.dart`, `guards/lifecycle_guard_test.dart`, and
   interface around `Talsec.instance` that `SecurityService` depends on
   instead of the static singleton directly.
 
-### 2. `ScreenShareGuard.check()` — blacklist-matching branch unreachable
+### 2. `ScreenShareGuard.check()` — real device query still untested
 
-- `check()` returns immediately unless `Platform.isAndroid` is true.
-  `flutter test` always runs on the host OS, so the actual
-  blacklist-matching loop and the `SecurityService._onThreatDetected(...)`
-  call it can trigger are structurally unreachable from a unit test.
-- **Minimal fix, if wanted** (needs sign-off): inject the platform check
-  and/or the `InstalledApps` lookup behind a testable seam, or accept
-  this as integration-test-only coverage (requires a real Android
-  device/emulator, outside `flutter test`'s scope).
+- RESOLVED: the platform check and the installed-package query are now
+  injectable (`check({query, isAndroid})`), so the blacklist matching, the
+  telemetry-only reporting and the "never terminates" guarantee are covered
+  in `guards/screen_share_guard_test.dart` (with `SecurityService`'s injected
+  incident sender and kill handler).
+- STILL not coverable from `flutter test`: the real `InstalledApps` query and
+  Android 11+ package-visibility behaviour (needs a real device).
 
 ## What IS covered
 
@@ -67,4 +66,9 @@ See `security_service_test.dart`, `guards/lifecycle_guard_test.dart`, and
 - `LifecycleGuard` and `ScreenshotGuard`: never throw or leak an async
   error even without a mocked native channel, for every relevant
   lifecycle state.
-- `ScreenShareGuard.check()`'s only branch reachable outside Android.
+- `ScreenShareGuard`: matching (exact, no substring), telemetry-only
+  reporting, per-session dedupe and error swallowing, via an injected query.
+- `ThreatPolicy` / `SecurityService` dispatch: which threats terminate in
+  strict and `SECURITY_ALLOW_SIDELOAD` modes, per-session dedupe, retry after
+  a failed delivery, and the `details` payload (`threat_policy_test.dart`,
+  `security_service_test.dart`).

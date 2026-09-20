@@ -99,34 +99,31 @@ TalsecConfig _getTalsecConfig() {
   );
 }
 
-/// Setup threat callback listener and route all detected threats to [SecurityService]
+/// Setup threat callback listener and route every detected threat to
+/// [SecurityService._onThreatDetected].
+///
+/// What each threat DOES (terminate vs telemetry-only) is decided in exactly
+/// one place — the policy table in `threat_policy.dart` — not per callback.
+/// Only App Integrity, Hooks and Privileged Access (root) terminate;
+/// "Installed from Unofficial Store" terminates unless the build sets
+/// `SECURITY_ALLOW_SIDELOAD=true`; everything else is telemetry-only.
 Future<void> _setupFreeraspListener() async {
+  void report(SecurityThreat threat) {
+    unawaited(SecurityService._onThreatDetected(threat));
+  }
+
   final callback = ThreatCallback(
-    onAppIntegrity: () {
-      SecurityService._onThreatDetected('App Integrity Compromised');
-    },
-    onObfuscationIssues: () {
-      SecurityService._onThreatDetected('Obfuscation Issues');
-    },
-    onDebug: () => SecurityService._onThreatDetected('Debugger Detected'),
-    onDeviceBinding: () {
-      SecurityService._onThreatDetected('Device Binding Compromised');
-    },
-    onDeviceID: () => SecurityService._onThreatDetected('Device ID Compromised'),
-    onHooks: () => SecurityService._onThreatDetected('Hooks Detected'),
-    onPasscode: () => SecurityService._onThreatDetected('No Secure Passcode'),
-    onPrivilegedAccess: () {
-      SecurityService._onThreatDetected('Privileged Access (Root/Jailbreak)');
-    },
-    onSecureHardwareNotAvailable: () {
-      SecurityService._onThreatDetected('Secure Hardware Not Available');
-    },
-    onSimulator: () {
-      SecurityService._onThreatDetected('Running on Simulator/Emulator');
-    },
-    onUnofficialStore: () {
-      SecurityService._onThreatDetected('Installed from Unofficial Store');
-    },
+    onAppIntegrity: () => report(SecurityThreat.appIntegrity),
+    onObfuscationIssues: () => report(SecurityThreat.obfuscation),
+    onDebug: () => report(SecurityThreat.debugger),
+    onDeviceBinding: () => report(SecurityThreat.deviceBinding),
+    onDeviceID: () => report(SecurityThreat.deviceId),
+    onHooks: () => report(SecurityThreat.hooks),
+    onPasscode: () => report(SecurityThreat.passcode),
+    onPrivilegedAccess: () => report(SecurityThreat.privilegedAccess),
+    onSecureHardwareNotAvailable: () => report(SecurityThreat.secureHardware),
+    onSimulator: () => report(SecurityThreat.simulator),
+    onUnofficialStore: () => report(SecurityThreat.unofficialStore),
   );
 
   await Talsec.instance.attachListener(callback);

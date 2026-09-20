@@ -1,5 +1,7 @@
 import 'package:app/core/security/security_service.dart';
+import 'package:app/core/security/threat_policy.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 // ─────────────────────────────────────────────────────────────────────────
 // KNOWN COVERAGE GAP (documented, not silently skipped — see also
@@ -8,7 +10,10 @@ import 'package:flutter_test/flutter_test.dart';
 // `SecurityService.init()` calls `Talsec.instance.start(...)` directly
 // with no injectable abstraction around it, so the actual freeRASP
 // threat-detection callbacks can never be invoked from a unit test.
-// `_killApp()` / `_onThreatDetected()` are therefore also untested here.
+// The freeRASP callbacks themselves are therefore still untested here.
+// The dispatch behind them (`_onThreatDetected` → policy → telemetry / kill
+// handler) IS covered below through `reportThreatForTest`, an injected
+// incident sender and an injected kill handler.
 //
 // Additionally, after the three fixes below, none of init()'s three
 // startup steps naturally fail in a clean local/CI test environment
@@ -109,6 +114,238 @@ void main() {
 
       // Clean up after test
       SecurityService.killAppHandler = null;
+    });
+  });
+  group('SecurityService threat dispatch and telemetry', () {
+    late List<Map<String, dynamic>> sent;
+    late List<String> killed;
+
+    setUp(() {
+      SecurityService.resetTelemetryStateForTest();
+      sent = [];
+      killed = [];
+      SecurityService.incidentSenderForTest = (payload) async {
+        sent.add(payload);
+      };
+      SecurityService.killAppHandler = killed.add;
+      PackageInfo.setMockInitialValues(
+        appName: 'EduZone',
+        packageName: 'com.eduzone.learn.app',
+        version: '1.2.0',
+        buildNumber: '42',
+        buildSignature: '',
+        installerStore: 'com.google.android.packageinstaller',
+      );
+    });
+
+    tearDown(() {
+      SecurityService.resetTelemetryStateForTest();
+      SecurityService.killAppHandler = null;
+    });
+
+    test('the same threat reported repeatedly in one session is sent once',
+        () async {
+      await SecurityService.reportThreatForTest(SecurityThreat.debugger);
+      await SecurityService.reportThreatForTest(SecurityThreat.debugger);
+      await SecurityService.reportThreatForTest(SecurityThreat.debugger);
+
+      expect(sent, hasLength(1));
+      expect(sent.single['threat'], 'Debugger Detected');
+    });
+
+    test('concurrent duplicates are also collapsed to one insert', () async {
+      await Future.wait([
+        SecurityService.reportThreatForTest(SecurityThreat.obfuscation),
+        SecurityService.reportThreatForTest(SecurityThreat.obfuscation),
+        SecurityService.reportThreatForTest(SecurityThreat.obfuscation),
+      ]);
+
+      expect(sent, hasLength(1));
+    });
+
+    test('distinct threats and distinct packages are each sent once', () async {
+      await SecurityService.reportThreatForTest(SecurityThreat.debugger);
+      await SecurityService.reportThreatForTest(SecurityThreat.obfuscation);
+      await SecurityService.reportThreatForTest(
+        SecurityThreat.screenShareApp,
+        subject: 'com.discord',
+      );
+      await SecurityService.reportThreatForTest(
+        SecurityThreat.screenShareApp,
+        subject: 'us.zoom.videomeetings',
+      );
+
+      expect(
+        sent.map((p) => p['threat']),
+        equals([
+          'Debugger Detected',
+          'Obfuscation Issues',
+          'Screen Share App Installed: com.discord',
+          'Screen Share App Installed: us.zoom.videomeetings',
+        ]),
+      );
+    });
+
+    test(
+      'a failed delivery is buffered locally and a later occurrence in the '
+      'same session retries',
+      () async {
+        SecurityService.incidentSenderForTest = (payload) async {
+          throw Exception('offline');
+        };
+        await SecurityService.reportThreatForTest(SecurityThreat.debugger);
+
+        expect(sent, isEmpty);
+        expect(SecurityService.unsyncedThreatBuffer, hasLength(1));
+        expect(
+          SecurityService.unsyncedThreatBuffer.single['log_status'],
+          'insert_failed',
+        );
+
+        SecurityService.incidentSenderForTest = (payload) async {
+          sent.add(payload);
+        };
+        await SecurityService.reportThreatForTest(SecurityThreat.debugger);
+
+        expect(sent, hasLength(1));
+      },
+    );
+
+    test(
+      'details carry policy, enforcement, action taken, detection source and '
+      'installer — and nothing else (no PII)',
+      () async {
+        SecurityService.enforceOverrideForTest = true;
+
+        await SecurityService.reportThreatForTest(
+          SecurityThreat.hooks,
+          source: 'freerasp',
+        );
+
+        final payload = sent.single;
+        expect(payload['app_version'], '1.2.0');
+        expect(payload['app_build_number'], '42');
+        final details = payload['details'] as Map<String, dynamic>;
+        expect(details['detection_source'], 'freerasp');
+        expect(details['policy'], 'terminate');
+        expect(details['enforced'], isTrue);
+        expect(details['action_taken'], 'terminated');
+        expect(details['installer'], 'com.google.android.packageinstaller');
+        expect(
+          details.keys.toSet(),
+          equals({
+            'detection_source',
+            'policy',
+            'enforced',
+            'action_taken',
+            'installer',
+          }),
+        );
+      },
+    );
+
+    test('unofficial-store details record whether sideload was allowed',
+        () async {
+      SecurityService.allowSideloadOverrideForTest = true;
+      await SecurityService.reportThreatForTest(SecurityThreat.unofficialStore);
+
+      final details = sent.single['details'] as Map<String, dynamic>;
+      expect(details['sideload_allowed'], isTrue);
+      expect(details['policy'], 'telemetry_only');
+    });
+
+    group('termination (enforcement ON)', () {
+      setUp(() {
+        SecurityService.enforceOverrideForTest = true;
+        // Pin strict mode so these tests do not depend on whether the
+        // developer ran `flutter test` with a SECURITY_ALLOW_SIDELOAD define.
+        SecurityService.allowSideloadOverrideForTest = false;
+      });
+
+      for (final threat in [
+        SecurityThreat.appIntegrity,
+        SecurityThreat.hooks,
+        SecurityThreat.privilegedAccess,
+      ]) {
+        for (final allowSideload in [false, true]) {
+          test(
+            '${threat.name} terminates (allowSideload=$allowSideload)',
+            () async {
+              SecurityService.allowSideloadOverrideForTest = allowSideload;
+
+              await SecurityService.reportThreatForTest(threat);
+
+              expect(killed, equals([threat.label]));
+            },
+          );
+        }
+      }
+
+      for (final threat in [
+        SecurityThreat.debugger,
+        SecurityThreat.simulator,
+        SecurityThreat.passcode,
+        SecurityThreat.secureHardware,
+        SecurityThreat.deviceBinding,
+        SecurityThreat.deviceId,
+        SecurityThreat.obfuscation,
+      ]) {
+        test('${threat.name} is telemetry-only: reported, never terminates',
+            () async {
+          await SecurityService.reportThreatForTest(threat);
+
+          expect(killed, isEmpty);
+          expect(sent, hasLength(1));
+          final details = sent.single['details'] as Map<String, dynamic>;
+          expect(details['action_taken'], 'reported_only');
+        });
+      }
+
+      test('a screen-share app never terminates', () async {
+        await SecurityService.reportThreatForTest(
+          SecurityThreat.screenShareApp,
+          subject: 'com.discord',
+        );
+
+        expect(killed, isEmpty);
+        expect(sent, hasLength(1));
+      });
+
+      test('unofficial store terminates when strict (the default)', () async {
+        await SecurityService.reportThreatForTest(
+          SecurityThreat.unofficialStore,
+        );
+
+        expect(killed, equals(['Installed from Unofficial Store']));
+      });
+
+      test(
+        'unofficial store is telemetry-only with SECURITY_ALLOW_SIDELOAD=true '
+        '(direct-APK distribution)',
+        () async {
+          SecurityService.allowSideloadOverrideForTest = true;
+
+          await SecurityService.reportThreatForTest(
+            SecurityThreat.unofficialStore,
+          );
+
+          expect(killed, isEmpty);
+          expect(sent, hasLength(1));
+        },
+      );
+    });
+
+    test('enforcement OFF never terminates, even for a terminate-policy threat',
+        () async {
+      SecurityService.enforceOverrideForTest = false;
+
+      await SecurityService.reportThreatForTest(SecurityThreat.hooks);
+
+      expect(killed, isEmpty);
+      final details = sent.single['details'] as Map<String, dynamic>;
+      expect(details['policy'], 'terminate');
+      expect(details['enforced'], isFalse);
+      expect(details['action_taken'], 'reported_only');
     });
   });
 }

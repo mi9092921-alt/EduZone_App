@@ -9,11 +9,18 @@ run-dev:
 # Release builds use the same single .env — flip the APP_ENV/SENTRY_DSN
 # pair inside it to the production values before building for release.
 
+# Android versionCode / security_incidents.app_build_number. Without an
+# explicit --build-number every build reports the pubspec `+1` suffix (i.e.
+# "1"), so incident rows from different APKs cannot be told apart. Defaults to
+# the commit count (monotonic per branch); override with
+# `make build-prod BUILD_NUMBER=123`.
+BUILD_NUMBER ?= $(shell git rev-list --count HEAD)
+
 build-prod:
-	flutter build apk --release --dart-define-from-file=.env
+	flutter build apk --release --dart-define-from-file=.env --build-number=$(BUILD_NUMBER)
 
 build-prod-aab:
-	flutter build appbundle --release --dart-define-from-file=.env
+	flutter build appbundle --release --dart-define-from-file=.env --build-number=$(BUILD_NUMBER)
 
 build-ios:
 	flutter build ipa --release --dart-define-from-file=.env

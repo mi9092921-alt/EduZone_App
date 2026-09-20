@@ -90,7 +90,11 @@ jobs:
           fi
       - name: flutter build appbundle --release
         if: steps.check.outputs.ready == 'true'
-        run: flutter build appbundle --release --dart-define-from-file=.env
+        # --build-number: without it every release reports the pubspec `+1`
+        # suffix ("1") as versionCode / security_incidents.app_build_number.
+        # github.run_number is monotonic per workflow, which is also what
+        # Google Play requires of versionCode.
+        run: flutter build appbundle --release --dart-define-from-file=.env --build-number=${{ github.run_number }}
       - name: fastlane android internal
         if: steps.check.outputs.ready == 'true'
         env:

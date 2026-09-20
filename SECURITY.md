@@ -251,6 +251,81 @@ unacceptable false-positive rate, flip the define to `false` for the next
 release (telemetry only) until the `security_incidents` data confirms the
 rate is acceptable.
 
+### Threat policy — what terminates and what is telemetry-only
+
+Owner decision (2026-09-20). What each threat DOES is decided in one place,
+the table in `lib/core/security/threat_policy.dart` (`SecurityThreat` /
+`ThreatPolicy`), not per callback. Before this policy every freeRASP callback
+and the screen-share scan funnelled into the same kill path, so a student with
+Discord installed, or no screen lock, could be locked out.
+
+| Threat (`security_incidents.threat`) | Action |
+|---|---|
+| App Integrity Compromised · Hooks Detected · Privileged Access (Root/Jailbreak) | **Terminate** (when enforcement is on) |
+| Installed from Unofficial Store | **Terminate** by default (strict, correct for a store build); **telemetry-only** when the build sets `SECURITY_ALLOW_SIDELOAD=true` |
+| Debugger Detected · Running on Simulator/Emulator · No Secure Passcode · Secure Hardware Not Available · Device Binding Compromised · Device ID Compromised · Obfuscation Issues · Screen Share App Installed: `<package>` | **Telemetry-only** — reported, never terminates, never blocks login, never hides content |
+
+`SECURITY_ENFORCE_THREAT_TERMINATION` still gates termination as a whole
+(release builds only). Debugger detection is telemetry-only by owner choice:
+Talsec's own guidance recommends terminating on a debugger, so this is
+detection without prevention — flip `SecurityThreat.debugger` to
+`ThreatAction.terminate` to restore it.
+
+**Direct-APK distribution (`SECURITY_ALLOW_SIDELOAD`).** Distribution is a
+direct APK — intentionally and temporarily; there is no store yet — and
+freeRASP reports "Installed from Unofficial Store" for every sideloaded
+install. `SECURITY_ALLOW_SIDELOAD=true` makes only that one threat
+telemetry-only. The default is strict: omitted or blank keeps it terminating,
+so a future store build enforces again without any code change. Repackaged or
+re-signed APKs are still caught by `onAppIntegrity` (signing-certificate
+hash) and still terminate. Enable the flag for the sideload APK build only;
+never for a store build.
+
+**Screen sharing.** An installed package is not "active screen sharing".
+`ScreenShareGuard` reports installed blacklisted packages (Discord, Zoom,
+Teams, Meet, Skype, TeamViewer, AnyDesk, Bandicam, Screen Stream Mirroring) as
+`Screen Share App Installed: <package>` — exact package-name match, no cache,
+telemetry-only. The actual protection against capture and casting is
+`FLAG_SECURE`, set natively in `MainActivity.kt` (before the first frame and
+re-asserted on window focus) and enforced app-wide by `ScreenshotGuard`. Not
+verified here (needs a real device): that the video surfaces (media_kit,
+YouTube WebView, offline player) render black under a real screen recording or
+a Discord/Zoom screen share. On Android 11+ the installed-package query only
+sees other apps if the merged manifest declares package visibility; Google Play
+restricts `QUERY_ALL_PACKAGES`, so re-evaluate this guard before a store
+build.
+
+### `security_incidents` telemetry
+
+- **One row per (device, threat, session).** A session is one app process;
+  the device fingerprint is constant for it, so the report name is the dedupe
+  key. Repeated freeRASP callbacks and repeated scans in one run add nothing.
+  A failed delivery is kept in the in-memory buffer and does not consume the
+  slot, so a later occurrence retries.
+- **`details` (jsonb, no PII):** `detection_source` (`freerasp`,
+  `installed_package_query`, `startup`), `policy` (`terminate` |
+  `telemetry_only`), `enforced` (whether this build enforces termination),
+  `action_taken` (`terminated` | `reported_only`), `installer` (installer
+  package name when the OS reports one, e.g. `com.android.vending`), and for
+  the store check `sideload_allowed`.
+- **`app_build_number`** now differs per build: `make build-prod` and the
+  release workflow pass `--build-number` (previously every row said `1`).
+- **Device fingerprint** (`DeviceInfoHelper`) is a SHA-256 over a random
+  per-install id (kept in secure storage) plus hardware fields, and
+  `allowBackup` is off, so it does **not** survive uninstall/reinstall or
+  clearing app data — a reinstall shows up as a new device. Do not use it as a
+  long-term identity.
+- Server side (unchanged; verified by reading `supabase/schema/`, the
+  deployed database was not inspected): direct client INSERT is revoked
+  (`10_permissions.sql`); the only write path is the
+  `report_security_incident` RPC (shape validation, per-IP and anonymous
+  volume absorption — it deliberately does not use `check_rate_limit`, whose
+  tenant/user key is NULL pre-login, nor a threat-name whitelist, which would
+  silently drop future detectors); RLS is enabled and forced, `anon` has no
+  SELECT policy or grant, and the only client SELECT policy is admin-only
+  (`09_rls.sql`); rows older than 90 days are purged nightly by
+  `maintenance.apply_telemetry_retention()` when `pg_cron` is enabled.
+
 ## Offline downloads
 
 AES-256-GCM, one randomly generated 256-bit key per download (verified in
