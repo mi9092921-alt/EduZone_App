@@ -31,6 +31,11 @@ class CourseRatingSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Watched (not just read) so the autoDispose submit notifier stays alive
+    // for the whole in-flight submission — a read-only notifier has no
+    // listeners and Riverpod may dispose it mid-round-trip, losing the
+    // final success/error state the tap handler reports on.
+    ref.watch(courseRatingSubmitProvider);
     final ratingInputEnabled = ref
         .watch(featureFlagsProvider)
         .isEnabled(FeatureFlagKey.courseRating);
@@ -93,7 +98,7 @@ class CourseRatingSection extends ConsumerWidget {
     );
   }
 
-  Future<void> _submitRating(
+  Future<bool> _submitRating(
     BuildContext context,
     WidgetRef ref,
     int value,
@@ -104,30 +109,42 @@ class CourseRatingSection extends ConsumerWidget {
     await submit.submit(course.id, value);
 
     final submitState = ref.read(courseRatingSubmitProvider);
-    if (!context.mounted) return;
-    if (submitState.hasValue) {
-      FeedbackService.show(
-        context,
-        message:
-            hadPreviousRating ? l10n.ratingUpdated : l10n.ratingSubmitted,
-        type: FeedbackType.success,
-      );
-    } else if (submitState.hasError) {
+    if (!context.mounted) return false;
+    // Error takes precedence: under Riverpod 3 an AsyncError set after a
+    // previous AsyncData still reports hasValue (it carries the previous
+    // value), so checking hasValue first misreports failures as success.
+    if (submitState.hasError) {
       FeedbackService.show(
         context,
         message: l10n.ratingSubmitFailed,
         type: FeedbackType.error,
       );
+      return false;
     }
+    FeedbackService.show(
+      context,
+      message: hadPreviousRating ? l10n.ratingUpdated : l10n.ratingSubmitted,
+      type: FeedbackType.success,
+    );
+    return true;
   }
 }
 
 /// The tappable 1–5 star row. Submission happens on tap (no separate
 /// confirm button) — matching the one-tap rating pattern of most
 /// store-style UIs; a re-tap updates the rating.
-class _RatingStars extends StatelessWidget {
+///
+/// The tapped value is shown optimistically: the star lights up on the tap
+/// itself instead of waiting for the `rate_course` round-trip and the
+/// `myCourseRating` re-fetch to come back. The local override is dropped as
+/// soon as the provider reports a (different) value, and reverted if the
+/// submit fails.
+class _RatingStars extends StatefulWidget {
   final int? currentRating;
-  final ValueChanged<int> onSubmit;
+
+  /// Returns `true` when the submission succeeded, so the optimistic star
+  /// can be kept (it matches what the provider will report) or reverted.
+  final Future<bool> Function(int) onSubmit;
   final AppLocalizations l10n;
 
   const _RatingStars({
@@ -137,8 +154,25 @@ class _RatingStars extends StatelessWidget {
   });
 
   @override
+  State<_RatingStars> createState() => _RatingStarsState();
+}
+
+class _RatingStarsState extends State<_RatingStars> {
+  int? _optimisticRating;
+
+  @override
+  void didUpdateWidget(covariant _RatingStars oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Server state moved on (re-fetch completed) — defer to it.
+    if (widget.currentRating != oldWidget.currentRating &&
+        _optimisticRating != null) {
+      _optimisticRating = null;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final selected = currentRating ?? 0;
+    final selected = _optimisticRating ?? widget.currentRating ?? 0;
     return Row(
       children: [
         for (var star = 1; star <= 5; star++)
@@ -149,13 +183,21 @@ class _RatingStars extends StatelessWidget {
                 : Icons.star_outline_rounded,
             color: AppColors.warning,
             iconSize: 32,
-            semanticLabel: l10n.ratingStarTooltip(star),
+            semanticLabel: widget.l10n.ratingStarTooltip(star),
             style: const ButtonStyle(visualDensity: VisualDensity.compact),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            onPressed: () => onSubmit(star),
+            onPressed: () => _onStarTap(star),
           ),
       ],
     );
+  }
+
+  Future<void> _onStarTap(int star) async {
+    setState(() => _optimisticRating = star);
+    final success = await widget.onSubmit(star);
+    if (!success && mounted && _optimisticRating == star) {
+      setState(() => _optimisticRating = null);
+    }
   }
 }

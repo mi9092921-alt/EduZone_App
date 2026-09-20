@@ -362,4 +362,95 @@ void main() {
       expect(secondSectionLessons[0]['user_progress'], isEmpty);
     });
   });
+
+  group('CoursesJsonMapper.sortCurriculum', () {
+    test('sorts sections and their lessons by order_index ascending', () {
+      final target = {
+        'sections': [
+          {
+            'id': 's2',
+            'order_index': 2,
+            'lessons': [
+              {'id': 'l21', 'order_index': 2},
+              {'id': 'l20', 'order_index': 0},
+            ],
+          },
+          {
+            'id': 's1',
+            'order_index': 1,
+            'lessons': [
+              {'id': 'l12', 'order_index': 12},
+              {'id': 'l10', 'order_index': 10},
+              {'id': 'l11', 'order_index': 11},
+            ],
+          },
+        ],
+      };
+
+      CoursesJsonMapper.sortCurriculum(target);
+
+      final sections = target['sections'] as List;
+      expect(sections.map((s) => s['id']), ['s1', 's2']);
+      expect(
+        (sections[0]['lessons'] as List).map((l) => l['id']),
+        ['l10', 'l11', 'l12'],
+      );
+      expect(
+        (sections[1]['lessons'] as List).map((l) => l['id']),
+        ['l20', 'l21'],
+      );
+    });
+
+    test('breaks order_index ties deterministically by created_at', () {
+      final target = {
+        'sections': [
+          {
+            'id': 'late',
+            'order_index': 0,
+            'created_at': '2026-09-02T10:00:00Z',
+            'lessons': <Map<String, dynamic>>[],
+          },
+          {
+            'id': 'early',
+            'order_index': 0,
+            'created_at': '2026-09-01T10:00:00Z',
+            'lessons': <Map<String, dynamic>>[],
+          },
+        ],
+      };
+
+      CoursesJsonMapper.sortCurriculum(target);
+
+      expect(
+        (target['sections'] as List).map((s) => s['id']),
+        ['early', 'late'],
+      );
+    });
+
+    test('treats a missing order_index as 0 and is a no-op for non-lists', () {
+      final target = {
+        'sections': [
+          {
+            'id': 'no-index',
+            'lessons': [
+              {'id': 'l-no-index'},
+              {'id': 'l-indexed', 'order_index': -1},
+            ],
+          },
+        ],
+        'unrelated': 'kept',
+      };
+
+      CoursesJsonMapper.sortCurriculum(target);
+
+      final lessons = (target['sections'] as List)[0]['lessons'] as List;
+      expect(lessons.map((l) => l['id']), ['l-indexed', 'l-no-index']);
+      expect(target['unrelated'], 'kept');
+
+      // No sections list at all → no-op, nothing thrown.
+      final empty = <String, dynamic>{'title': 'x'};
+      CoursesJsonMapper.sortCurriculum(empty);
+      expect(empty, {'title': 'x'});
+    });
+  });
 }

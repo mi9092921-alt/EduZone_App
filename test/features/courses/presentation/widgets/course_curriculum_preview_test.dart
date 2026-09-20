@@ -77,9 +77,12 @@ Widget _wrap(Course course) {
 
 void main() {
   group('CourseCurriculumPreview', () {
-    testWidgets('renders nothing when the course has no sections', (tester) async {
+    testWidgets('shows the no-content message when the course has no sections', (tester) async {
       await tester.pumpWidget(_wrap(_courseWithoutSections));
+      await tester.pumpAndSettle();
 
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.noContentAvailable), findsOneWidget);
       expect(find.byType(ExpansionTile), findsNothing);
       expect(tester.takeException(), isNull);
     });

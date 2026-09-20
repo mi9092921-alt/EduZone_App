@@ -27,7 +27,18 @@ abstract final class CoursesQueries {
       course_id,
       tenant_id,
       title,
-      lessons(id, section_id, course_id, title, is_preview, duration_sec)
+      order_index,
+      created_at,
+      lessons(
+        id,
+        section_id,
+        course_id,
+        title,
+        order_index,
+        is_preview,
+        duration_sec,
+        created_at
+      )
     )
   ''';
 }

@@ -21,8 +21,20 @@ class CourseCurriculumPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Nothing published yet (e.g. a non-enrolled visitor when every section
+    // is unpublished): show the same empty message as the details screen
+    // instead of leaving a blank tab.
     if (course.sections == null || course.sections!.isEmpty) {
-      return const SizedBox.shrink();
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
+          child: Text(
+            l10n.noContentAvailable,
+            style: AppTextStyles.bodyMedium.copyWith(color: ds.textMuted),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
     }
 
     return Column(

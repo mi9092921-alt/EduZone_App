@@ -266,6 +266,130 @@ void main() {
       expect(await dataSource.getMyCourseEnrollment('course-x'), isNull);
     });
 
+    test('getCourseOutline orders sections and lessons by order_index and '
+        'sorts the payload client-side regardless of arrival order',
+        () async {
+      // Arrival order deliberately shuffled: sections [s2, s1], s2's
+      // lessons [l22, l20], s1's lessons [l11, l10].
+      const outlineRow = {
+        'id': 'course-1',
+        'tenant_id': 'tenant-1',
+        'title': 'Flutter Mastery',
+        'status': 'published',
+        'is_discoverable': true,
+        'teacher': null,
+        'learning_objectives': [],
+        'prerequisites': [],
+        'sections': [
+          {
+            'id': 's2',
+            'course_id': 'course-1',
+            'tenant_id': 'tenant-1',
+            'title': 'Section Two',
+            'order_index': 2,
+            'created_at': '2026-09-02T00:00:00Z',
+            'lessons': [
+              {
+                'id': 'l22',
+                'section_id': 's2',
+                'course_id': 'course-1',
+                'tenant_id': 'tenant-1',
+                'title': 'Lesson 2.2',
+                'order_index': 22,
+                'created_at': '2026-09-02T00:00:00Z',
+              },
+              {
+                'id': 'l20',
+                'section_id': 's2',
+                'course_id': 'course-1',
+                'tenant_id': 'tenant-1',
+                'title': 'Lesson 2.0',
+                'order_index': 20,
+                'created_at': '2026-09-02T00:00:00Z',
+              },
+            ],
+          },
+          {
+            'id': 's1',
+            'course_id': 'course-1',
+            'tenant_id': 'tenant-1',
+            'title': 'Section One',
+            'order_index': 1,
+            'created_at': '2026-09-01T00:00:00Z',
+            'lessons': [
+              {
+                'id': 'l11',
+                'section_id': 's1',
+                'course_id': 'course-1',
+                'tenant_id': 'tenant-1',
+                'title': 'Lesson 1.1',
+                'order_index': 11,
+                'created_at': '2026-09-01T00:00:00Z',
+              },
+              {
+                'id': 'l10',
+                'section_id': 's1',
+                'course_id': 'course-1',
+                'tenant_id': 'tenant-1',
+                'title': 'Lesson 1.0',
+                'order_index': 10,
+                'created_at': '2026-09-01T00:00:00Z',
+              },
+            ],
+          },
+        ],
+      };
+
+      http.BaseRequest? coursesRequest;
+      handler = (request) async {
+        if (request.url.path.endsWith('/rest/v1/courses')) {
+          coursesRequest = request;
+          return http.Response(
+            jsonEncode(outlineRow),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.url.path.endsWith('/rest/v1/rpc/get_courses_instructors')) {
+          // mergeInstructors enrichment: empty answer keeps the course as-is.
+          return http.Response(
+            jsonEncode([]),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return postgrestError('unexpected request', 'TEST404');
+      };
+
+      final course = await dataSource.getCourseOutline('course-1');
+
+      // Server-side: the outline query must carry explicit embed ordering —
+      // a PostgREST embed has no guaranteed row order without it.
+      expect(
+        coursesRequest!.url.queryParameters['sections.order'],
+        'order_index.asc.nullslast',
+      );
+      expect(
+        coursesRequest!.url.queryParameters['sections.lessons.order'],
+        'order_index.asc.nullslast',
+      );
+
+      // Client-side: even though the fake server ignored the order params
+      // and returned shuffled rows, the mapped curriculum is sorted.
+      expect(
+        course.sections!.map((s) => s.id).toList(),
+        ['s1', 's2'],
+      );
+      expect(
+        course.sections!.first.lessons!.map((l) => l.id).toList(),
+        ['l10', 'l11'],
+      );
+      expect(
+        course.sections!.last.lessons!.map((l) => l.id).toList(),
+        ['l20', 'l22'],
+      );
+    });
+
     test('getPublicCourses widens the filter to tenant courses when the JWT '
         'carries a tenant_id', () async {
       http.BaseRequest? coursesRequest;

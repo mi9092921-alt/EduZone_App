@@ -65,9 +65,16 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
             .eq('user_id', userId)
             .order('enrolled_at', ascending: false);
 
-        return (response as List)
-            .map((json) => CourseEnrollment.fromJson(json))
-            .toList();
+        return (response as List).map((json) {
+          final enrollmentJson = Map<String, dynamic>.from(json as Map);
+          final courseJson = enrollmentJson['course'];
+          if (courseJson is Map) {
+            final sortedCourse = Map<String, dynamic>.from(courseJson);
+            CoursesJsonMapper.sortCurriculum(sortedCourse);
+            enrollmentJson['course'] = sortedCourse;
+          }
+          return CourseEnrollment.fromJson(enrollmentJson);
+        }).toList();
       } on PostgrestException catch (e) {
         throw ServerException(e.message, e.code); // check-ignore
       } catch (e) {
@@ -146,6 +153,21 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
             )
           ''')
             .eq('id', courseId)
+            // Deterministic curriculum order: a PostgREST embed has NO
+            // guaranteed row order without an explicit order param, so
+            // sections and lessons otherwise come back in whatever order
+            // the planner picks (observed as shuffled lessons in the
+            // accordion, curriculum preview, and player sidebar).
+            .order(
+              'order_index',
+              referencedTable: 'sections',
+              ascending: true,
+            )
+            .order(
+              'order_index',
+              referencedTable: 'sections.lessons',
+              ascending: true,
+            )
             .single();
 
         final fullData = Map<String, dynamic>.from(courseResponse);
@@ -161,6 +183,7 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
 
         CoursesJsonMapper.flattenLearningObjectives(fullData);
         CoursesJsonMapper.flattenPrerequisites(fullData);
+        CoursesJsonMapper.sortCurriculum(fullData);
 
         // The users SELECT RLS hides teacher rows from students, so the
         // PostgREST teacher join above resolves to NULL for them —
@@ -304,6 +327,7 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
             target: fullData,
             debugLog: true,
           );
+          CoursesJsonMapper.sortCurriculum(fullData);
 
           return Course.fromJson(fullData);
         }).toList();
@@ -593,6 +617,7 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
             rawJson: rawJson,
             target: fullData,
           );
+          CoursesJsonMapper.sortCurriculum(fullData);
 
           return Course.fromJson(fullData);
         }).toList();

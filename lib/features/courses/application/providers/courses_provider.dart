@@ -455,6 +455,7 @@ class CourseRatingSubmit extends _$CourseRatingSubmit {
     // The RPC already recomputed the aggregate server-side; re-read it
     // wherever it is displayed (cards, preview, details).
     ref.invalidate(myCourseRatingProvider(courseId));
+    ref.invalidate(courseDetailsProvider(courseId));
     ref.invalidate(publicCoursesProvider);
     ref.invalidate(savedCoursesProvider);
   }

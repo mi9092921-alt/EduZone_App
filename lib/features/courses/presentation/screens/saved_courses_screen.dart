@@ -75,6 +75,7 @@ class SavedCoursesScreen extends ConsumerWidget {
                         ? course.totalDurationMinutes
                         : null,
                     rating: course.rating,
+                    ratingCount: course.ratingCount,
                     studentsCount: course.studentsCount,
                     isFree: course.isFree,
                     price: course.price,

@@ -1,11 +1,14 @@
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/feature_flags/feature_flag_keys.dart';
+import '../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/components/lesson_tile.dart';
 import '../../../../shared/models/course.dart';
 
-class LessonsSidebar extends StatelessWidget {
+class LessonsSidebar extends ConsumerWidget {
   final Course course;
   final String currentLessonId;
 
@@ -26,8 +29,16 @@ class LessonsSidebar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final allSections = course.sections ?? [];
+
+    // Remote kill switch (FeatureFlagKey.coursesDownloads): false removes the
+    // download indicator here too — this sidebar was the one LessonTile call
+    // site that never passed `showDownload`, so the tile default (true) kept
+    // the button visible even with downloads disabled remotely.
+    final showDownload = ref
+        .watch(featureFlagsProvider)
+        .isEnabled(FeatureFlagKey.coursesDownloads);
 
     // تصفية الأقسام لعرض القسم الذي يحتوي على الدرس الحالي فقط
     final sections = allSections.where((section) {
@@ -108,6 +119,7 @@ class LessonsSidebar extends StatelessWidget {
                   isLocked: isLocked,
                   isFree: lesson.isPreview,
                   isEnrolled: isEnrolled,
+                  showDownload: showDownload,
                   onTap: () {
                     onLessonTap(lesson.id);
                   },

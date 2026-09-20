@@ -1,3 +1,4 @@
+import 'package:app/core/feature_flags/feature_flag_keys.dart';
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/features/video_player/presentation/widgets/lessons_sidebar.dart';
 import 'package:app/shared/components/lesson_tile.dart';
@@ -5,7 +6,10 @@ import 'package:app/shared/models/course.dart';
 import 'package:app/shared/models/lesson.dart';
 import 'package:app/shared/models/section.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../../../helpers/feature_flag_overrides.dart';
 
 // Regression coverage for the lock icon that always rendered in the video
 // player's lesson sidebar (`lib/shared/components/lesson_tile.dart`'s
@@ -67,16 +71,20 @@ const _course = Course(
 Widget _wrap({
   required bool isEnrolled,
   String currentLessonId = _lockedLessonId,
+  Map<FeatureFlagKey, bool> flagValues = const {},
 }) {
-  return MaterialApp(
-    localizationsDelegates: AppLocalizations.localizationsDelegates,
-    supportedLocales: AppLocalizations.supportedLocales,
-    home: Scaffold(
-      body: LessonsSidebar(
-        course: _course,
-        currentLessonId: currentLessonId,
-        isEnrolled: isEnrolled,
-        onLessonTap: (_) {},
+  return ProviderScope(
+    overrides: [featureFlagsOverride(flagValues)],
+    child: MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Scaffold(
+        body: LessonsSidebar(
+          course: _course,
+          currentLessonId: currentLessonId,
+          isEnrolled: isEnrolled,
+          onLessonTap: (_) {},
+        ),
       ),
     ),
   );
@@ -134,6 +142,37 @@ void main() {
           matching: find.byType(Checkbox),
         ),
         findsOneWidget,
+      );
+    });
+  });
+
+  group('LessonsSidebar — courses_downloads kill switch', () {
+    testWidgets(
+        'the per-lesson download indicator renders for an enrolled user by '
+        'default (flag on)', (tester) async {
+      await tester.pumpWidget(_wrap(isEnrolled: true));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.download_for_offline_outlined), findsWidgets);
+    });
+
+    testWidgets(
+        'the download indicator disappears for everyone when '
+        'courses_downloads is disabled remotely', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          isEnrolled: true,
+          flagValues: {FeatureFlagKey.coursesDownloads: false},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byIcon(Icons.download_for_offline_outlined),
+        findsNothing,
+        reason:
+            'the sidebar was the one LessonTile call site that ignored the '
+            'courses_downloads flag — the button must vanish with the rest',
       );
     });
   });

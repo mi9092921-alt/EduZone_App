@@ -92,6 +92,10 @@ class DiscoverCourseCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs2),
         ],
         _buildDiscoverMetaRow(colors, l10n),
+        if (data.rating != null && data.rating! > 0) ...[
+          const SizedBox(height: AppSpacing.xs2),
+          _buildRatingRow(data.rating!, colors, l10n),
+        ],
         const Spacer(),
         Row(
           children: [
@@ -117,11 +121,11 @@ class DiscoverCourseCard extends StatelessWidget {
       // the Spacer above the price badge can push it to the bottom.
       expandContent: true,
       // Fix: the horizontal layout carries richer content than other cards
-      // (title + instructor + meta row + rating + price/footer badge), so
-      // CourseCardBase's generic defaults (height 100 / image width 95) are
-      // not enough and were causing a RenderFlex overflow / squeezed layout
-      // (seen in SavedCoursesScreen and Discover search results). Give this
-      // card its own horizontal sizing instead of relying on the defaults.
+      // (title + instructor + lessons/duration row + rating row + price/footer
+      // badge), so CourseCardBase's generic defaults (height 100 / image width
+      // 95) are not enough and were causing a RenderFlex overflow / squeezed
+      // layout (seen in SavedCoursesScreen and Discover search results). 144
+      // gives the rating row headroom while the 136-wide image stays square.
       horizontalHeight: isHorizontal ? 136 : 100,
       // Square thumbnail in the horizontal layout (width == height) for
       // Saved Courses, Discover/Search results.
@@ -169,11 +173,6 @@ class DiscoverCourseCard extends StatelessWidget {
     AppLocalizations l10n,
   ) {
     final chips = <Widget>[
-      // Rating chip is data-gated (audit P0 H5): it renders only when the
-      // course carries a real rating — never a placeholder — so it appears
-      // the moment a ratings source ships on the backend.
-      if (data.rating != null && data.rating! > 0)
-        _buildRatingChip(data.rating!, colors),
       if (data.totalLessons != null && data.totalLessons! > 0)
         _buildMetaChip(
           Icons.menu_book_rounded,
@@ -197,9 +196,16 @@ class DiscoverCourseCard extends StatelessWidget {
     );
   }
 
-  /// Star + value, mirroring [CourseMetaRow]'s amber-star rating styling at
-  /// the card's compact chip scale.
-  Widget _buildRatingChip(double rating, DesignSystemColors colors) {
+  /// Rating on its own row under the lessons/duration chips: star + average
+  /// + the number of raters. Data-gated (audit P0 H5) — only rendered when
+  /// the course carries a real rating, and the count only when one exists,
+  /// so a stale/zero count never claims precision it doesn't have.
+  Widget _buildRatingRow(
+    double rating,
+    DesignSystemColors colors,
+    AppLocalizations l10n,
+  ) {
+    final hasCount = (data.ratingCount ?? 0) > 0;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -211,6 +217,17 @@ class DiscoverCourseCard extends StatelessWidget {
             color: colors.textPrimary,
           ),
         ),
+        if (hasCount) ...[
+          const SizedBox(width: AppSpacing.sm),
+          Text(
+            l10n.ratingsCountLabel(data.ratingCount!),
+            style: AppTextStyles.labelSmall.copyWith(
+              color: colors.textMuted,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ],
     );
   }

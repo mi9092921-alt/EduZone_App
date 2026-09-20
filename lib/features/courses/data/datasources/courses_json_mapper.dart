@@ -112,6 +112,56 @@ abstract final class CoursesJsonMapper {
         .toList();
   }
 
+  /// Sorts `target['sections']` and each section's `lessons` by
+  /// `order_index` ascending, breaking ties by `created_at` so the result
+  /// is deterministic even when rows share an order_index (Dart's
+  /// [List.sort] is not stable). The outline query already asks PostgREST
+  /// to order both embeds; this is the client-side guarantee that the
+  /// rendered curriculum (accordion, preview, player sidebar) never
+  /// depends on the server's row order. No-ops if `sections` isn't a
+  /// list; non-map entries are dropped defensively.
+  static void sortCurriculum(Map<String, dynamic> target) {
+    final sections = target['sections'];
+    if (sections is! List) return;
+
+    try {
+      (sections as dynamic).sort((a, b) {
+        if (a is Map && b is Map) {
+          return _compareByOrderIndexThenCreatedAt(a, b);
+        }
+        return 0;
+      });
+    } catch (_) {}
+
+    for (final section in sections) {
+      if (section is! Map) continue;
+      final lessons = section['lessons'];
+      if (lessons is! List) continue;
+      try {
+        (lessons as dynamic).sort((a, b) {
+          if (a is Map && b is Map) {
+            return _compareByOrderIndexThenCreatedAt(a, b);
+          }
+          return 0;
+        });
+      } catch (_) {}
+    }
+  }
+
+  static int _compareByOrderIndexThenCreatedAt(
+    Map a,
+    Map b,
+  ) {
+    final byOrder = ((a['order_index'] as num?)?.toInt() ?? 0).compareTo(
+      (b['order_index'] as num?)?.toInt() ?? 0,
+    );
+    if (byOrder != 0) return byOrder;
+    // ISO-8601 timestamps compare correctly as strings; missing → ''.
+    final aCreated = a['created_at']?.toString() ?? '';
+    final bCreated = b['created_at']?.toString() ?? '';
+    return aCreated.compareTo(bCreated);
+  }
+
   /// Defensive client-side filter: keeps only `user_progress` rows
   /// belonging to [userId] inside `target['sections'][*]['lessons'][*]`
   /// (the RPC/join can return rows for other users depending on RLS

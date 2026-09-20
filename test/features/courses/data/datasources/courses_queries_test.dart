@@ -12,6 +12,7 @@ void main() {
     test('lightSectionsWithLessons selects the columns Course.fromJson needs', () {
       expect(CoursesQueries.lightSectionsWithLessons, contains('sections('));
       expect(CoursesQueries.lightSectionsWithLessons, contains('lessons('));
+      expect(CoursesQueries.lightSectionsWithLessons, contains('order_index'));
       expect(CoursesQueries.lightSectionsWithLessons, contains('is_preview'));
       expect(CoursesQueries.lightSectionsWithLessons, contains('duration_sec'));
     });

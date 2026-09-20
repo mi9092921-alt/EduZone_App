@@ -40,10 +40,16 @@ void main() {
       expect(find.text('12 lessons'), findsOneWidget);
       expect(find.text('1h 30m'), findsOneWidget);
       expect(find.text('Free'), findsOneWidget);
-      // The rating chip renders only from real data (audit P0 H5): a
-      // course that carries a rating shows it, no placeholder otherwise.
+      // The rating renders only from real data (audit P0 H5): a course that
+      // carries a rating shows it, no placeholder otherwise.
       expect(find.text('4.8'), findsOneWidget);
       expect(find.byIcon(Icons.star_rounded), findsOneWidget);
+      // The rater count sits beside the average…
+      expect(find.text('42 ratings'), findsOneWidget);
+      // …and the rating row lives BELOW the lessons/duration chips row.
+      final lessonsTop = tester.getTopLeft(find.text('12 lessons')).dy;
+      final ratingTop = tester.getTopLeft(find.text('4.8')).dy;
+      expect(ratingTop, greaterThan(lessonsTop));
     });
 
     testWidgets('hides rating when the course carries none or a zero value', (
