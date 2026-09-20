@@ -1077,6 +1077,44 @@ class AppLocalizationsAr extends AppLocalizations {
   String get offlinePlaybackError => 'تعذّر تشغيل الدرس بدون إنترنت.';
 
   @override
+  String get offlineDenialDownloadNotFound => 'هذا التنزيل غير متوفر بعد الآن.';
+
+  @override
+  String get offlineDenialTampered =>
+      'تعذّر التحقق من هذا التنزيل، ويجب تنزيله مرة أخرى.';
+
+  @override
+  String get offlineDenialNotCompleted => 'لم يكتمل تنزيل هذا الدرس بعد.';
+
+  @override
+  String get offlineDenialExpired =>
+      'انتهت صلاحية هذا التنزيل. أعد الاتصال بالإنترنت ثم نزّله مرة أخرى.';
+
+  @override
+  String get offlineDenialOwnerMismatch =>
+      'هذا التنزيل يخص حسابًا آخر على هذا الجهاز ولا يمكن تشغيله هنا.';
+
+  @override
+  String get offlineDenialDeviceMismatch =>
+      'هذا التنزيل مرتبط بجهاز آخر ولا يمكن تشغيله هنا.';
+
+  @override
+  String get offlineDenialMissingFile =>
+      'ملفات هذا التنزيل مفقودة أو تالفة. احذفه ونزّله مرة أخرى.';
+
+  @override
+  String get offlineDenialMissingKey =>
+      'لا يمكن فك تشفير هذا التنزيل على هذا الجهاز. احذفه ونزّله مرة أخرى.';
+
+  @override
+  String get offlineDenialClockRollback =>
+      'يبدو أن ساعة هذا الجهاز قد تغيّرت. أعد الاتصال بالإنترنت وحاول مرة أخرى.';
+
+  @override
+  String get offlineDenialServerDenied =>
+      'لم يعد هذا التنزيل مصرحًا به. أعد الاتصال بالإنترنت ثم نزّله مرة أخرى.';
+
+  @override
   String get playButtonLabel => 'تشغيل';
 
   @override

@@ -593,14 +593,23 @@ void main() {
     });
   });
 
-  test('userMessage never includes raw internal details', () {
-    for (final reason in OfflinePlaybackDenialReason.values) {
-      final message =
-          OfflinePlaybackDeniedException(reason, 'downloadId=secret-internal-id')
-              .userMessage;
-      expect(message.contains('secret-internal-id'), isFalse);
-      expect(message.contains('Exception'), isFalse);
-      expect(message.isNotEmpty, isTrue);
-    }
-  });
+  test(
+    'every denial reason is carried verbatim on the exception '
+    '(UI localizes it; debugDetail stays dev-only)',
+    () {
+      // The user-facing wording moved to the l10n ARB layer
+      // (OfflinePlayerErrorView.offlineDenialMessage) — the exception's
+      // contract is the machine-readable reason plus a debugDetail that
+      // must never be rendered. The localized-copy exhaustiveness is
+      // guarded by offline_player_error_view_test.dart.
+      for (final reason in OfflinePlaybackDenialReason.values) {
+        final exception = OfflinePlaybackDeniedException(
+          reason,
+          'downloadId=secret-internal-id',
+        );
+        expect(exception.reason, reason);
+        expect(exception.debugDetail, contains('secret-internal-id'));
+      }
+    },
+  );
 }

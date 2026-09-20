@@ -96,7 +96,6 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
   bool _hasError = false;
   bool _isPlaying = false;
   bool _showControls = true;
-  bool _errorIsSafeForRelease = false;
   int _speedIndex = 2; // Index 2 = 1.0x in _speeds below
   late final List<double> _speeds =
       [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]; // Indices: [0, 1, 2, 3, 4, 5]
@@ -115,6 +114,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
     },
   );
   String? _errorMessage;
+  OfflinePlaybackDenialReason? _denialReason;
 
   @override
   void initState() {
@@ -363,18 +363,16 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
       setState(() {
         _isLoading = false;
         _hasError = true;
-        // OfflinePlaybackDeniedException carries a message that was
-        // written specifically to be shown to end users (no paths, ids,
-        // or internal state) — show it even in release builds. Any other
-        // exception is developer-facing detail and stays gated behind
-        // kDebugMode in OfflinePlayerErrorView, per project instructions
-        // §14 (never expose raw exceptions to users).
+        // OfflinePlaybackDeniedException hands the UI a denial REASON —
+        // OfflinePlayerErrorView resolves it to localized, release-safe
+        // copy (ARB-sourced, no paths/ids). Any other exception is
+        // developer-facing detail and stays gated behind kDebugMode in
+        // OfflinePlayerErrorView, per project instructions §14 (never
+        // expose raw exceptions to users).
         if (error is OfflinePlaybackDeniedException) {
-          _errorMessage = error.userMessage;
-          _errorIsSafeForRelease = error.isSafeForRelease;
+          _denialReason = error.reason;
         } else {
           _errorMessage = error.toString();
-          _errorIsSafeForRelease = false;
         }
       });
     }
@@ -420,7 +418,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
       _hasError = false;
       _isLoading = true;
       _errorMessage = null;
-      _errorIsSafeForRelease = false;
+      _denialReason = null;
       _showControls = true;
     });
 
@@ -483,8 +481,8 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
     if (_hasError) {
       return OfflinePlayerErrorView(
         aspectRatio: aspectRatio,
+        denialReason: _denialReason,
         errorMessage: _errorMessage,
-        alwaysShowMessage: _errorIsSafeForRelease,
         onRetry: _retry,
       );
     }

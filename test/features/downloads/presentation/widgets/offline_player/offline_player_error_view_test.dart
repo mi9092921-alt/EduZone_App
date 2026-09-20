@@ -1,3 +1,5 @@
+import 'package:app/core/l10n/arb/app_localizations.dart';
+import 'package:app/features/downloads/application/services/offline_policy_engine.dart';
 import 'package:app/features/downloads/presentation/widgets/offline_player/offline_player_error_view.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
@@ -69,28 +71,84 @@ void main() {
     });
 
     testWidgets(
-      'shows errorMessage even outside debug builds when alwaysShowMessage is true',
+      'renders localized English denial copy for a denial reason',
       (WidgetTester tester) async {
-        // Regression test for the offline-playback authorization wiring:
-        // OfflinePlaybackDeniedException.userMessage is written to be safe
-        // for end users, so OfflinePlayerWrapper passes
-        // alwaysShowMessage: true for it — this should render regardless
-        // of kDebugMode, unlike the raw-exception-text case above.
+        // Regression: denial wording used to be hardcoded English on the
+        // exception (OfflinePlaybackDeniedException.userMessage), which
+        // surfaced English copy to ar-EG users. The reason enum is now
+        // resolved to ARB-sourced copy at render time.
         await tester.pumpWidget(
           buildTestableWidget(
             OfflinePlayerErrorView(
               aspectRatio: 16 / 9,
-              errorMessage: 'This offline download has expired.',
-              alwaysShowMessage: true,
+              denialReason: OfflinePlaybackDenialReason.expired,
+              errorMessage: null,
               onRetry: () {},
             ),
           ),
         );
 
         expect(
-          find.text('This offline download has expired.'),
+          find.text(
+            'This offline download has expired. Reconnect and download '
+            'it again.',
+          ),
           findsOneWidget,
         );
+      },
+    );
+
+    testWidgets(
+      'renders Arabic denial copy under the ar-EG locale',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          buildTestableWidget(
+            OfflinePlayerErrorView(
+              aspectRatio: 16 / 9,
+              denialReason: OfflinePlaybackDenialReason.tampered,
+              errorMessage: null,
+              onRetry: () {},
+            ),
+            locale: const Locale('ar', 'EG'),
+          ),
+        );
+
+        expect(
+          find.text('تعذّر التحقق من هذا التنزيل، ويجب تنزيله مرة أخرى.'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'every denial reason maps to a localized message',
+      (WidgetTester tester) async {
+        // Guards against a reason being added to the enum without an ARB
+        // entry: offlineDenialMessage throws on a missing switch case only
+        // if the analyzer misses it — exhaustiveness is compile-time, but
+        // an ARB key can still be forgotten, so render each reason.
+        for (final reason in OfflinePlaybackDenialReason.values) {
+          await tester.pumpWidget(
+            buildTestableWidget(
+              OfflinePlayerErrorView(
+                aspectRatio: 16 / 9,
+                denialReason: reason,
+                errorMessage: null,
+                onRetry: () {},
+              ),
+            ),
+          );
+          await tester.pump();
+
+          final l10n = AppLocalizations.of(
+            tester.element(find.byType(OfflinePlayerErrorView)),
+          )!;
+          expect(
+            find.text(offlineDenialMessage(l10n, reason)),
+            findsOneWidget,
+            reason: 'missing localized copy for ${reason.name}',
+          );
+        }
       },
     );
   });

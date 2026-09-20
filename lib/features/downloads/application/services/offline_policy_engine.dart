@@ -32,51 +32,17 @@ enum OfflinePlaybackDenialReason {
 /// allowed.
 ///
 /// Carries a machine-readable [reason] plus [debugDetail] for logs/
-/// diagnostics, and a separate [userMessage] that is safe to show to end
-/// users (no file paths, ids, or internal state) — per project
+/// diagnostics only (no file paths, ids, or internal state) — per project
 /// instructions §14, raw exception text must never reach the UI directly.
+/// The user-facing wording for every [reason] lives in the l10n ARB files
+/// and is resolved at render time by `OfflinePlayerErrorView` via
+/// `offlineDenialMessage` — the reason enum, not an English string, is the
+/// contract this layer hands to the UI.
 class OfflinePlaybackDeniedException implements Exception {
   final OfflinePlaybackDenialReason reason;
   final String debugDetail;
 
   const OfflinePlaybackDeniedException(this.reason, this.debugDetail);
-
-  /// Whether [userMessage] is safe to show even in release builds. All
-  /// current reasons are — none of them leak anything beyond "this
-  /// download can't play right now and here's the generic reason why".
-  bool get isSafeForRelease => true;
-
-  String get userMessage {
-    switch (reason) {
-      case OfflinePlaybackDenialReason.downloadNotFound:
-        return 'This download is no longer available.';
-      case OfflinePlaybackDenialReason.tampered:
-        return 'This download can no longer be verified and must be '
-            'downloaded again.';
-      case OfflinePlaybackDenialReason.notCompleted:
-        return 'This download has not finished yet.';
-      case OfflinePlaybackDenialReason.expired:
-        return 'This offline download has expired. Reconnect and '
-            'download it again.';
-      case OfflinePlaybackDenialReason.ownerMismatch:
-        return 'This download belongs to a different account on this '
-            "device and can't be played here.";
-      case OfflinePlaybackDenialReason.deviceMismatch:
-        return "This download is bound to a different device and can't "
-            'be played here.';
-      case OfflinePlaybackDenialReason.missingFile:
-        return 'This download is missing or corrupted. Delete it and '
-            'download it again.';
-      case OfflinePlaybackDenialReason.missingKey:
-        return 'This download can no longer be decrypted on this device. '
-            'Delete it and download it again.';
-      case OfflinePlaybackDenialReason.clockRollbackSuspected:
-        return "This device's clock appears to have changed. Reconnect to "
-            'the internet and try again.';
-      case OfflinePlaybackDenialReason.serverRevalidationDenied:
-        return 'This offline download is no longer authorized. Reconnect and download it again.';
-    }
-  }
 
   @override
   String toString() =>
@@ -187,8 +153,8 @@ class OfflinePolicyEngine {
     } on OfflinePlaybackDeniedException catch (e) {
       // P6.36/P6.37 security telemetry — never includes file paths, keys,
       // or any of the fields OfflinePlaybackDeniedException.debugDetail
-      // may carry; only the machine-readable reason and downloadId, same
-      // as OfflinePlaybackDeniedException.userMessage's safety contract.
+      // may carry; only the machine-readable reason and downloadId (the
+      // end-user wording is resolved from the reason by the UI layer).
       _eventBus?.emit(OfflinePlaybackDeniedEvent(
         timestamp: DateTime.now(),
         userId: _currentUserId(),
@@ -211,7 +177,7 @@ class OfflinePolicyEngine {
     if (row == null) {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.downloadNotFound,
-        'No local record for downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
+        'No local record for downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — localized in OfflinePlayerErrorView
       );
     }
 
@@ -225,7 +191,7 @@ class OfflinePolicyEngine {
     if (!isIntact) {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.tampered,
-        'downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
+        'downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — localized in OfflinePlayerErrorView
       );
     }
 
@@ -233,7 +199,7 @@ class OfflinePolicyEngine {
     if (status != 'completed') {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.notCompleted,
-        'downloadId=$downloadId status=$status', // check-ignore: dev-only debugDetail, never rendered — see userMessage
+        'downloadId=$downloadId status=$status', // check-ignore: dev-only debugDetail, never rendered — localized in OfflinePlayerErrorView
       );
     }
 
@@ -246,7 +212,7 @@ class OfflinePolicyEngine {
     } on ClockRollbackSuspectedException catch (e) {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.clockRollbackSuspected,
-        'downloadId=$downloadId ${e.detail}', // check-ignore: dev-only debugDetail, never rendered — see userMessage
+        'downloadId=$downloadId ${e.detail}', // check-ignore: dev-only debugDetail, never rendered — localized in OfflinePlayerErrorView
       );
     }
 
@@ -322,7 +288,7 @@ class OfflinePolicyEngine {
     if (expiresAt != null && DateTime.now().isAfter(expiresAt)) {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.expired,
-        'downloadId=$downloadId expiresAt=$expiresAt', // check-ignore: dev-only debugDetail, never rendered — see userMessage
+        'downloadId=$downloadId expiresAt=$expiresAt', // check-ignore: dev-only debugDetail, never rendered — localized in OfflinePlayerErrorView
       );
     }
 
@@ -334,7 +300,7 @@ class OfflinePolicyEngine {
         !await File(encryptedPath).exists()) {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.missingFile,
-        'downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
+        'downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — localized in OfflinePlayerErrorView
       );
     }
 
@@ -381,7 +347,7 @@ class OfflinePolicyEngine {
     if (key == null || key.isEmpty) {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.missingKey,
-        'downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
+        'downloadId=$downloadId', // check-ignore: dev-only debugDetail, never rendered — localized in OfflinePlayerErrorView
       );
     }
   }
@@ -407,14 +373,14 @@ class OfflinePolicyEngine {
     if (ownerUserId != currentUserId) {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.ownerMismatch,
-        'downloadId=$downloadId owner=$ownerUserId current=$currentUserId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
+        'downloadId=$downloadId owner=$ownerUserId current=$currentUserId', // check-ignore: dev-only debugDetail, never rendered — localized in OfflinePlayerErrorView
       );
     }
     if (ownerDeviceId != currentDeviceId) {
       throw OfflinePlaybackDeniedException(
         OfflinePlaybackDenialReason.deviceMismatch,
-        'downloadId=$downloadId ownerDevice=$ownerDeviceId ' // check-ignore: dev-only debugDetail, never rendered — see userMessage
-        'currentDevice=$currentDeviceId', // check-ignore: dev-only debugDetail, never rendered — see userMessage
+        'downloadId=$downloadId ownerDevice=$ownerDeviceId ' // check-ignore: dev-only debugDetail, never rendered — localized in OfflinePlayerErrorView
+        'currentDevice=$currentDeviceId', // check-ignore: dev-only debugDetail, never rendered — localized in OfflinePlayerErrorView
       );
     }
   }

@@ -2036,6 +2036,66 @@ abstract class AppLocalizations {
   /// **'Could not play the offline lesson.'**
   String get offlinePlaybackError;
 
+  /// No description provided for @offlineDenialDownloadNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'This download is no longer available.'**
+  String get offlineDenialDownloadNotFound;
+
+  /// No description provided for @offlineDenialTampered.
+  ///
+  /// In en, this message translates to:
+  /// **'This download can no longer be verified and must be downloaded again.'**
+  String get offlineDenialTampered;
+
+  /// No description provided for @offlineDenialNotCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'This download has not finished yet.'**
+  String get offlineDenialNotCompleted;
+
+  /// No description provided for @offlineDenialExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'This offline download has expired. Reconnect and download it again.'**
+  String get offlineDenialExpired;
+
+  /// No description provided for @offlineDenialOwnerMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'This download belongs to a different account on this device and can\'t be played here.'**
+  String get offlineDenialOwnerMismatch;
+
+  /// No description provided for @offlineDenialDeviceMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'This download is bound to a different device and can\'t be played here.'**
+  String get offlineDenialDeviceMismatch;
+
+  /// No description provided for @offlineDenialMissingFile.
+  ///
+  /// In en, this message translates to:
+  /// **'This download is missing or corrupted. Delete it and download it again.'**
+  String get offlineDenialMissingFile;
+
+  /// No description provided for @offlineDenialMissingKey.
+  ///
+  /// In en, this message translates to:
+  /// **'This download can no longer be decrypted on this device. Delete it and download it again.'**
+  String get offlineDenialMissingKey;
+
+  /// No description provided for @offlineDenialClockRollback.
+  ///
+  /// In en, this message translates to:
+  /// **'This device\'s clock appears to have changed. Reconnect to the internet and try again.'**
+  String get offlineDenialClockRollback;
+
+  /// No description provided for @offlineDenialServerDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'This offline download is no longer authorized. Reconnect and download it again.'**
+  String get offlineDenialServerDenied;
+
   /// No description provided for @playButtonLabel.
   ///
   /// In en, this message translates to:

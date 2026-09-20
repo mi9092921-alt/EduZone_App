@@ -1083,6 +1083,45 @@ class AppLocalizationsEn extends AppLocalizations {
   String get offlinePlaybackError => 'Could not play the offline lesson.';
 
   @override
+  String get offlineDenialDownloadNotFound =>
+      'This download is no longer available.';
+
+  @override
+  String get offlineDenialTampered =>
+      'This download can no longer be verified and must be downloaded again.';
+
+  @override
+  String get offlineDenialNotCompleted => 'This download has not finished yet.';
+
+  @override
+  String get offlineDenialExpired =>
+      'This offline download has expired. Reconnect and download it again.';
+
+  @override
+  String get offlineDenialOwnerMismatch =>
+      'This download belongs to a different account on this device and can\'t be played here.';
+
+  @override
+  String get offlineDenialDeviceMismatch =>
+      'This download is bound to a different device and can\'t be played here.';
+
+  @override
+  String get offlineDenialMissingFile =>
+      'This download is missing or corrupted. Delete it and download it again.';
+
+  @override
+  String get offlineDenialMissingKey =>
+      'This download can no longer be decrypted on this device. Delete it and download it again.';
+
+  @override
+  String get offlineDenialClockRollback =>
+      'This device\'s clock appears to have changed. Reconnect to the internet and try again.';
+
+  @override
+  String get offlineDenialServerDenied =>
+      'This offline download is no longer authorized. Reconnect and download it again.';
+
+  @override
   String get playButtonLabel => 'play';
 
   @override
