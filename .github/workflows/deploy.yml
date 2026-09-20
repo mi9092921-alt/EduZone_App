@@ -5,6 +5,10 @@ name: Deploy
 # (workflow_dispatch); a skipped deployment must never be reported as success.
 on:
   workflow_dispatch: {}
+# Least privilege: the deploy only needs read access to the checkout
+# (signing keys come from CI secrets, not from the token).
+permissions:
+  contents: read
 
 jobs:
   deploy_android:

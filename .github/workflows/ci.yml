@@ -5,6 +5,9 @@ on:
   pull_request:
     branches: [ "develop", "main" ]
   workflow_dispatch:
+# Least privilege: CI only needs read access to source.
+permissions:
+  contents: read
 
 jobs:
   quality:
