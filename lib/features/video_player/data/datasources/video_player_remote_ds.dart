@@ -8,7 +8,9 @@ import '../../domain/entities/lesson_progress_sync_item.dart';
 
 /// Remote data source for video progress operations.
 ///
-/// Handles upsert to `user_progress` table and activity logging.
+/// Progress writes go through the `update_lesson_progress` RPC (never a
+/// direct `user_progress` upsert) and activity logging through
+/// `log_activity_async`.
 class VideoPlayerRemoteDataSource {
   final SupabaseClient? _explicitClient;
   SupabaseClient get _client => _explicitClient ?? SupabaseService.client;
@@ -35,7 +37,26 @@ class VideoPlayerRemoteDataSource {
     ]);
   }
 
-  /// Upserts multiple progress rows in one PostgREST request.
+  /// Syncs multiple progress items by delegating each one to the
+  /// server-authoritative `update_lesson_progress` RPC.
+  ///
+  /// PHASE-5 authorization fix: this used to be a direct
+  /// `user_progress` upsert, which RLS scoped to the caller's own rows +
+  /// tenant but which BYPASSED the entitlement check the platform applies
+  /// to every other progress write — the RPC validates preview/enrollment/
+  /// teacher/admin access for (course, lesson), derives the tenant
+  /// server-side, clamps progress values, and writes the row, all inside
+  /// one transaction. A direct upsert allowed any authenticated user to
+  /// fabricate progress (including completions) for courses they were
+  /// never entitled to. The RPC is also the path the rest of the app
+  /// already uses (see `CoursesRemoteDataSourceImpl.updateLessonProgress`),
+  /// so authorization logic stays in exactly one place.
+  ///
+  /// Items are attempted independently: a failure in one item does not
+  /// prevent the remaining items from being attempted. The first failure
+  /// is rethrown after the loop, and `LessonProgressSyncEngine` re-queues
+  /// the whole batch — safe, because every item is an idempotent upsert,
+  /// so re-sending items that already succeeded is harmless.
   Future<void> syncProgressBatch(List<LessonProgressSyncItem> items) async {
     if (items.isEmpty) return;
 
@@ -44,28 +65,36 @@ class VideoPlayerRemoteDataSource {
         final userId = _client.auth.currentUser?.id;
         if (userId == null) throw const ServerException('User not authenticated'); // check-ignore
 
-        final tenantId = await _resolveTenantId(items);
-        final now = DateTime.timestamp().toIso8601String();
-        final rows = items
-            .map(
-              (item) => {
-                'user_id': userId,
-                'course_id': item.courseId,
-                'lesson_id': item.lessonId,
-                'tenant_id': tenantId,
-                'completed': item.completed,
-                'progress_pct': item.progressPct,
-                if (item.completed) 'completed_at': now,
-                if (item.watchTimeSec != null) 'watch_time_sec': item.watchTimeSec,
-                'last_watched': now,
+        Object? firstError;
+        StackTrace? firstStackTrace;
+        for (final item in items) {
+          try {
+            await _client.rpc(
+              'update_lesson_progress',
+              params: {
+                'p_course_id': item.courseId,
+                'p_lesson_id': item.lessonId,
+                'p_progress_pct': item.progressPct,
+                'p_completed': item.completed,
+                if (item.watchTimeSec != null) 'p_watch_time_sec': item.watchTimeSec,
               },
-            )
-            .toList(growable: false);
-
-        await _client.from('user_progress').upsert(
-              rows,
-              onConflict: 'user_id,course_id,lesson_id',
             );
+          } catch (e, st) {
+            firstError ??= e;
+            firstStackTrace ??= st;
+          }
+        }
+
+        if (firstError != null) {
+          if (firstError is PostgrestException) {
+            throw ServerException(firstError.message, firstError.code); // check-ignore
+          }
+          if (firstError is AppException) throw firstError;
+          Error.throwWithStackTrace(
+            NetworkExceptionMapper.map(firstError),
+            firstStackTrace!,
+          );
+        }
       } on PostgrestException catch (e) {
         throw ServerException(e.message, e.code); // check-ignore
       } catch (e) {
@@ -73,26 +102,6 @@ class VideoPlayerRemoteDataSource {
         throw NetworkExceptionMapper.map(e);
       }
     });
-  }
-
-  Future<dynamic> _resolveTenantId(List<LessonProgressSyncItem> items) async {
-    final jwtTenantId = _client.auth.currentUser?.appMetadata['tenant_id'] ??
-        _client.auth.currentUser?.userMetadata?['tenant_id'];
-    if (jwtTenantId != null) return jwtTenantId;
-
-    final courseData = await _client
-        .from('courses')
-        .select('tenant_id')
-        .eq('id', items.first.courseId)
-        .single();
-    final tenantId = courseData['tenant_id'];
-    if (tenantId == null) {
-      throw const ServerException(
-        'Could not determine tenant_id for progress update', // check-ignore
-      );
-    }
-
-    return tenantId;
   }
 
   /// Logs an activity event (best-effort, never throws).

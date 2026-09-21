@@ -69,7 +69,10 @@ class DownloadLinkRefresher {
     required String? sourceUrl,
     required DateTime? linkValidatedAt,
     required VideoQuality quality,
-    String? lessonId,
+    // Phase 5: video-info requires lesson-scoped authorization, so the
+    // lesson this download belongs to is mandatory. resumeDownload reads it
+    // from the download row (which always carries lesson_id).
+    required String lessonId,
   }) async {
     final linkStale = linkValidatedAt == null ||
         DateTime.now().difference(linkValidatedAt) > staleAfter;

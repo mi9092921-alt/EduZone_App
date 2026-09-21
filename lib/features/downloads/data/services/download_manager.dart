@@ -64,13 +64,20 @@ Future<Task?> handleTokenRefresh(Task task) async {
     final sourceUrl = data['sourceUrl'] as String?;
     final qualityLabel = data['qualityLabel'] as String?;
     final trackType = data['trackType'] as String? ?? 'video';
+    final lessonId = data['lessonId'] as String?;
 
     if (sourceUrl == null || sourceUrl.isEmpty) return null;
+    // video-info requires lesson-scoped authorization (Phase 5): without a
+    // lesson context there is nothing this hook can legitimately refresh,
+    // so keep the task's existing URL and let it surface its own 401/403
+    // if the link truly expired.
+    if (lessonId == null || lessonId.isEmpty) return null;
 
     final freshUrl = await fetchFreshTrackUrl(
           sourceUrl: sourceUrl,
           qualityLabel: qualityLabel,
           trackType: trackType,
+          lessonId: lessonId,
         ) ??
         task.url;
 
@@ -127,15 +134,17 @@ Future<Task?> handleTokenRefresh(Task task) async {
 ///
 /// [lessonId] lets video-info authorize this specific lesson instead of
 /// trusting [sourceUrl] alone -- see the comment on
-/// `DownloadRemoteDataSource.getVideoInfo`. It is optional: the
-/// [handleTokenRefresh] pre-attempt hook currently has no lessonId in its
-/// task metadata and continues to call this URL-only.
+/// `DownloadRemoteDataSource.getVideoInfo`. Since the Phase 5
+/// authorization sweep the Edge Function rejects `lesson_id`-less
+/// requests, so this is required and callers without a lesson context
+/// must skip the refresh entirely (returning null) rather than call
+/// URL-only.
 @pragma('vm:entry-point')
 Future<String?> fetchFreshTrackUrl({
   required String sourceUrl,
   required String? qualityLabel,
   required String trackType,
-  String? lessonId,
+  required String lessonId,
 }) async {
   try {
     final client = await _supabaseClientForBackgroundCallback();
@@ -424,6 +433,7 @@ class DownloadManager {
     String? sourceUrl,
     String? qualityLabel,
     String trackType = 'video',
+    String? lessonId,
   }) async {
     if (_activeDownloadIds.length >= _maxConcurrentDownloads) {
       throw Exception('Maximum concurrent downloads limit reached'); // check-ignore
@@ -461,6 +471,10 @@ class DownloadManager {
       if (qualityLabel != null && qualityLabel.isNotEmpty)
         'qualityLabel': qualityLabel,
       if (sourceUrl != null && sourceUrl.isNotEmpty) 'trackType': trackType,
+      // Phase 5: video-info link refreshes are lesson-scoped — the
+      // background refresh hook needs the lesson id to re-run the same
+      // entitlement check the initial download went through.
+      if (lessonId != null && lessonId.isNotEmpty) 'lessonId': lessonId,
     };
 
     final effectiveHeaders = <String, String>{
@@ -640,7 +654,7 @@ class DownloadManager {
     String? sourceUrl,
     String? qualityLabel,
     String trackType = 'video',
-    String? lessonId,
+    required String lessonId,
   }) async {
     if (!_dioParallelEligiblePlatform) return null;
     if (_activeDownloadIds.length >= _maxConcurrentDownloads) {
@@ -811,7 +825,7 @@ class DownloadManager {
     String? sourceUrl,
     String? qualityLabel,
     String trackType = 'video',
-    String? lessonId,
+    required String lessonId,
   }) async {
     if (chunks.isEmpty) return;
     final rangeEnd = chunks.last.plaintextEnd;
@@ -1103,12 +1117,14 @@ class DownloadManager {
     String? sourceUrl;
     String? qualityLabel;
     var trackType = 'video';
+    String? metaLessonId;
     try {
       if (task is DownloadTask && task.metaData.isNotEmpty) {
         final data = jsonDecode(task.metaData) as Map<String, dynamic>;
         sourceUrl = data['sourceUrl'] as String?;
         qualityLabel = data['qualityLabel'] as String?;
         trackType = data['trackType'] as String? ?? 'video';
+        metaLessonId = data['lessonId'] as String?;
       }
     } catch (_) {
       // metaData is only used for the optional link-refresh path below;
@@ -1181,12 +1197,15 @@ class DownloadManager {
         if (!linkRefreshUsed &&
             sourceUrl != null &&
             sourceUrl.isNotEmpty &&
+            metaLessonId != null &&
+            metaLessonId.isNotEmpty &&
             looksLikeExpiredLinkError(e)) {
           linkRefreshUsed = true;
           final fresh = await fetchFreshTrackUrl(
             sourceUrl: sourceUrl,
             qualityLabel: qualityLabel,
             trackType: trackType,
+            lessonId: metaLessonId,
           );
           if (fresh != null && fresh.isNotEmpty && fresh != effectiveUrl) {
             if (kDebugMode) {

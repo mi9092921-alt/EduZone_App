@@ -210,29 +210,28 @@ class DownloadRemoteDataSource {
   /// work can legitimately take longer than a plain read, and a read-only
   /// call is safe to retry on genuine transient connectivity failure.
   ///
-  /// [lessonId], when the caller knows which lesson this request is for,
-  /// lets the Edge Function re-run the same lesson-access authorization
-  /// `get-lesson-content` uses and resolve the video URL from the lesson
-  /// record itself instead of trusting [url] -- see the matching comment
-  /// in `supabase/functions/video-info/index.ts`. Every call site in the
-  /// downloads subsystem passes it; it stays optional here only so a
-  /// malformed/missing value degrades to the previous (authenticated +
-  /// rate-limited only) behavior rather than breaking the call.
-  Future<VideoInfo> getVideoInfo(String url, {String? lessonId}) async {
+  /// [lessonId] is REQUIRED and is forwarded as `lesson_id` so the Edge
+  /// Function re-runs the same lesson-access authorization
+  /// `get-lesson-content` uses and resolves the video URL from the lesson
+  /// record itself instead of trusting [url] -- see the matching comment in
+  /// `supabase/functions/video-info/index.ts`. Since the Phase 5
+  /// authorization sweep the function rejects `lesson_id`-less requests
+  /// with a 400, so every caller must supply it (all current call sites
+  /// do, re-verified 2026-09-21).
+  Future<VideoInfo> getVideoInfo(String url, {required String lessonId}) async {
     return NetworkGuard.read(
       () async {
         try {
           assert(() {
             debugPrint('🔍 video-info Edge Function → request url: $url'
-                '${lessonId != null ? ' lessonId: $lessonId' : ''}');
+                ' lessonId: $lessonId');
             return true;
           }());
           final response = await _client.functions.invoke(
             'video-info',
             body: {
               'url': url,
-              if (lessonId != null && lessonId.isNotEmpty)
-                'lesson_id': lessonId,
+              if (lessonId.isNotEmpty) 'lesson_id': lessonId,
             },
           );
 

@@ -35,11 +35,15 @@ void main() {
         sourceUrl: 'https://example.com/source',
         linkValidatedAt: DateTime.now().subtract(const Duration(hours: 1)),
         quality: VideoQuality.p720,
+        lessonId: 'lesson-1',
       );
 
       expect(result.refreshed, isFalse);
       expect(result.videoUrl, 'https://example.com/current.mp4');
-      verifyNever(() => remoteDataSource.getVideoInfo(any()));
+      verifyNever(() => remoteDataSource.getVideoInfo(
+            any(),
+            lessonId: any(named: 'lessonId'),
+          ));
       verifyNever(() => localDataSource.updateDownload(any(), any()));
     });
 
@@ -52,10 +56,14 @@ void main() {
         sourceUrl: null,
         linkValidatedAt: DateTime.now().subtract(const Duration(hours: 6)),
         quality: VideoQuality.p720,
+        lessonId: 'lesson-1',
       );
 
       expect(result.refreshed, isFalse);
-      verifyNever(() => remoteDataSource.getVideoInfo(any()));
+      verifyNever(() => remoteDataSource.getVideoInfo(
+            any(),
+            lessonId: any(named: 'lessonId'),
+          ));
     });
 
     test('treats a never-validated link (null timestamp) as stale', () async {
@@ -86,6 +94,7 @@ void main() {
         sourceUrl: 'https://example.com/source',
         linkValidatedAt: null,
         quality: VideoQuality.p720,
+        lessonId: 'lesson-1',
       );
 
       expect(result.refreshed, isTrue);
@@ -125,6 +134,7 @@ void main() {
           linkValidatedAt:
               DateTime.now().subtract(const Duration(hours: 6)),
           quality: VideoQuality.p720,
+          lessonId: 'lesson-1',
         );
 
         expect(result.refreshed, isTrue);
@@ -158,6 +168,7 @@ void main() {
         sourceUrl: 'https://example.com/source',
         linkValidatedAt: DateTime.now().subtract(const Duration(hours: 6)),
         quality: VideoQuality.p720,
+        lessonId: 'lesson-1',
       );
 
       expect(result.refreshed, isFalse);

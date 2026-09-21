@@ -11,9 +11,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../helpers/fake_supabase_http_client.dart';
 
-/// Contract tests for [VideoPlayerRemoteDataSource] (progress upsert +
-/// activity logging) over a real [SupabaseClient] wired to a
-/// [FakeHttpClient], so the actual PostgREST machinery runs offline.
+/// Contract tests for [VideoPlayerRemoteDataSource] (progress sync via the
+/// `update_lesson_progress` RPC + activity logging) over a real
+/// [SupabaseClient] wired to a [FakeHttpClient], so the actual PostgREST
+/// machinery runs offline.
 void main() {
   const tSyncItem = LessonProgressSyncItem(
     courseId: 'course-1',
@@ -101,123 +102,71 @@ void main() {
       expect(queried, isFalse);
     });
 
-    test('upserts on the (user_id, course_id, lesson_id) conflict target '
-        'with the tenant resolved from the JWT metadata', () async {
-      http.Request? captured;
-      final dataSource = await buildSignedInDataSource((request) async {
-        captured = request as http.Request;
-        return http.Response('', 201);
-      });
-
-      await dataSource.syncProgressBatch(const [tSyncItem]);
-
-      expect(captured!.method, 'POST');
-      expect(captured!.url.path, endsWith('/rest/v1/user_progress'));
-      expect(
-        captured!.url.queryParameters['on_conflict'],
-        'user_id,course_id,lesson_id',
-      );
-      final body = jsonDecode(captured!.body) as List<dynamic>;
-      final row = body.single as Map<String, dynamic>;
-      expect(row['user_id'], 'user-1');
-      expect(row['course_id'], 'course-1');
-      expect(row['lesson_id'], 'lesson-1');
-      expect(row['tenant_id'], 'tenant-1');
-      expect(row['completed'], true);
-      expect(row['progress_pct'], 100);
-      expect(row['watch_time_sec'], 42);
-      // A completed row carries completed_at; both timestamps are ISO
-      // UTC strings.
-      expect(row['completed_at'], isNotNull);
-      expect((row['last_watched'] as String), endsWith('Z'));
-    });
-
-    test('omits completed_at/watch_time_sec for an in-progress, unwatched '
-        'row', () async {
-      http.Request? captured;
-      final dataSource = await buildSignedInDataSource((request) async {
-        captured = request as http.Request;
-        return http.Response('', 201);
-      });
-
-      await dataSource.syncProgress(
-        courseId: 'course-1',
-        lessonId: 'lesson-2',
-        completed: false,
-        progressPct: 35.5,
-      );
-
-      final row =
-          (jsonDecode(captured!.body) as List<dynamic>).single
-              as Map<String, dynamic>;
-      expect(row['completed'], false);
-      expect(row.containsKey('completed_at'), isFalse);
-      expect(row.containsKey('watch_time_sec'), isFalse);
-    });
-
-    test('falls back to the courses table for the tenant when the JWT '
-        'carries no tenant metadata', () async {
+    test('delegates each item to the update_lesson_progress RPC — the '
+        'server-authoritative path that validates entitlement, derives the '
+        'tenant, and writes the row', () async {
       final requests = <http.Request>[];
-      final dataSource = await buildSignedInDataSource(
-        (request) async {
-          requests.add(request as http.Request);
-          if (request.url.path.endsWith('/rest/v1/courses')) {
-            return http.Response(
-              jsonEncode({'tenant_id': 'tenant-from-db'}),
-              200,
-              headers: {'content-type': 'application/json'},
-            );
-          }
-          return http.Response('', 201);
-        },
-        appMetadata: null, // no tenant in JWT metadata
-      );
+      final dataSource = await buildSignedInDataSource((request) async {
+        requests.add(request as http.Request);
+        return http.Response('', 204);
+      });
 
       await dataSource.syncProgressBatch(const [tSyncItem]);
 
-      expect(requests.first.url.path, endsWith('/rest/v1/courses'));
-      expect(requests.first.url.queryParameters['id'], 'eq.course-1');
-      final upsertRow =
-          (jsonDecode(requests.last.body) as List<dynamic>).single
-              as Map<String, dynamic>;
-      expect(upsertRow['tenant_id'], 'tenant-from-db');
+      expect(requests, hasLength(1));
+      expect(requests.single.method, 'POST');
+      expect(
+        requests.single.url.path,
+        endsWith('/rest/v1/rpc/update_lesson_progress'),
+      );
+      final body = jsonDecode(requests.single.body) as Map<String, dynamic>;
+      expect(body, {
+        'p_course_id': 'course-1',
+        'p_lesson_id': 'lesson-1',
+        'p_progress_pct': 100,
+        'p_completed': true,
+        'p_watch_time_sec': 42,
+      });
+      // The RPC derives identity and tenant server-side — the client must
+      // NOT send either (the previous direct user_progress upsert used to).
+      expect(body.containsKey('tenant_id'), isFalse);
+      expect(body.containsKey('user_id'), isFalse);
     });
 
-    test('fails with a clear ServerException when the tenant cannot be '
-        'determined at all', () async {
-      final dataSource = await buildSignedInDataSource(
-        (request) async {
-          if (request.url.path.endsWith('/rest/v1/courses')) {
-            // single() with zero rows → PostgREST 406-style empty result;
-            // the DB row itself carries a NULL tenant.
-            return http.Response(
-              jsonEncode({'tenant_id': null}),
-              200,
-              headers: {'content-type': 'application/json'},
-            );
-          }
-          return http.Response('', 201);
-        },
-        appMetadata: null,
-      );
-
-      await expectLater(
-        () => dataSource.syncProgressBatch(const [tSyncItem]),
-        throwsA(
-          isA<ServerException>().having(
-            (e) => e.message,
-            'message',
-            contains('Could not determine tenant_id'),
-          ),
-        ),
-      );
-    });
-
-    test('surfaces a PostgrestException on the upsert as a ServerException',
+    test('issues one RPC per item with each item’s values verbatim',
         () async {
+      final bodies = <Map<String, dynamic>>[];
+      final dataSource = await buildSignedInDataSource((request) async {
+        bodies.add(
+          jsonDecode((request as http.Request).body) as Map<String, dynamic>,
+        );
+        return http.Response('', 204);
+      });
+
+      await dataSource.syncProgressBatch(const [
+        tSyncItem,
+        LessonProgressSyncItem(
+          courseId: 'course-2',
+          lessonId: 'lesson-2',
+          completed: false,
+          progressPct: 35.5,
+        ),
+      ]);
+
+      expect(bodies, hasLength(2));
+      expect(bodies[0]['p_lesson_id'], 'lesson-1');
+      expect(bodies[0]['p_watch_time_sec'], 42);
+      expect(bodies[1]['p_lesson_id'], 'lesson-2');
+      expect(bodies[1]['p_completed'], false);
+      expect(bodies[1]['p_progress_pct'], 35.5);
+      expect(bodies[1].containsKey('p_watch_time_sec'), isFalse);
+    });
+
+    test('surfaces a PostgrestException (e.g. RPC entitlement denial) as a '
+        'ServerException carrying the message and code', () async {
       final dataSource = await buildSignedInDataSource(
         (_) async => http.Response(
-          jsonEncode({'message': 'new row violates RLS policy', 'code': '42501'}),
+          jsonEncode({'message': 'LESSON_ACCESS_DENIED', 'code': 'P0001'}),
           400,
           headers: {'content-type': 'application/json'},
         ),
@@ -227,14 +176,31 @@ void main() {
         () => dataSource.syncProgressBatch(const [tSyncItem]),
         throwsA(
           isA<ServerException>()
-              .having(
-                (e) => e.message,
-                'message',
-                'new row violates RLS policy',
-              )
-              .having((e) => e.code, 'code', '42501'),
+              .having((e) => e.message, 'message', 'LESSON_ACCESS_DENIED')
+              .having((e) => e.code, 'code', 'P0001'),
         ),
       );
+    });
+
+    test('still attempts the remaining items when one fails, then rethrows '
+        'the first failure (the sync engine re-queues the batch; writes are '
+        'idempotent)', () async {
+      var calls = 0;
+      final dataSource = await buildSignedInDataSource((request) async {
+        calls++;
+        if (calls == 1) return http.Response('', 204);
+        return http.Response(
+          jsonEncode({'message': 'boom', 'code': 'XX000'}),
+          500,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      await expectLater(
+        () => dataSource.syncProgressBatch(const [tSyncItem, tSyncItem]),
+        throwsA(isA<ServerException>()),
+      );
+      expect(calls, 2);
     });
   });
 
