@@ -5,6 +5,7 @@ import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
 import 'package:app/features/courses/presentation/widgets/bookmark_button.dart';
+import 'package:app/shared/utils/app_snackbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +18,9 @@ Widget _wrap(CoursesRepository repository, {String courseId = 'course-1'}) {
   return ProviderScope(
     overrides: [coursesRepositoryProvider.overrideWithValue(repository)],
     child: MaterialApp(
+      // FeedbackService (AppSnackbar) renders errors through this root
+      // messenger, exactly as the real app shell wires it.
+      scaffoldMessengerKey: FeedbackService.messengerKey,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(body: BookmarkButton(courseId: courseId)),

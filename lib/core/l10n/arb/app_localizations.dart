@@ -275,7 +275,7 @@ abstract class AppLocalizations {
   /// No description provided for @errorRateLimit.
   ///
   /// In en, this message translates to:
-  /// **'Too many attempts, wait {minutes} minutes.'**
+  /// **'{minutes, plural, =1{Too many attempts, wait 1 minute.} other{Too many attempts, wait {minutes} minutes.}}'**
   String errorRateLimit(int minutes);
 
   /// No description provided for @errorMaxDevices.
@@ -301,6 +301,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Device registered to another account.'**
   String get errorDeviceBound;
+
+  /// No description provided for @sessionCheckDelayed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t verify your session. Retrying automatically…'**
+  String get sessionCheckDelayed;
 
   /// No description provided for @retryButton.
   ///

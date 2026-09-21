@@ -447,6 +447,12 @@ class CourseRatingSubmit extends _$CourseRatingSubmit {
         (aggregate) => aggregate,
       );
     });
+    // The rating WAS submitted server-side by the time this runs; if the
+    // screen was popped mid-submit this autoDispose notifier is already
+    // disposed and a state write would throw StateError into the zone
+    // (unhandled-error noise for an operation that actually succeeded).
+    // Same ref.mounted discipline as ProfileActions/Player4VideoInfo.
+    if (!ref.mounted) return;
     if (result.hasError) {
       state = AsyncError(result.error!, result.stackTrace!);
       return;

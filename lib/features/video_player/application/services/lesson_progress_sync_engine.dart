@@ -11,6 +11,19 @@ class LessonProgressSyncEngine {
   final Duration flushInterval;
   final int maxBatchSize;
 
+  /// Ceiling for the exponential retry delay after consecutive failed
+  /// flushes (flushInterval * 2^failures, capped here).
+  final Duration maxRetryDelay;
+
+  /// After this many consecutive failed flushes the periodic retry stops
+  /// scheduling itself — a deterministic failure (RPC authorization
+  /// denial, malformed payload) must not wake the network every 10s for
+  /// the app's entire lifetime (Phase 8: retry loop without terminal
+  /// condition). Pending items are KEPT: any subsequent enqueue re-arms
+  /// the timer (including the flushNow path a completed lesson takes),
+  /// so a transient outage recovers on the next natural progress event.
+  final int maxConsecutiveFailures;
+
   final Map<String, LessonProgressSyncItem> _pending = {};
   Timer? _flushTimer;
   Future<Either<Failure, void>>? _activeFlush;
@@ -18,11 +31,14 @@ class LessonProgressSyncEngine {
   bool _isDisposed = false;
   bool _sessionOpen = true;
   bool _discardAfterFlush = false;
+  int _consecutiveFailures = 0;
 
   LessonProgressSyncEngine({
     required SyncLessonProgress syncLessonProgress,
     this.flushInterval = const Duration(seconds: 10),
     this.maxBatchSize = 20,
+    this.maxRetryDelay = const Duration(minutes: 2),
+    this.maxConsecutiveFailures = 6,
   }) : _syncLessonProgress = syncLessonProgress;
 
   int get pendingCount => _pending.length;
@@ -37,14 +53,24 @@ class LessonProgressSyncEngine {
         _pending.length >= maxBatchSize ||
         item.completed ||
         _isDisposed) {
+      // Event-driven flush: a user/completion-triggered attempt is always
+      // allowed (one attempt per event), even after the retry budget below
+      // has stopped the idle-timer cadence — this is the recovery path.
       unawaited(flush());
       return;
     }
 
-    _flushTimer ??= Timer(flushInterval, () {
-      _flushTimer = null;
-      unawaited(flush());
-    });
+    // Idle-timer flush: only arm while the failure budget allows — this is
+    // the same "retry on a timer" path _scheduleRetry guards, and must not
+    // bypass it (each new enqueue would otherwise re-arm a 10s retry loop
+    // indefinitely while the user keeps watching during a deterministic
+    // failure).
+    if (_consecutiveFailures < maxConsecutiveFailures) {
+      _flushTimer ??= Timer(flushInterval, () {
+        _flushTimer = null;
+        unawaited(flush());
+      });
+    }
   }
 
   Future<Either<Failure, void>> flush() async {
@@ -73,23 +99,46 @@ class LessonProgressSyncEngine {
 
     final result = await _syncLessonProgress.batch(batch);
     result.match((_) {
+      // Left = flush failed → re-queue the failed items (latest-wins) and
+      // count the consecutive failure toward the retry budget.
+      _consecutiveFailures++;
       if (!_discardAfterFlush) {
         for (final item in batch) {
           final current = _pending[item.key];
           _pending[item.key] = current == null ? item : item.merge(current);
         }
       }
-    }, (_) {});
+    }, (_) {
+      // Right = flush succeeded → a fresh failure streak starts from zero.
+      _consecutiveFailures = 0;
+    });
 
     _isFlushing = false;
     if (_pending.isNotEmpty && !_isDisposed && _sessionOpen) {
-      _flushTimer ??= Timer(flushInterval, () {
-        _flushTimer = null;
-        unawaited(flush());
-      });
+      _scheduleRetry();
     }
 
     return result;
+  }
+
+  /// Arms the next retry timer with exponential backoff, or stops after
+  /// [maxConsecutiveFailures] straight failures (see its doc). A timer is
+  /// still armed when the budget remains but the last flush SUCCEEDED —
+  /// that is the ordinary interval cadence, not a failure loop.
+  void _scheduleRetry() {
+    if (_flushTimer != null) return;
+    if (_consecutiveFailures >= maxConsecutiveFailures) return;
+
+    var delay = flushInterval;
+    if (_consecutiveFailures > 0) {
+      // flushInterval * 2^(failures-1): 10s, 20s, 40s, 80s … capped.
+      delay = flushInterval * (1 << (_consecutiveFailures - 1));
+      if (delay > maxRetryDelay) delay = maxRetryDelay;
+    }
+    _flushTimer = Timer(delay, () {
+      _flushTimer = null;
+      unawaited(flush());
+    });
   }
 
   /// Flushes the current account's pending progress, then stops accepting
@@ -110,6 +159,10 @@ class LessonProgressSyncEngine {
     if (_isDisposed) return;
     _discardAfterFlush = false;
     _sessionOpen = true;
+    // A fresh account's sync failures are independent of the previous
+    // account's (e.g. an RPC denial specific to that account) — start its
+    // cadence from scratch rather than inheriting an exhausted budget.
+    _consecutiveFailures = 0;
   }
 
   Future<void> dispose() async {

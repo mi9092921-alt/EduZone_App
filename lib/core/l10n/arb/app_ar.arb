@@ -34,7 +34,7 @@
   "errorMaintenance": "النظام تحت الصيانة. يرجى التحقق لاحقاً.",
   
   "errorEmulatorBlocked": "لا يمكن تسجيل الدخول من المحاكي.",
-  "errorRateLimit": "محاولات كثيرة جداً، انتظر {minutes} دقائق.",
+  "errorRateLimit": "{minutes, plural, =1{محاولات كثيرة جداً، انتظر دقيقة واحدة.} =2{محاولات كثيرة جداً، انتظر دقيقتين.} few{محاولات كثيرة جداً، انتظر {minutes} دقائق.} many{محاولات كثيرة جداً، انتظر {minutes} دقيقة.} other{محاولات كثيرة جداً، انتظر {minutes} دقيقة.}}",
   "@errorRateLimit": {
     "placeholders": {
       "minutes": {
@@ -46,7 +46,9 @@
   "errorScreenTitle": "حدث خطأ غير متوقع",
   "errorScreenBody": "لا تقلق، فريقنا الفني سيعمل على إصلاح المشكلة في أسرع وقت. يرجى المحاولة مرة أخرى.",
   "errorDeviceBound": "هذا الجهاز مسجل لحساب آخر.",
-  
+
+  "sessionCheckDelayed": "تعذّر التحقق من جلستك. تتم إعادة المحاولة تلقائيًا…",
+
   "retryButton": "إعادة المحاولة",
 
   "lockedScreenTitle": "الحساب مقفل",

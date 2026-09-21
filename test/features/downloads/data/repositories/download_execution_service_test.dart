@@ -77,6 +77,11 @@ void main() {
         .thenAnswer((_) async {});
     when(() => localDataSource.updateDownload(any(), any()))
         .thenAnswer((_) async {});
+    // Phase 8: execute() re-checks the row exists before driving the
+    // download (cancel-vs-execute race guard). Default: the row exists —
+    // the dedicated "row already gone" test below overrides this.
+    when(() => localDataSource.getDownloadById(any()))
+        .thenAnswer((_) async => {'id': 'download-1'});
     when(() => encryptionService.calculateChecksum(any()))
         .thenAnswer((_) async => 'checksum');
     when(() => remoteDataSource.logDownloadAttempt(
@@ -97,6 +102,44 @@ void main() {
   });
 
   group('DownloadExecutionService.execute — single file', () {
+    test(
+      'does nothing when the DB row is already gone (Phase 8 '
+      'cancel-vs-execute race guard)',
+      () async {
+        // cancelDownload deletes the row synchronously while execute() was
+        // only scheduled unawaited — the guard must bail out before
+        // writing 'downloading' to a nonexistent row or downloading
+        // anything (previously the full file downloaded and the final
+        // 'completed' write silently affected 0 rows).
+        when(() => localDataSource.getDownloadById('d1'))
+            .thenAnswer((_) async => null);
+
+        await service.execute(
+          downloadId: 'd1',
+          title: 'Lesson 1',
+          videoUrl: 'https://example.com/video.mp4',
+          videoSavePath: '${tempDir.path}/lesson.mp4.enc',
+          encryptionKey: 'test-key',
+          lessonId: 'lesson-1',
+        );
+
+        verifyNever(
+          () => localDataSource.updateDownloadStatus(any(), any()),
+        );
+        verifyNever(() => downloadManager.startEncryptedDownload(
+              downloadId: any(named: 'downloadId'),
+              url: any(named: 'url'),
+              encryptedSavePath: any(named: 'encryptedSavePath'),
+              encryptionKeyBase64: any(named: 'encryptionKeyBase64'),
+              onProgress: any(named: 'onProgress'),
+              sourceUrl: any(named: 'sourceUrl'),
+              qualityLabel: any(named: 'qualityLabel'),
+              trackType: any(named: 'trackType'),
+              lessonId: any(named: 'lessonId'),
+            ));
+      },
+    );
+
     test('downloads via the pipelined path and persists completion', () async {
       final videoSavePath = '${tempDir.path}/lesson.mp4.enc';
 

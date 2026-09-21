@@ -6,6 +6,7 @@ import 'package:app/features/downloads/application/providers/downloads_provider.
 import 'package:app/features/downloads/presentation/screens/offline_player_screen.dart';
 import 'package:app/shared/models/download_enums.dart';
 import 'package:app/shared/models/downloaded_lesson.dart';
+import 'package:app/shared/widgets/error_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -91,13 +92,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // Phase 8: the error branch now classifies via ErrorHandler.getMessage
+    // (same message family as every other screen); an unknown exception
+    // still resolves to the localized generic string. Either way nothing
+    // raw ever reaches the screen — and a Retry affordance is present.
     final l10n = await AppLocalizations.delegate.load(const Locale('en'));
     expect(find.text(l10n.errorGeneric), findsOneWidget);
-    // This screen uses a fixed, generic string directly rather than
-    // ErrorHandler.getMessage() (which most other screens now use — see
-    // lib/shared/utils/error_handler.dart) — both are valid Section 14 -
-    // safe approaches since neither ever interpolates err.toString().
     expect(find.textContaining('Exception'), findsNothing);
+    expect(find.byType(ErrorState), findsOneWidget);
   });
 
   testWidgets(

@@ -272,6 +272,18 @@ class DownloadExecutionService {
     String entitlementId = '',
     DateTime? manifestExpiresAt,
   }) async {
+    // Cancel-vs-execute race guard (Phase 8): `execute` is scheduled
+    // unawaited by startDownload/resumeDownload, and cancelDownload
+    // deletes the row synchronously — if the user cancels in the window
+    // between scheduling and this line, the old code blindly wrote
+    // 'downloading' to a nonexistent row and then downloaded both tracks
+    // in full, with the final 'completed' write silently affecting 0 rows
+    // (an orphaned encrypted file until the next-start orphan sweep). A
+    // missing row here means the download was cancelled/deleted before
+    // execution began — nothing to drive.
+    final existingRow = await _localDataSource.getDownloadById(downloadId);
+    if (existingRow == null) return;
+
     // Update status to downloading
     await _localDataSource.updateDownloadStatus(downloadId, 'downloading');
     _changeController.add(null);
@@ -313,10 +325,22 @@ class DownloadExecutionService {
         lastStoredProgress = progress;
         lastProgressUpdateAt = now;
         unawaited(_localDataSource.updateProgress(downloadId, progress));
-        DownloadNotificationHelper.showProgress(
-          downloadId: downloadId,
-          title: title,
-          progress: progress,
+        // Contained like showCompleted above: a native notification
+        // failure on a progress tick must not become an unhandled Future
+        // rejection (it would surface via PlatformDispatcher as an
+        // unclassified error while the download itself is healthy).
+        unawaited(
+          DownloadNotificationHelper.showProgress(
+            downloadId: downloadId,
+            title: title,
+            progress: progress,
+          ).catchError((Object e) {
+            if (kDebugMode) {
+              debugPrint(
+                '⚠️ Download progress notification failed: ${e.runtimeType}',
+              );
+            }
+          }),
         );
       }
 
@@ -449,10 +473,26 @@ class DownloadExecutionService {
         status: DownloadStatus.completed,
       ));
 
-      await DownloadNotificationHelper.showCompleted(
-        downloadId: downloadId,
-        title: title,
-      );
+      // Notification failures must NOT route through the catch below: the
+      // row is already 'completed' at this point, and a native notification
+      // error escaping into the generic handler would emit DownloadFailedEvent
+      // and a 'failed' progress event for a download that IS complete, and
+      // attempt to regress its status (blocked only by the storage layer's
+      // completed-guard). Same containment contract as the
+      // logDownloadAttempt call further down: a cosmetic side-channel must
+      // never flip the outcome of the operation it decorates.
+      try {
+        await DownloadNotificationHelper.showCompleted(
+          downloadId: downloadId,
+          title: title,
+        );
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint(
+            '⚠️ Download completed notification failed: ${e.runtimeType}',
+          );
+        }
+      }
 
       if (quality != null) {
         try {
@@ -505,10 +545,22 @@ class DownloadExecutionService {
         status: DownloadStatus.failed,
         errorMessage: e.toString(),
       ));
-      await DownloadNotificationHelper.showFailed(
-        downloadId: downloadId,
-        title: title,
-      );
+      // Same containment contract as showCompleted above: a failure here
+      // is the last statement of the failure path — letting it throw would
+      // escape the handler and surface via the repository's escape-hatch
+      // catchError as an unclassified error, without changing any state.
+      try {
+        await DownloadNotificationHelper.showFailed(
+          downloadId: downloadId,
+          title: title,
+        );
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint(
+            '⚠️ Download failed notification also failed: ${e.runtimeType}',
+          );
+        }
+      }
     } finally {
       await closeProgressController(downloadId, controller);
     }

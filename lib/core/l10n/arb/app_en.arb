@@ -34,7 +34,7 @@
   "errorMaintenance": "System is under maintenance. Please check back later.",
   
   "errorEmulatorBlocked": "Cannot sign in from an emulator.",
-  "errorRateLimit": "Too many attempts, wait {minutes} minutes.",
+  "errorRateLimit": "{minutes, plural, =1{Too many attempts, wait 1 minute.} other{Too many attempts, wait {minutes} minutes.}}",
   "@errorRateLimit": {
     "placeholders": {
       "minutes": {
@@ -46,7 +46,9 @@
   "errorScreenTitle": "Something went wrong",
   "errorScreenBody": "Don't worry, our technical team is already working on fixing this. Please try again.",
   "errorDeviceBound": "Device registered to another account.",
-  
+
+  "sessionCheckDelayed": "Couldn't verify your session. Retrying automatically…",
+
   "retryButton": "Retry",
 
   "lockedScreenTitle": "Account Locked",

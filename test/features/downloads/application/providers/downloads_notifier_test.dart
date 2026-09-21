@@ -268,7 +268,7 @@ void main() {
     });
 
     test(
-      'on failure, sets AsyncError on the provider AND rethrows to the caller',
+      'on failure, rethrows to the caller WITHOUT wiping the loaded list',
       () async {
         when(
           () => repository.getDownloads(),
@@ -301,9 +301,13 @@ void main() {
           throwsA(same(failure)),
         );
 
+        // Phase 8: action failures surface via the caller's snackbar only;
+        // AsyncError is reserved for load failures, so one failed action
+        // can no longer replace the whole Downloads screen with the
+        // full-page error state.
         final state = container.read(downloadsProvider);
-        expect(state.hasError, isTrue);
-        expect(state.error, same(failure));
+        expect(state.hasError, isFalse);
+        expect(state.value, isNotNull);
       },
     );
   });
@@ -419,7 +423,7 @@ void main() {
 
   group('DownloadsNotifier action methods — failure path', () {
     test(
-      'pauseDownload sets AsyncError AND rethrows on repository failure',
+      'pauseDownload rethrows on repository failure WITHOUT wiping the list',
       () async {
         when(() => repository.getDownloads()).thenAnswer(
           (_) async =>
@@ -439,14 +443,16 @@ void main() {
           throwsA(same(failure)),
         );
 
+        // Phase 8: action failure rethrows (snackbar) without replacing
+        // the loaded list with AsyncError.
         final state = container.read(downloadsProvider);
-        expect(state.hasError, isTrue);
-        expect(state.error, same(failure));
+        expect(state.hasError, isFalse);
+        expect(state.value, isNotNull);
       },
     );
 
     test(
-      'resumeDownload sets AsyncError AND rethrows on repository failure',
+      'resumeDownload rethrows on repository failure WITHOUT wiping the list',
       () async {
         when(
           () => repository.getDownloads(),
@@ -465,14 +471,16 @@ void main() {
           throwsA(same(failure)),
         );
 
+        // Phase 8: action failure rethrows (snackbar) without replacing
+        // the loaded list with AsyncError.
         final state = container.read(downloadsProvider);
-        expect(state.hasError, isTrue);
-        expect(state.error, same(failure));
+        expect(state.hasError, isFalse);
+        expect(state.value, isNotNull);
       },
     );
 
     test(
-      'cancelDownload sets AsyncError AND rethrows on repository failure',
+      'cancelDownload rethrows on repository failure WITHOUT wiping the list',
       () async {
         when(
           () => repository.getDownloads(),
@@ -491,14 +499,16 @@ void main() {
           throwsA(same(failure)),
         );
 
+        // Phase 8: action failure rethrows (snackbar) without replacing
+        // the loaded list with AsyncError.
         final state = container.read(downloadsProvider);
-        expect(state.hasError, isTrue);
-        expect(state.error, same(failure));
+        expect(state.hasError, isFalse);
+        expect(state.value, isNotNull);
       },
     );
 
     test(
-      'deleteDownload sets AsyncError AND rethrows on repository failure',
+      'deleteDownload rethrows on repository failure WITHOUT wiping the list',
       () async {
         when(
           () => repository.getDownloads(),
@@ -517,14 +527,16 @@ void main() {
           throwsA(same(failure)),
         );
 
+        // Phase 8: action failure rethrows (snackbar) without replacing
+        // the loaded list with AsyncError.
         final state = container.read(downloadsProvider);
-        expect(state.hasError, isTrue);
-        expect(state.error, same(failure));
+        expect(state.hasError, isFalse);
+        expect(state.value, isNotNull);
       },
     );
 
     test(
-      'cleanupExpired sets AsyncError AND rethrows on repository failure',
+      'cleanupExpired rethrows on repository failure WITHOUT wiping the list',
       () async {
         when(
           () => repository.getDownloads(),
@@ -540,9 +552,11 @@ void main() {
 
         await expectLater(notifier.cleanupExpired(), throwsA(same(failure)));
 
+        // Phase 8: action failure rethrows (snackbar) without replacing
+        // the loaded list with AsyncError.
         final state = container.read(downloadsProvider);
-        expect(state.hasError, isTrue);
-        expect(state.error, same(failure));
+        expect(state.hasError, isFalse);
+        expect(state.value, isNotNull);
       },
     );
   });
@@ -565,6 +579,9 @@ void main() {
         // refresh() uses AsyncValue.guard — must not throw synchronously.
         await notifier.refresh();
 
+        // A LOAD failure (unlike an action failure) legitimately replaces
+        // the state with AsyncError — the stale list cannot be trusted
+        // after a failed reload.
         final state = container.read(downloadsProvider);
         expect(state.hasError, isTrue);
         expect(state.error, same(failure));
@@ -596,10 +613,31 @@ void main() {
       },
     );
 
-    test('downloadByLessonId folds a failure to null', () async {
+    test(
+      'downloadByLessonId surfaces a repository failure as AsyncError '
+      '(Phase 8: a failure must not masquerade as "not downloaded")',
+      () async {
+        const failure = NotFoundFailure('missing');
+        when(
+          () => repository.getDownloadByLessonId('lesson-1'),
+        ).thenAnswer((_) async => const Left(failure));
+
+        final sub = container.listen(
+          downloadByLessonIdProvider('lesson-1'),
+          (_, _) {},
+        );
+        addTearDown(sub.close);
+        await _settle();
+
+        final state = container.read(downloadByLessonIdProvider('lesson-1'));
+        expect(state.hasError, isTrue);
+      },
+    );
+
+    test('downloadByLessonId returns null for a genuinely absent row', () async {
       when(
         () => repository.getDownloadByLessonId('lesson-1'),
-      ).thenAnswer((_) async => const Left(NotFoundFailure('missing')));
+      ).thenAnswer((_) async => const Right(null));
 
       final result = await container.read(
         downloadByLessonIdProvider('lesson-1').future,
@@ -620,10 +658,29 @@ void main() {
       expect(result?.id, '1');
     });
 
-    test('downloadById folds a failure to null', () async {
+    test(
+      'downloadById surfaces a repository failure as AsyncError '
+      '(Phase 8: the offline player must show a retryable error, not a '
+      '"not found" dead-end, for a transient lookup failure)',
+      () async {
+        const failure = NotFoundFailure('missing');
+        when(
+          () => repository.getDownloadById('download-1'),
+        ).thenAnswer((_) async => const Left(failure));
+
+        final sub = container.listen(downloadByIdProvider('download-1'), (_, _) {});
+        addTearDown(sub.close);
+        await _settle();
+
+        final state = container.read(downloadByIdProvider('download-1'));
+        expect(state.hasError, isTrue);
+      },
+    );
+
+    test('downloadById returns null for a genuinely absent row', () async {
       when(
         () => repository.getDownloadById('download-1'),
-      ).thenAnswer((_) async => const Left(NotFoundFailure('missing')));
+      ).thenAnswer((_) async => const Right(null));
 
       final result = await container.read(
         downloadByIdProvider('download-1').future,

@@ -18,6 +18,23 @@ class TodoScreen extends ConsumerWidget {
     final todoState = ref.watch(todoProvider);
     final l10n = AppLocalizations.of(context)!;
 
+    // Phase 8: toggle/add/update failures set `TodoState.error` while the
+    // (still valid) list stays on screen — previously nothing rendered for
+    // them (the full-page error below only fires when the list is empty),
+    // so a failed mutation was indistinguishable from an unacknowledged
+    // success. Surface it as the standard classified snackbar instead,
+    // gated on the same non-empty-list condition so the empty-list case
+    // keeps its single full-page error treatment (no double reporting).
+    ref.listen<TodoState>(todoProvider, (previous, next) {
+      if (next.error == null ||
+          identical(previous?.error, next.error) ||
+          next.todos.isEmpty) {
+        return;
+      }
+      if (!context.mounted) return;
+      ErrorHandler.handle(context, next.error!);
+    });
+
     final allTodos = [...todoState.todos]
       ..sort((a, b) {
         // 1. Completion status (Pending first)
@@ -110,9 +127,15 @@ class TodoScreen extends ConsumerWidget {
 
     if (!deleted) {
       if (!context.mounted) return;
+      // Phase 8: classify via ErrorHandler instead of the previous
+      // l10n.errorLoadingTasks (a "loading" message for a delete failure);
+      // the notifier stored the typed failure on TodoState.error.
+      final failure = ref.read(todoProvider).error;
       FeedbackService.show(
         context,
-        message: l10n.errorLoadingTasks,
+        message: failure != null
+            ? ErrorHandler.getMessage(context, failure)
+            : l10n.errorGeneric,
         type: FeedbackType.error,
       );
       return;

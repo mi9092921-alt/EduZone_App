@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
+import '../../../../shared/utils/app_snackbar.dart';
 import '../../application/providers/courses_provider.dart';
 
 class BookmarkButton extends ConsumerStatefulWidget {
@@ -63,8 +64,15 @@ class BookmarkButtonState extends ConsumerState<BookmarkButton>
       if (mounted) await _controller.forward(from: 0);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.bookmarkFailed)),
+        // Phase 8 (UX consistency): this was the only raw
+        // ScaffoldMessenger snackbar left in the app — every other error
+        // routes through FeedbackService (styled, important, consistent).
+        // The bookmark-specific localized message is kept: the thrown
+        // Failure classifies to the generic string in ErrorHandler, which
+        // is strictly less informative than the dedicated key.
+        AppSnackbar.showError(
+          context: context,
+          message: AppLocalizations.of(context)!.bookmarkFailed,
         );
       }
     } finally {

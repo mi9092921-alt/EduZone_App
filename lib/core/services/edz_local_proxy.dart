@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:encrypt/encrypt.dart';
 
+import '../utils/global_error_handler.dart';
 import 'encryption_service.dart';
 
 /// Local HTTP proxy that serves decrypted plaintext ranges from a chunked
@@ -68,7 +69,14 @@ class EdzLocalProxy {
     _server!.listen((HttpRequest req) async {
       try {
         await _handleRequest(req);
-      } catch (e) {
+      } catch (e, stack) {
+        // Observability (Phase 8): mid-stream decrypt failures (corrupt or
+        // truncated .edz data) previously surfaced only as a bare 500 to
+        // the player with zero diagnostic record — the failure handler
+        // itself was unobservable. Connectivity-shaped aborts (client
+        // disconnect / socket reset) classify as noise inside logError and
+        // are console-gated, so this does not spam Sentry.
+        GlobalErrorHandler.logError(e, stack);
         try {
           // Headers may already be sent if the error happened mid-stream
           // (partway through writing decrypted chunks); setting statusCode

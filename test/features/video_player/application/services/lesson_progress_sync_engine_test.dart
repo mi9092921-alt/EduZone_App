@@ -210,4 +210,157 @@ void main() {
       );
     },
   );
+
+  group('retry budget (Phase 8: no unbounded failure/retry loop)', () {
+    test(
+      'stops timer-driven retries after maxConsecutiveFailures straight failures',
+      () async {
+        final bounded = LessonProgressSyncEngine(
+          syncLessonProgress: SyncLessonProgress(repository),
+          flushInterval: const Duration(milliseconds: 10),
+          maxConsecutiveFailures: 2,
+        );
+        when(
+          () => repository.syncProgressBatch(any()),
+        ).thenAnswer((_) async => const Left(ServerFailure('denied')));
+
+        bounded.enqueue(
+          const LessonProgressSyncItem(
+            courseId: 'c1',
+            lessonId: 'l1',
+            completed: false,
+            progressPct: 10,
+          ),
+          flushNow: true,
+        );
+        // Initial flush + one budgeted retry (the budget counts the
+        // initial attempt as the first consecutive failure).
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        final attempts = verify(
+          () => repository.syncProgressBatch(any()),
+        ).callCount;
+        expect(attempts, 2);
+
+        // Well past any backoff interval the engine would use — no further
+        // attempt may fire: the idle retry loop has a terminal state.
+        // (verifyNever counts only calls since the previous verify.)
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        verifyNever(() => repository.syncProgressBatch(any()));
+
+        await bounded.dispose();
+      },
+    );
+
+    test(
+      'an event-driven flush still attempts after the budget is exhausted '
+      '(recovery path)',
+      () async {
+        final bounded = LessonProgressSyncEngine(
+          syncLessonProgress: SyncLessonProgress(repository),
+          flushInterval: const Duration(milliseconds: 10),
+          maxConsecutiveFailures: 1,
+        );
+        when(
+          () => repository.syncProgressBatch(any()),
+        ).thenAnswer((_) async => const Left(ServerFailure('denied')));
+
+        bounded.enqueue(
+          const LessonProgressSyncItem(
+            courseId: 'c1',
+            lessonId: 'l1',
+            completed: false,
+            progressPct: 10,
+          ),
+          flushNow: true,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+
+        // Budget exhausted; a fresh enqueue forced by a completed lesson
+        // must still attempt once (event-driven, not timer-driven).
+        clearInteractions(repository);
+        when(
+          () => repository.syncProgressBatch(any()),
+        ).thenAnswer((_) async => const Right(null));
+        bounded.enqueue(
+          const LessonProgressSyncItem(
+            courseId: 'c1',
+            lessonId: 'l1',
+            completed: true,
+            progressPct: 100,
+          ),
+          flushNow: true,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+
+        verify(() => repository.syncProgressBatch(any())).called(1);
+        expect(bounded.pendingCount, 0);
+
+        await bounded.dispose();
+      },
+    );
+
+    test(
+      'a successful flush resets the consecutive-failure budget',
+      () async {
+        final bounded = LessonProgressSyncEngine(
+          syncLessonProgress: SyncLessonProgress(repository),
+          flushInterval: const Duration(milliseconds: 10),
+          maxConsecutiveFailures: 2,
+        );
+        // Fail twice (budget exhausted), succeed once (reset), then the
+        // next failure cycle must retry again rather than staying terminal.
+        var fail = true;
+        when(() => repository.syncProgressBatch(any())).thenAnswer(
+          (_) async => fail
+              ? const Left(ServerFailure('down'))
+              : const Right(null),
+        );
+
+        bounded.enqueue(
+          const LessonProgressSyncItem(
+            courseId: 'c1',
+            lessonId: 'l1',
+            completed: false,
+            progressPct: 10,
+          ),
+          flushNow: true,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        expect(verify(() => repository.syncProgressBatch(any())).callCount, 2);
+
+        fail = false;
+        bounded.enqueue(
+          const LessonProgressSyncItem(
+            courseId: 'c1',
+            lessonId: 'l2',
+            completed: true,
+            progressPct: 100,
+          ),
+          flushNow: true,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+
+        // The l2 item flushed successfully; the budget is now reset.
+        fail = true;
+        bounded.enqueue(
+          const LessonProgressSyncItem(
+            courseId: 'c1',
+            lessonId: 'l3',
+            completed: false,
+            progressPct: 50,
+          ),
+          flushNow: true,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+
+        // l3's initial flush + 2 budgeted retries happened again.
+        expect(
+          verify(() => repository.syncProgressBatch(any())).callCount,
+          greaterThanOrEqualTo(3),
+        );
+
+        await bounded.dispose();
+      },
+    );
+  });
 }

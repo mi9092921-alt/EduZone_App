@@ -183,8 +183,20 @@ class AuthDegraded extends AuthState {
   /// mainly for tests/telemetry; the UI is not required to display it.
   final int retryAttempt;
 
-  const AuthDegraded({this.error, this.retryAttempt = 0});
+  /// Whether the automatic retry budget is exhausted (no further timer is
+  /// scheduled). Kept as an explicit flag rather than derived from
+  /// [retryAttempt]: the attempt counter alone cannot distinguish "the
+  /// last scheduled retry is still pending" from "no retry is pending" —
+  /// and only the UI knows the difference matters (show a passive
+  /// "retrying" hint vs. an actionable manual-retry affordance).
+  final bool autoRetriesExhausted;
+
+  const AuthDegraded({
+    this.error,
+    this.retryAttempt = 0,
+    this.autoRetriesExhausted = false,
+  });
 
   @override
-  List<Object?> get props => [error, retryAttempt];
+  List<Object?> get props => [error, retryAttempt, autoRetriesExhausted];
 }

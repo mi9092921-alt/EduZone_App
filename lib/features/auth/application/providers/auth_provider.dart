@@ -70,7 +70,15 @@ class Auth extends _$Auth {
   // ─── Degraded-session retry (AuthDegraded) ───────────────────────────────
   Timer? _degradedRetryTimer;
   int _degradedRetryCount = 0;
-  static const _maxDegradedAutoRetries = 5;
+
+  /// Public so the UI can tell when the automatic degraded-session retry
+  /// budget is exhausted ([AuthDegraded.retryAttempt] reaching this value
+  /// means no further timer is scheduled) and must offer the manual
+  /// [retryDegradedSession] affordance instead — without duplicating the
+  /// constant. Kept on the notifier rather than folded into the state so
+  /// [AuthDegraded] stays a pure value object.
+  static const maxDegradedAutoRetries = 5;
+  static const _maxDegradedAutoRetries = maxDegradedAutoRetries;
 
   @override
   AuthState build() {
@@ -425,7 +433,11 @@ class Auth extends _$Auth {
 
     if (_degradedRetryCount >= _maxDegradedAutoRetries) {
       _safeSetStateIfStillPending(
-        AuthDegraded(error: 'errorNetwork', retryAttempt: _degradedRetryCount),
+        const AuthDegraded(
+          error: 'errorNetwork',
+          retryAttempt: _maxDegradedAutoRetries,
+          autoRetriesExhausted: true,
+        ),
       );
       return;
     }

@@ -102,7 +102,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String errorRateLimit(int minutes) {
-    return 'Too many attempts, wait $minutes minutes.';
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: 'Too many attempts, wait $minutes minutes.',
+      one: 'Too many attempts, wait 1 minute.',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -117,6 +123,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errorDeviceBound => 'Device registered to another account.';
+
+  @override
+  String get sessionCheckDelayed =>
+      'Couldn\'t verify your session. Retrying automatically…';
 
   @override
   String get retryButton => 'Retry';

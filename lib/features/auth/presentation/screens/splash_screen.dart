@@ -1,7 +1,11 @@
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/l10n/arb/app_localizations.dart';
+import '../../../../shared/models/auth_state.dart';
+import '../../application/providers/auth_provider.dart';
 import 'splash/animated_brand_name.dart';
 import 'splash/animated_logo.dart';
 import 'splash/gradient_background.dart';
@@ -49,18 +53,23 @@ import 'splash/splash_constants.dart';
 //      ),
 //    )
 
-class SplashScreen extends StatefulWidget {
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
+class _SplashScreenState extends ConsumerState<SplashScreen>
     with TickerProviderStateMixin {
   // Controllers
   late final AnimationController _main;
   late final AnimationController _pulse;
+
+  /// Guards double-taps on the degraded-session manual retry button while
+  /// the verification round-trip is in flight ([retryDegradedSession]
+  /// itself has no re-entrancy guard, by design — pacing is the UI's job).
+  bool _isRetryingDegradedSession = false;
 
   // Logo
   late final Animation<double> _logoOpacity;
@@ -232,6 +241,97 @@ class _SplashScreenState extends State<SplashScreen>
     super.dispose();
   }
 
+  // ─────────────── Degraded-session (AuthDegraded) surface ───────────
+  //
+  // Phase 8 (error-handling audit): while the session-verification retry
+  // cycle runs, the user previously stared at a silent animation for up
+  // to ~62s of automatic backoff — and once the retry budget was
+  // exhausted, FOREVER: the router pins /splash in AuthDegraded, nothing
+  // rendered the state, and `retryDegradedSession()` had zero call sites.
+  // A session-verification failure must never render as a featureless
+  // screen with no terminal state, so the splash now surfaces both
+  // phases of the degraded lifecycle. Navigation out of splash stays
+  // centralized in app_router.dart's redirect (unchanged contract).
+
+  Future<void> _retryDegradedSession() async {
+    if (_isRetryingDegradedSession) return;
+    setState(() => _isRetryingDegradedSession = true);
+    await ref.read(authProvider.notifier).retryDegradedSession();
+    if (!mounted) return;
+    setState(() => _isRetryingDegradedSession = false);
+  }
+
+  /// Localized message for [AuthDegraded.error], which carries an l10n
+  /// KEY name (see AuthDegraded's doc comment), never a raw diagnostic.
+  String _degradedMessage(BuildContext context, AuthDegraded degraded) {
+    final l10n = AppLocalizations.of(context)!;
+    if (degraded.error == 'errorNetwork') return l10n.errorNetwork;
+    return l10n.errorGeneric;
+  }
+
+  Widget _buildDegradedBanner(BuildContext context, AuthDegraded degraded) {
+    final ds = AppColors.of(context);
+    final l10n = AppLocalizations.of(context)!;
+    final exhausted = degraded.autoRetriesExhausted;
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Material(
+          color: ds.surface2,
+          borderRadius: AppRadius.mdBorder,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    exhausted
+                        ? _degradedMessage(context, degraded)
+                        : l10n.sessionCheckDelayed,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: ds.textPrimary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                if (exhausted) ...[
+                  const SizedBox(width: AppSpacing.sm),
+                  TextButton(
+                    onPressed: _isRetryingDegradedSession
+                        ? null
+                        : _retryDegradedSession,
+                    child: _isRetryingDegradedSession
+                        ? SizedBox(
+                            width: AppSpacing.lg,
+                            height: AppSpacing.lg,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: ds.primary,
+                            ),
+                          )
+                        : Text(
+                            l10n.retryButton,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: ds.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ─────────────────────────── build ─────────────────────────────────
 
   @override
@@ -240,6 +340,7 @@ class _SplashScreenState extends State<SplashScreen>
     final boldStyle = AppTextStyles.brandLogo.copyWith(
       color: isDark ? Colors.white : AppColors.primary,
     );
+    final authState = ref.watch(authProvider);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
@@ -306,6 +407,16 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
               ),
             ),
+
+            // Degraded-session surface: renders while session verification
+            // is degraded (retrying) or stuck (retries exhausted). The
+            // router's redirect still owns leaving splash — this only
+            // makes the state visible and recoverable.
+            if (authState is AuthDegraded)
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: _buildDegradedBanner(context, authState),
+              ),
           ],
         ),
       ),

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../design_system/design_system.dart';
 import '../../../../shared/models/download_enums.dart';
+import '../../../../shared/utils/error_handler.dart';
 import '../../../../shared/widgets/error_state.dart';
 import '../../application/providers/downloads_provider.dart';
 import '../widgets/offline_player_wrapper.dart';
@@ -42,8 +43,11 @@ class _OfflinePlayerScreenState extends ConsumerState<OfflinePlayerScreen> {
       error: (err, _) => Scaffold(
         appBar: AppBar(elevation: 0),
         // Audit P1 (M3): retryable error state instead of a bare message.
+        // Classified via ErrorHandler (not a hardcoded generic) so a
+        // connectivity failure vs. a storage failure renders its own
+        // localized message family, consistent with every other screen.
         body: ErrorState(
-          message: l10n.errorGeneric,
+          message: ErrorHandler.getMessage(context, err),
           onRetry: () =>
               ref.invalidate(downloadByIdProvider(widget.downloadId)),
         ),

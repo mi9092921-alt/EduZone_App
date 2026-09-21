@@ -187,8 +187,14 @@ class DownloadsNotifier extends _$DownloadsNotifier {
     // Guard: provider may have been disposed while we were awaiting.
     if (!ref.mounted || generation != _buildGeneration) return;
 
+    // On failure the provider rethrows so the calling widget shows the
+    // classified error — but does NOT overwrite `state`: writing
+    // AsyncError here replaced the previously loaded healthy list, so one
+    // failed action (e.g. a transient pause) wiped the whole Downloads
+    // screen to the full-page error state AND double-reported the failure
+    // (snackbar + error page). List-level AsyncError is reserved for
+    // build()/refresh() — i.e. failures to LOAD the list.
     await result.fold((failure) {
-      state = AsyncError(failure, StackTrace.current);
       // Re-expose failure so the calling widget can show the error.
       Error.throwWithStackTrace(failure, StackTrace.current);
     }, (_) => refresh());
@@ -206,8 +212,8 @@ class DownloadsNotifier extends _$DownloadsNotifier {
     if (!ref.mounted || generation != _buildGeneration) return;
 
     await result.fold((failure) {
-      state = AsyncError(failure, StackTrace.current);
-      // Re-expose failure so the calling widget can show the error.
+      // See startDownload: rethrow only — never replace the loaded list
+      // with AsyncError on an action failure.
       Error.throwWithStackTrace(failure, StackTrace.current);
     }, (_) => refresh());
   }
@@ -227,7 +233,8 @@ class DownloadsNotifier extends _$DownloadsNotifier {
     if (!ref.mounted || generation != _buildGeneration) return;
 
     await result.fold((failure) {
-      state = AsyncError(failure, StackTrace.current);
+      // See startDownload: rethrow only — never replace the loaded list
+      // with AsyncError on an action failure.
       Error.throwWithStackTrace(failure, StackTrace.current);
     }, (_) => refresh());
   }
@@ -243,7 +250,8 @@ class DownloadsNotifier extends _$DownloadsNotifier {
     if (!ref.mounted || generation != _buildGeneration) return;
 
     await result.fold((failure) {
-      state = AsyncError(failure, StackTrace.current);
+      // See startDownload: rethrow only — never replace the loaded list
+      // with AsyncError on an action failure.
       Error.throwWithStackTrace(failure, StackTrace.current);
     }, (_) => refresh());
   }
@@ -259,7 +267,8 @@ class DownloadsNotifier extends _$DownloadsNotifier {
     if (!ref.mounted || generation != _buildGeneration) return;
 
     await result.fold((failure) {
-      state = AsyncError(failure, StackTrace.current);
+      // See startDownload: rethrow only — never replace the loaded list
+      // with AsyncError on an action failure.
       Error.throwWithStackTrace(failure, StackTrace.current);
     }, (_) => refresh());
   }
@@ -275,7 +284,8 @@ class DownloadsNotifier extends _$DownloadsNotifier {
     if (!ref.mounted || generation != _buildGeneration) return;
 
     await result.fold((failure) {
-      state = AsyncError(failure, StackTrace.current);
+      // See startDownload: rethrow only — never replace the loaded list
+      // with AsyncError on an action failure.
       Error.throwWithStackTrace(failure, StackTrace.current);
     }, (_) => refresh());
   }
@@ -355,7 +365,14 @@ Future<DownloadedLesson?> downloadByLessonId(Ref ref, String lessonId) async {
   final result = await ref
       .watch(downloadRepositoryProvider)
       .getDownloadByLessonId(lessonId);
-  return result.fold((failure) => null, (download) => download);
+  // A repository failure (storage/DB error) must surface as AsyncError, not
+  // as `null` — Right(null) is reserved for "no such download" (the query
+  // service returns Right(null) ONLY for an absent row). Collapsing Left
+  // into null made a transient failure indistinguishable from "not
+  // downloaded" for every consumer, including the offline player, which
+  // rendered a permanent dead-end "not found" screen for a retryable
+  // failure.
+  return result.fold((failure) => throw failure, (download) => download);
 }
 
 /// Provider for getting a download by its own download ID.
@@ -364,5 +381,8 @@ Future<DownloadedLesson?> downloadById(Ref ref, String downloadId) async {
   final result = await ref
       .watch(downloadRepositoryProvider)
       .getDownloadById(downloadId);
-  return result.fold((failure) => null, (download) => download);
+  // Same contract as downloadByLessonId above: Left = real failure →
+  // AsyncError (retryable via the consuming screen's ErrorState);
+  // Right(null) = genuinely absent download.
+  return result.fold((failure) => throw failure, (download) => download);
 }

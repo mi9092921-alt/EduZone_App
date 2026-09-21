@@ -100,7 +100,16 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String errorRateLimit(int minutes) {
-    return 'محاولات كثيرة جداً، انتظر $minutes دقائق.';
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: 'محاولات كثيرة جداً، انتظر $minutes دقيقة.',
+      many: 'محاولات كثيرة جداً، انتظر $minutes دقيقة.',
+      few: 'محاولات كثيرة جداً، انتظر $minutes دقائق.',
+      two: 'محاولات كثيرة جداً، انتظر دقيقتين.',
+      one: 'محاولات كثيرة جداً، انتظر دقيقة واحدة.',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -115,6 +124,10 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get errorDeviceBound => 'هذا الجهاز مسجل لحساب آخر.';
+
+  @override
+  String get sessionCheckDelayed =>
+      'تعذّر التحقق من جلستك. تتم إعادة المحاولة تلقائيًا…';
 
   @override
   String get retryButton => 'إعادة المحاولة';

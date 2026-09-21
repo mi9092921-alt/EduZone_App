@@ -271,13 +271,27 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
         }
       });
 
-      // Mid-playback engine errors (e.g. a corrupt frame) shouldn't crash
-      // the whole screen — log them so they're visible in diagnostics
-      // without disrupting an otherwise-working playback session.
+      // Mid-playback engine errors (proxy death, corrupt/truncated chunk,
+      // decode failure) must reach a terminal, recoverable state — Phase 8:
+      // this listener previously only debugPrinted, leaving the user on a
+      // frozen frame with controls but no error surface and no retry.
+      // Route to the existing error view; its onRetry re-initializes the
+      // whole playback stack from a clean slate. The raw mpv message stays
+      // kDebugMode-gated inside OfflinePlayerErrorView (release builds
+      // show localized copy only).
       _errorSubscription = player.stream.error.listen((message) {
+        // Raw engine text stays console-gated (debugPrint is NOT
+        // release-gated by Flutter); release observability comes from the
+        // error view below, which shows localized copy only.
         if (kDebugMode) {
           debugPrint('OfflinePlayerWrapper: player error — $message');
         }
+        if (!mounted) return;
+        _autoHideControlsTimer.cancel();
+        setState(() {
+          _hasError = true;
+          _errorMessage = message;
+        });
       });
 
       // The actual video's aspect ratio isn't known until the demuxer has

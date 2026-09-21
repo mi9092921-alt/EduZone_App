@@ -268,6 +268,79 @@ void main() {
       });
     });
 
+    // Phase 8 regression: cleanupExpiredDownloads previously incremented
+    // its deleted-count unconditionally and returned Right(N) even when
+    // every underlying deleteDownload failed (e.g. key-deletion failures
+    // returning StorageFailure) — a fake success count across the Either
+    // boundary.
+    group('cleanupExpiredDownloads', () {
+      final expiredDownload = {
+        'id': 'download-expired',
+        'lesson_id': 'lesson-expired',
+        'course_id': 'course-1',
+        'title': 'Expired lesson',
+        'local_path': '/tmp/local-path',
+        'encrypted_path': '/tmp/encrypted-path',
+        'video_url': 'https://example.com/video.mp4',
+        'quality': VideoQuality.p720.label,
+        'file_size': 0,
+        'download_status': DownloadStatus.completed.name,
+        'progress': 1.0,
+        'downloaded_at': DateTime.now().millisecondsSinceEpoch,
+        'expires_at': DateTime.now()
+            .subtract(const Duration(days: 1))
+            .millisecondsSinceEpoch,
+        'checksum': null,
+        'last_accessed_at': null,
+      };
+
+      test(
+          'counts only deletions that actually succeeded (no fake success '
+          'count when every deletion fails)', () async {
+        when(() => localDataSource.getExpiredDownloads())
+            .thenAnswer((_) async => [expiredDownload]);
+        when(() => localDataSource.getDownloadById('download-expired'))
+            .thenAnswer((_) async => expiredDownload);
+        when(() => localDataSource.deleteEncryptedFile(any()))
+            .thenAnswer((_) async {});
+        // Key deletion fails → deleteDownload returns Left(StorageFailure)
+        // and keeps the row (see the deleteDownload guard above).
+        when(() => encryptionService.deleteKey('download-expired'))
+            .thenThrow(Exception('secure storage unavailable')); // check-ignore
+
+        final result = await repository.cleanupExpiredDownloads();
+
+        expect(result.isRight(), isTrue);
+        result.fold(
+          (_) => fail('expected a Right'),
+          (deleted) => expect(deleted, 0),
+        );
+        verifyNever(() => localDataSource.deleteDownload(any()));
+      });
+
+      test('counts successful deletions', () async {
+        when(() => localDataSource.getExpiredDownloads())
+            .thenAnswer((_) async => [expiredDownload]);
+        when(() => localDataSource.getDownloadById('download-expired'))
+            .thenAnswer((_) async => expiredDownload);
+        when(() => localDataSource.deleteEncryptedFile(any()))
+            .thenAnswer((_) async {});
+        when(() => encryptionService.deleteKey('download-expired'))
+            .thenAnswer((_) async {});
+        when(() => localDataSource.deleteDownload('download-expired'))
+            .thenAnswer((_) async {});
+
+        final result = await repository.cleanupExpiredDownloads();
+
+        result.fold(
+          (_) => fail('expected a Right'),
+          (deleted) => expect(deleted, 1),
+        );
+        verify(() => localDataSource.deleteDownload('download-expired'))
+            .called(1);
+      });
+    });
+
     test('resumeDownload restarts a stored download from its saved URL', () async {
       final tempDir = await Directory.systemTemp.createTemp('download_repo_test');
       addTearDown(() async {
@@ -366,7 +439,10 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
       expect(result.isRight(), isTrue);
-      verify(() => localDataSource.getDownloadById('download-1')).called(1);
+      // Once in resumeDownload (to load the persisted row) and once more in
+      // execute()'s cancel-vs-execute race guard (Phase 8) before it drives
+      // the download.
+      verify(() => localDataSource.getDownloadById('download-1')).called(2);
       verify(() => downloadManager.startEncryptedDownload(
             url: any(named: 'url'),
             encryptedSavePath: any(named: 'encryptedSavePath'),
@@ -895,6 +971,11 @@ void main() {
       when(() => encryptionService.storeKey('download-1', 'test-key'))
           .thenAnswer((_) async {});
       when(() => localDataSource.insertDownload(any())).thenAnswer((_) async {});
+      // execute()'s cancel-vs-execute race guard (Phase 8) re-reads the row
+      // that insertDownload just persisted — mocktail would otherwise
+      // return null for the unstubbed nullable read and skip execution.
+      when(() => localDataSource.getDownloadById('download-1'))
+          .thenAnswer((_) async => {'id': 'download-1'});
       when(() => localDataSource.updateDownloadStatus(any(), any()))
           .thenAnswer((_) async {});
       when(() => localDataSource.updateProgress(any(), any()))

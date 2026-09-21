@@ -8,6 +8,7 @@ import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/logging/infrastructure/event_bus.dart';
 import '../../../../core/services/encryption_service.dart';
+import '../../../../core/utils/global_error_handler.dart';
 import '../../../../shared/models/download_enums.dart';
 import '../../../../shared/models/downloaded_lesson.dart';
 import '../../domain/entities/download_progress.dart';
@@ -284,7 +285,14 @@ class DownloadRepositoryImpl implements DownloadRepository {
           accessExpiresAt: serverExpiresAt,
           sourceUrl: videoUrl,
         ).catchError((Object e, StackTrace stack) {
+          // Failure-of-the-failure-handler escape hatch: `execute` has its
+          // own top-level catch, so this only fires when that handler
+          // itself threw (e.g. `updateDownloadStatus('failed')` failing).
+          // Previously debugPrint-only — in release the row silently stays
+          // 'downloading' (spinning tile) until the next cold-start
+          // reconciliation with zero diagnostic record anywhere.
           if (kDebugMode) debugPrint('❌ startDownload background error: $e\n$stack');
+          GlobalErrorHandler.logError(e, stack);
         }),
       );
 
@@ -539,9 +547,12 @@ class DownloadRepositoryImpl implements DownloadRepository {
           accessExpiresAt: accessExpiresAt,
           sourceUrl: sourceUrl,
         ).catchError((Object e, StackTrace stack) {
+          // Same failure-of-the-failure-handler escape hatch as
+          // startDownload above — must be observable, not just debug-only.
           if (kDebugMode) {
             debugPrint('❌ resumeDownload background error: $e\n$stack');
           }
+          GlobalErrorHandler.logError(e, stack);
         }),
       );
 
@@ -767,9 +778,26 @@ class DownloadRepositoryImpl implements DownloadRepository {
         (failure) async => Left(failure),
         (expiredDownloads) async {
           var deletedCount = 0;
+          var failureCount = 0;
           for (final download in expiredDownloads) {
-            await deleteDownload(download.id);
-            deletedCount++;
+            // Phase 8: a deletion that failed (e.g. its encryption key
+            // could not be removed and deleteDownload returned a
+            // StorageFailure) must not be counted as deleted — the
+            // previous unconditional increment reported Right(N) even
+            // when every deletion failed, a fake success over an
+            // Either boundary. Failed items remain on disk/DB and are
+            // retried by the background CleanupScheduler pass.
+            final result = await deleteDownload(download.id);
+            result.fold(
+              (_) => failureCount++,
+              (_) => deletedCount++,
+            );
+          }
+          if (failureCount > 0 && kDebugMode) {
+            debugPrint(
+              '[DownloadRepository] cleanupExpiredDownloads: '
+              '$failureCount item(s) failed to delete',
+            );
           }
           return Right(deletedCount);
         },

@@ -2,6 +2,7 @@ import 'package:app/design_system/design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/error/failures.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/components/notification_tile.dart';
 import '../../../../shared/models/app_notification.dart';
@@ -43,8 +44,15 @@ class NotificationsScreen extends ConsumerWidget {
                   .read(markAsReadProvider)
                   .call(null, userId);
 
+              // Phase 8: the Left branch was a silent no-op — a failed
+              // mark-all-read left the unread badge stale with zero
+              // feedback, a failed mutation indistinguishable from an
+              // unacknowledged success. Surface the classified failure
+              // exactly as every other feature does.
+              if (!context.mounted) return;
               result.fold(
-                (_) {},
+                (failure) =>
+                    ErrorHandler.handle(context, failure.toAppException()),
                 (_) => ref.invalidate(notificationsProvider),
               );
             }
@@ -67,13 +75,21 @@ class NotificationsScreen extends ConsumerWidget {
   /// Marks a single notification as read and refreshes the list on success.
   /// Lives here (not in the shared NotificationTile) so the shared component
   /// stays provider-free — the tile calls back into the owning feature.
-  Future<void> _markAsRead(WidgetRef ref, AppNotification notification) async {
+  Future<void> _markAsRead(
+    BuildContext context,
+    WidgetRef ref,
+    AppNotification notification,
+  ) async {
     if (notification.isRead) return;
     final result = await ref
         .read(markAsReadProvider)
         .call(notification.id, notification.userId);
+    // Same contract as mark-all-read above: failure is surfaced, never
+    // swallowed (the tile's optimistic state is not mutated here, so on
+    // failure the unread badge simply stays and the user is told why).
+    if (!context.mounted) return;
     result.fold(
-      (_) {},
+      (failure) => ErrorHandler.handle(context, failure.toAppException()),
       (_) => ref.invalidate(notificationsProvider),
     );
   }
@@ -123,7 +139,7 @@ class NotificationsScreen extends ConsumerWidget {
                   return NotificationTile(
                     key: ValueKey(notification.id),
                     notification: notification,
-                    onMarkAsRead: () => _markAsRead(ref, notification),
+                    onMarkAsRead: () => _markAsRead(context, ref, notification),
                   );
                 },
                 childCount: filteredList.isEmpty

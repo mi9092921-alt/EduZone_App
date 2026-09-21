@@ -4,6 +4,7 @@ import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/network_exception_mapper.dart';
 import '../../../../core/network/network_guard.dart';
 import '../../../../core/network/supabase_client.dart';
+import '../../../../core/utils/global_error_handler.dart';
 import '../../../../shared/models/course.dart';
 import '../../../../shared/models/course_rating.dart';
 import '../../../../shared/models/lesson_content.dart';
@@ -365,12 +366,15 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
             })
             .toSet();
       });
-    } catch (_) {
+    } catch (e, stack) {
       // Deliberately swallowed: an empty subscribed-set degrades the UI
       // gracefully (courses just show as "not subscribed") rather than
       // failing a screen over what is usually a secondary/enrichment
-      // query. Kept as the pre-existing behavior; only the underlying
-      // guard's timeout/retry/classification changed.
+      // query. Kept as the pre-existing behavior — but a swallowed
+      // outage must leave a diagnostic record (connectivity-shaped
+      // failures classify as noise inside logError and stay
+      // console-only; a real server error reaches Sentry).
+      GlobalErrorHandler.logError(e, stack);
       return <String>{};
     }
   }
