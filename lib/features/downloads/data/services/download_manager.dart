@@ -24,6 +24,7 @@ import '../../../../app/app_initializer.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../core/network/certificate_pinning.dart';
+import '../../../../core/network/network_config.dart';
 import '../../../../core/network/supabase_client.dart';
 import '../../../../core/services/encryption_service.dart'
     show
@@ -1057,14 +1058,29 @@ class DownloadManager {
   }
 
   /// Gets the file size from the URL headers using a HEAD request.
-  Future<int?> getFileSize(String url, {Map<String, String>? headers}) async {
+  ///
+  /// Bounded by [NetworkConfig.readTimeout]: dart:io's `HttpClient` has no
+  /// default request timeout, so a black-holed connection (stalled TCP
+  /// handshake, dropped packets with no RST) would otherwise hang this
+  /// future indefinitely — the same failure class the rest of this file
+  /// bounds via `_streamIdleTimeout`/retry budgets. Any failure, timeout
+  /// included, degrades to the existing `null` return below. The
+  /// [timeout]/[clientFactory] overrides exist purely as testing seams
+  /// (same convention as [dioFactory]/[configureOnInit] above) —
+  /// production code should never pass them.
+  Future<int?> getFileSize(
+    String url, {
+    Map<String, String>? headers,
+    @visibleForTesting Duration timeout = NetworkConfig.readTimeout,
+    @visibleForTesting HttpClient Function()? clientFactory,
+  }) async {
     try {
-      final client = HttpClient();
-      final request = await client.headUrl(Uri.parse(url));
+      final client = clientFactory?.call() ?? HttpClient();
+      final request = await client.headUrl(Uri.parse(url)).timeout(timeout);
       headers?.forEach((key, value) {
         request.headers.set(key, value);
       });
-      final response = await request.close();
+      final response = await request.close().timeout(timeout);
       final contentLength = response.contentLength;
       return contentLength > 0 ? contentLength : null;
     } catch (e) {

@@ -46,6 +46,12 @@ class MockDio extends Mock implements Dio {}
 
 class MockFileDownloader extends Mock implements FileDownloader {}
 
+class MockHttpClient extends Mock implements HttpClient {}
+
+class MockHttpClientRequest extends Mock implements HttpClientRequest {}
+
+class MockHttpClientResponse extends Mock implements HttpClientResponse {}
+
 /// Awaits several microtask turns. Used instead of a single
 /// `Future.delayed(Duration.zero)` to reliably let `startDownload()`'s
 /// internal `getApplicationDocumentsDirectory()`/`getTemporaryDirectory()`
@@ -67,6 +73,7 @@ void main() {
     registerFallbackValue(CancelToken());
     registerFallbackValue(IOHttpClientAdapter());
     registerFallbackValue(DownloadTask(url: 'https://example.com', filename: 'f'));
+    registerFallbackValue(Uri.parse('https://example.com/video.mp4'));
   });
 
   late MockDio dio;
@@ -284,6 +291,62 @@ void main() {
         await Future.wait(futures);
       },
     );
+  });
+
+  group('getFileSize', () {
+    test('returns Content-Length from a HEAD response', () async {
+      final client = MockHttpClient();
+      final request = MockHttpClientRequest();
+      final response = MockHttpClientResponse();
+      when(() => client.headUrl(any())).thenAnswer((_) async => request);
+      when(() => request.close()).thenAnswer((_) async => response);
+      when(() => response.contentLength).thenReturn(12345);
+
+      final manager = buildManager();
+      final size = await manager.getFileSize(
+        'https://cdn.example.com/video.mp4',
+        clientFactory: () => client,
+      );
+
+      expect(size, 12345);
+    });
+
+    test(
+      'returns null instead of hanging when the response never arrives',
+      () async {
+        final client = MockHttpClient();
+        final request = MockHttpClientRequest();
+        when(() => client.headUrl(any())).thenAnswer((_) async => request);
+        // Never completes — the HEAD request can only return once the
+        // client-side timeout fires (dart:io's HttpClient has no default
+        // request timeout, hence the explicit bound under test).
+        when(() => request.close()).thenAnswer(
+          (_) => Completer<HttpClientResponse>().future,
+        );
+
+        final manager = buildManager();
+        final size = await manager.getFileSize(
+          'https://cdn.example.com/video.mp4',
+          timeout: const Duration(milliseconds: 250),
+          clientFactory: () => client,
+        );
+
+        expect(size, isNull);
+      },
+    );
+
+    test('returns null when the HEAD request itself fails', () async {
+      final client = MockHttpClient();
+      when(() => client.headUrl(any())).thenThrow(const SocketException(''));
+
+      final manager = buildManager();
+      final size = await manager.getFileSize(
+        'https://cdn.example.com/video.mp4',
+        clientFactory: () => client,
+      );
+
+      expect(size, isNull);
+    });
   });
 
   group('startDownload — certificate pinning wiring', () {
