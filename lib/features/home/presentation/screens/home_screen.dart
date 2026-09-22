@@ -70,7 +70,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       useScaffold: false, // Nested inside MainShell
       onRefresh: () async {
         // Parallel invalidation for performance
-        ref.invalidate(resumeLessonProvider);
         ref.invalidate(resumeLessonsProvider);
         ref.invalidate(recentCoursesProvider);
         ref.invalidate(recentTodosProvider);
@@ -268,11 +267,12 @@ class _RecentCoursesSection extends ConsumerWidget {
                       level: course.level,
                       totalLessons: course.totalLessons,
                       progress: (course.progressPct ?? 0.0) / 100.0,
-                      currentLessonTitle: course.completedLessons != null
-                          // Audit P0 (M6): was a hardcoded English
-                          // 'Lesson N' — now localized via ARB.
-                          ? l10n.lessonNumber(course.completedLessons! + 1)
-                          : null,
+                      // Audit P0 (M6): was a hardcoded English 'Lesson N'
+                      // — now localized via ARB. Phase 10: a fully
+                      // completed course must not advertise a nonexistent
+                      // "Lesson N+1"; when the total is known and every
+                      // lesson is done, omit the next-lesson hint entirely.
+                      currentLessonTitle: _nextLessonHint(course),
                     );
 
                     return SizedBox(
@@ -320,6 +320,19 @@ class _RecentCoursesSection extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  /// "Lesson N+1" hint for a recent-course card, or null when the course is
+  /// known to be fully completed (there is no next lesson to point at) or
+  /// the lesson count is unknown (totalLessons == 0 keeps the historical
+  /// hint).
+  String? _nextLessonHint(HomeCourseSummary course) {
+    final completed = course.completedLessons;
+    if (completed == null) return null;
+    if (course.totalLessons > 0 && completed >= course.totalLessons) {
+      return null;
+    }
+    return l10n.lessonNumber(completed + 1);
   }
 }
 

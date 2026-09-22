@@ -112,8 +112,16 @@ class TodoNotifier extends _$TodoNotifier {
   }
 
   Future<void> fetchTodos() async {
-    final buildGeneration = _buildGeneration;
-    await _fetchTodos(buildGeneration);
+    // Runs inside the same serialization queue as every mutation: a
+    // pull-to-refresh that raced an in-flight optimistic add/toggle used to
+    // overwrite the optimistic state with the server's pre-mutation list
+    // (the new todo visually vanished / the toggle visually reverted), and
+    // the mutation's success branch never reconciled. Queueing makes
+    // refresh wait for pending mutations, so the server read it performs
+    // already includes them.
+    await _enqueueMutation(() async {
+      await _fetchTodos(_buildGeneration);
+    });
   }
 
   Future<void> _fetchTodos(int buildGeneration) async {
@@ -133,13 +141,23 @@ class TodoNotifier extends _$TodoNotifier {
     );
   }
 
-  Future<void> toggleTodoStatus(String todoId, bool currentStatus) async {
-    await _enqueueMutation(() async {
-      await _toggleTodoStatus(todoId, currentStatus);
-    });
+  /// Returns whether the toggle was applied (false on failure — the error
+  /// is stored in [TodoState.error]). Lets callers distinguish an
+  /// acknowledged mutation from a silent failure instead of assuming
+  /// success.
+  Future<bool> toggleTodoStatus(String todoId, bool currentStatus) {
+    return _enqueueMutation(() => _toggleTodoStatus(todoId, currentStatus));
   }
 
-  Future<void> _toggleTodoStatus(String todoId, bool currentStatus) async {
+  void _notifyTodoListChanged() {
+    // Phase 10: telemetry-silent UI refresh signal — home's "Daily tasks"
+    // preview invalidates recentTodosProvider on this (see
+    // home_refresh_listener.dart). See TodoListChangedEvent's doc for why
+    // this is category `ui` (never written to the activity log).
+    ref.read(eventBusProvider).emit(TodoListChangedEvent(timestamp: DateTime.now()));
+  }
+
+  Future<bool> _toggleTodoStatus(String todoId, bool currentStatus) async {
     final buildGeneration = _buildGeneration;
     // Optimistic update
     final initialTodos = state.todos;
@@ -156,14 +174,17 @@ class TodoNotifier extends _$TodoNotifier {
         .read(toggleTodoProvider)
         .call(todoId, !currentStatus);
 
-    if (!ref.mounted || buildGeneration != _buildGeneration) return;
+    if (!ref.mounted || buildGeneration != _buildGeneration) return false;
 
+    var success = false;
     result.fold(
       (failure) {
         // Revert on failure
         state = state.copyWith(error: failure, todos: initialTodos);
       },
       (_) {
+        success = true;
+        _notifyTodoListChanged();
         // Success
         final authState = ref.read(authProvider);
         if (!currentStatus && authState is AuthAuthenticated) {
@@ -182,15 +203,16 @@ class TodoNotifier extends _$TodoNotifier {
         }
       },
     );
+    return success;
   }
 
-  Future<void> addTodo(TodoItem newTodo) async {
-    await _enqueueMutation(() async {
-      await _addTodo(newTodo);
-    });
+  /// Returns whether the todo was created (false on failure — the error is
+  /// stored in [TodoState.error]).
+  Future<bool> addTodo(TodoItem newTodo) {
+    return _enqueueMutation(() => _addTodo(newTodo));
   }
 
-  Future<void> _addTodo(TodoItem newTodo) async {
+  Future<bool> _addTodo(TodoItem newTodo) async {
     final buildGeneration = _buildGeneration;
     // Optimistic update
     final initialTodos = state.todos;
@@ -198,13 +220,16 @@ class TodoNotifier extends _$TodoNotifier {
 
     final result = await ref.read(addTodoProvider).call(newTodo);
 
-    if (!ref.mounted || buildGeneration != _buildGeneration) return;
+    if (!ref.mounted || buildGeneration != _buildGeneration) return false;
 
+    var success = false;
     result.fold(
       (failure) {
         state = state.copyWith(error: failure, todos: initialTodos);
       },
       (_) {
+        success = true;
+        _notifyTodoListChanged();
         // Success
         final authState = ref.read(authProvider);
         if (authState is AuthAuthenticated) {
@@ -222,6 +247,7 @@ class TodoNotifier extends _$TodoNotifier {
         }
       },
     );
+    return success;
   }
 
   Future<bool> deleteTodo(String todoId) async {
@@ -244,7 +270,10 @@ class TodoNotifier extends _$TodoNotifier {
       debugPrint('[TodoNotifier] deleteTodo failed: ${failure.message}');
       state = state.copyWith(error: failure, todos: initialTodos);
       return false;
-    }, (_) => true);
+    }, (_) {
+      _notifyTodoListChanged();
+      return true;
+    });
 
     if (success) {
       // Server confirmed deletion — refresh to stay in sync. Uses the
@@ -262,13 +291,16 @@ class TodoNotifier extends _$TodoNotifier {
     return success;
   }
 
-  Future<void> updateTodo(TodoItem updatedTodo) async {
-    await _enqueueMutation(() async {
-      await _updateTodo(updatedTodo);
-    });
+  /// Returns whether the todo was updated (false on failure — the error is
+  /// stored in [TodoState.error]). A false for an already-deleted todo is
+  /// NOT produced here: the server UPDATE matching 0 rows still succeeds,
+  /// so a deleted-then-edited todo reports success — the sheet treats
+  /// success as authoritative.
+  Future<bool> updateTodo(TodoItem updatedTodo) {
+    return _enqueueMutation(() => _updateTodo(updatedTodo));
   }
 
-  Future<void> _updateTodo(TodoItem updatedTodo) async {
+  Future<bool> _updateTodo(TodoItem updatedTodo) async {
     final buildGeneration = _buildGeneration;
     // Optimistic update
     final initialTodos = state.todos;
@@ -281,16 +313,19 @@ class TodoNotifier extends _$TodoNotifier {
 
     final result = await ref.read(updateTodoProvider).call(updatedTodo);
 
-    if (!ref.mounted || buildGeneration != _buildGeneration) return;
+    if (!ref.mounted || buildGeneration != _buildGeneration) return false;
 
+    var success = false;
     result.fold(
       (failure) {
         state = state.copyWith(error: failure, todos: initialTodos);
       },
       (_) {
-        // Success
+        success = true;
+        _notifyTodoListChanged();
       },
     );
+    return success;
   }
 }
 

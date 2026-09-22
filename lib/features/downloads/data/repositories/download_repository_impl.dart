@@ -77,6 +77,19 @@ class DownloadRepositoryImpl implements DownloadRepository {
   // rejected outright instead of racing the first past the DB check.
   final Set<String> _lessonIdsBeingStarted = {};
 
+  // PHASE 10: the same check-then-act class as above, for resume. Two rapid
+  // taps on a paused tile both read status `paused`, both pass the
+  // paused/failed guard below, and — because network revalidation and link
+  // refresh run BEFORE the `downloading` status write — both would proceed
+  // to `_executionService.execute(...)` against the same
+  // encryptedPath/audioPath: duplicate concurrent pipelines, racing
+  // progress/notification state. The claim is added synchronously before
+  // the first `await` (closing the race the same way `_lessonIdsBeingStarted`
+  // does) and released when the method settles; from the moment the status
+  // write lands, the persisted-status guard above independently rejects any
+  // further entry.
+  final Set<String> _downloadIdsBeingResumed = {};
+
   DownloadRepositoryImpl({
     required DownloadRemoteDataSource remoteDataSource,
     required DownloadLocalDataSource localDataSource,
@@ -382,6 +395,24 @@ class DownloadRepositoryImpl implements DownloadRepository {
 
   @override
   Future<Either<Failure, void>> resumeDownload(String downloadId) async {
+    // Synchronous claim BEFORE the first await — see
+    // `_downloadIdsBeingResumed`'s doc comment. A duplicate tap while the
+    // first resume is still in flight is an idempotent no-op success (same
+    // treatment pauseDownload gives a `paused -> paused` duplicate), not an
+    // error the user did nothing to cause.
+    if (!_downloadIdsBeingResumed.add(downloadId)) {
+      return const Right(null);
+    }
+    try {
+      return await _resumeDownloadChecked(downloadId);
+    } finally {
+      _downloadIdsBeingResumed.remove(downloadId);
+    }
+  }
+
+  Future<Either<Failure, void>> _resumeDownloadChecked(
+    String downloadId,
+  ) async {
     try {
       final downloadData = await _localDataSource.getDownloadById(downloadId);
 

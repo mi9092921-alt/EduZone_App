@@ -1500,7 +1500,7 @@ final class CourseRatingSubmitProvider
 }
 
 String _$courseRatingSubmitHash() =>
-    r'448c16f224492fbfa09e7d8c76617a1acf4b2450';
+    r'210c0c47ae7a0be9e469536ef839a660ec27dfbe';
 
 /// Submits/updates the user's star rating through the repository and
 /// refreshes every provider that renders the course-wide aggregate.

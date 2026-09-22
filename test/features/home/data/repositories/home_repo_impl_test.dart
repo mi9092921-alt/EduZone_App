@@ -22,37 +22,39 @@ void main() {
     repository = HomeRepositoryImpl(mockDataSource);
   });
 
-  group('getResumeLesson', () {
-    final tLesson = ResumeLesson(
-      courseId: 'c1',
-      lessonId: 'l1',
-      courseTitle: 'Course 1',
-      sectionTitle: 'Section 1',
-      lessonTitle: 'Lesson 1',
-      progressPct: 50.0,
-      thumbnailUrl: 'url',
-      lastWatched: DateTime(2023),
-    );
+  group('getResumeLessons', () {
+    final tLessons = [
+      ResumeLesson(
+        courseId: 'c1',
+        lessonId: 'l1',
+        courseTitle: 'Course 1',
+        sectionTitle: 'Section 1',
+        lessonTitle: 'Lesson 1',
+        progressPct: 50.0,
+        thumbnailUrl: 'url',
+        lastWatched: DateTime(2023),
+      ),
+    ];
 
-    test('should return Right(lesson) when data source succeeds', () async {
+    test('should return Right(lessons) when data source succeeds', () async {
       when(
-        () => mockDataSource.getResumeLesson(),
-      ).thenAnswer((_) async => tLesson);
+        () => mockDataSource.getResumeLessons(),
+      ).thenAnswer((_) async => tLessons);
 
-      final result = await repository.getResumeLesson();
+      final result = await repository.getResumeLessons();
 
-      expect(result, isA<Right<Failure, ResumeLesson?>>());
-      expect(result.getOrElse((_) => null), equals(tLesson));
+      expect(result, isA<Right<Failure, List<ResumeLesson>>>());
+      expect(result.getOrElse((_) => []), equals(tLessons));
     });
 
     test('should return Left(ServerFailure) on PostgrestException', () async {
       when(
-        () => mockDataSource.getResumeLesson(),
+        () => mockDataSource.getResumeLessons(),
       ).thenThrow(const PostgrestException(message: 'Database error'));
 
-      final result = await repository.getResumeLesson();
+      final result = await repository.getResumeLessons();
 
-      expect(result, isA<Left<Failure, ResumeLesson?>>());
+      expect(result, isA<Left<Failure, List<ResumeLesson>>>());
       result.fold(
         (l) => expect(l.message, 'Database error'),
         (r) => fail('Should have returned Left'),
@@ -61,12 +63,12 @@ void main() {
 
     test('should return Left(ServerFailure) on general exception', () async {
       when(
-        () => mockDataSource.getResumeLesson(),
+        () => mockDataSource.getResumeLessons(),
       ).thenThrow(Exception('General error'));
 
-      final result = await repository.getResumeLesson();
+      final result = await repository.getResumeLessons();
 
-      expect(result, isA<Left<Failure, ResumeLesson?>>());
+      expect(result, isA<Left<Failure, List<ResumeLesson>>>());
     });
   });
 

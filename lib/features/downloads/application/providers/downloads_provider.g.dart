@@ -624,7 +624,7 @@ final class DownloadsNotifierProvider
   DownloadsNotifier create() => DownloadsNotifier();
 }
 
-String _$downloadsNotifierHash() => r'8203cb55979aad04b139dcb22d668776dc791078';
+String _$downloadsNotifierHash() => r'e37ddb7b22f476e1129132633e582424f4b439a3';
 
 /// Notifier for managing the list of downloaded lessons.
 
@@ -837,7 +837,7 @@ final class DownloadByLessonIdProvider
 }
 
 String _$downloadByLessonIdHash() =>
-    r'da580951c8b396f158087b426353e34b78775a19';
+    r'6a8942e2250b04f3b1102c76369664d7ae726af2';
 
 /// Provider for getting a download by lesson ID.
 
@@ -923,7 +923,7 @@ final class DownloadByIdProvider
   }
 }
 
-String _$downloadByIdHash() => r'bea5e493f29eaf0ae2e2cc0d0248b8cc107db6b9';
+String _$downloadByIdHash() => r'6e10bcd8b20a13aece837d9184986a9dc1d5b5da';
 
 /// Provider for getting a download by its own download ID.
 

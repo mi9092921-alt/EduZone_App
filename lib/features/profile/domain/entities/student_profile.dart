@@ -45,12 +45,21 @@ class StudentProfile extends Equatable {
   }
 
   /// Initials for avatar fallback.
+  ///
+  /// Phase 10: the old `firstName![0]` indexing crashed with a RangeError
+  /// on an EMPTY (non-null) name — the server accepts '' for name columns
+  /// and `fromJson` passes it through, so a malformed profile row could
+  /// crash every screen rendering an avatar.
   String get initials {
-    if (firstName != null && lastName != null) {
-      return '${firstName![0]}${lastName![0]}'.toUpperCase();
+    final first = firstName?.trim() ?? '';
+    final last = lastName?.trim() ?? '';
+    if (first.isNotEmpty && last.isNotEmpty) {
+      return '${first[0]}${last[0]}'.toUpperCase();
     }
-    if (firstName != null) return firstName![0].toUpperCase();
-    return email[0].toUpperCase();
+    if (first.isNotEmpty) return first[0].toUpperCase();
+    if (last.isNotEmpty) return last[0].toUpperCase();
+    final localPart = email.split('@').first.trim();
+    return localPart.isEmpty ? '?' : localPart[0].toUpperCase();
   }
 
   /// Create a copy with updated fields (for optimistic updates).

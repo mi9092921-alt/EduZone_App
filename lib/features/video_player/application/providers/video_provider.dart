@@ -99,7 +99,6 @@ class VideoState {
 /// disposal — at which point `ref` is no longer usable.
 @riverpod
 class VideoProgress extends _$VideoProgress {
-  Timer? _syncTimer;
   bool _markedComplete = false;
   int _lastWatchTimeSec = 0;
   double _lastProgressPct = 0.0;
@@ -121,8 +120,6 @@ class VideoProgress extends _$VideoProgress {
     // `_hasPendingProgress` makes this idempotent with the onDispose callback:
     // Riverpod may run that callback either before or after the rebuild.
     _flushPendingProgress(courseId, lessonId);
-    _syncTimer?.cancel();
-    _syncTimer = null;
     _markedComplete = false;
     _lastWatchTimeSec = 0;
     _lastProgressPct = 0.0;
@@ -140,7 +137,6 @@ class VideoProgress extends _$VideoProgress {
       // flushed the old snapshot. Do not flush the new account's state here.
       if (buildGeneration != _buildGeneration) return;
 
-      _syncTimer?.cancel();
       _flushPendingProgress(courseId, lessonId);
       _lastWatchTimeSec = 0;
       _lastProgressPct = 0.0;
@@ -150,6 +146,34 @@ class VideoProgress extends _$VideoProgress {
     });
 
     return VideoState(progressPct: 0.0, watchTimeSec: 0, isCompleted: false);
+  }
+
+  /// Seeds this instance with the progress the SERVER already knows about
+  /// (called once by the player screen at open, from the course outline's
+  /// per-user `user_progress` embed).
+  ///
+  /// Phase 10 (progress-corruption fix): without this, re-opening an
+  /// already-completed (or further-along) lesson started a fresh instance
+  /// at `_markedComplete=false, _lastProgressPct=0`, so the first playback
+  /// tick synced `completed=false, pct=<lower>` and — because the RPC's
+  /// ON CONFLICT overwrites unconditionally — wiped the server's completion.
+  /// Seeding only ever upgrades: pct is monotonic per instance and
+  /// completion is sticky. It deliberately does NOT set
+  /// `_hasPendingProgress` — server state doesn't need to be synced back.
+  void seedFromServer({
+    required double progressPct,
+    required bool completed,
+    int watchTimeSec = 0,
+  }) {
+    final seededPct = math.min(progressPct, 100.0);
+    if (completed) _markedComplete = true;
+    if (seededPct > _lastProgressPct) _lastProgressPct = seededPct;
+    if (watchTimeSec > _lastWatchTimeSec) _lastWatchTimeSec = watchTimeSec;
+    state = state.copyWith(
+      progressPct: _lastProgressPct,
+      watchTimeSec: _lastWatchTimeSec,
+      isCompleted: _markedComplete,
+    );
   }
 
   void updateProgress(
@@ -167,7 +191,11 @@ class VideoProgress extends _$VideoProgress {
     }
 
     _lastWatchTimeSec = watchTimeSec;
-    _lastProgressPct = currentPct;
+    // Phase 10: monotonic per instance — a seek-back must not let the next
+    // flush send a LOWER pct over the server's higher one (the RPC's
+    // ON CONFLICT overwrites unconditionally; there is no server-side
+    // GREATEST yet — see the Phase 10 evidence report's schema handoff).
+    _lastProgressPct = math.max(_lastProgressPct, currentPct);
     _hasPendingProgress = true;
 
     state = state.copyWith(
@@ -178,12 +206,24 @@ class VideoProgress extends _$VideoProgress {
 
     if (_markedComplete && !wasCompleted) {
       // Force immediate sync on completion
-      _syncTimer?.cancel();
       _queueSync(courseId, lessonId, flushNow: true);
       _logCompletion(courseId, lessonId);
       _notifyDownstreamProgressChanged(courseId, lessonId);
-    } else {
-      _scheduleDebouncedSync(courseId, lessonId);
+    } else if (!wasCompleted) {
+      // Phase 10 (durability): enqueue EVERY tick, not just once per 10s
+      // debounce window. The engine dedupes per key (latest-wins) and
+      // persists the outbox to disk on every enqueue, so a process kill
+      // now loses at most one 5s throttle tick instead of up to ~15s of
+      // watch progress. Network cadence is unchanged: the engine's own
+      // 10s idle timer still batches the actual flush.
+      //
+      // Post-completion ticks (wasCompleted) skip the enqueue on purpose:
+      // the completion itself was force-flushed at the transition above,
+      // the pct creep 90→100 carries no new business information, and the
+      // engine force-flushes every item carrying completed=true — without
+      // this guard, merely leaving a finished lesson playing would fire
+      // one RPC per tick.
+      _queueSync(courseId, lessonId);
     }
   }
 
@@ -192,21 +232,11 @@ class VideoProgress extends _$VideoProgress {
       _markedComplete = true;
       _lastProgressPct = 100.0;
       _hasPendingProgress = true;
-      state = state.copyWith(isCompleted: true);
-      _syncTimer?.cancel();
+      state = state.copyWith(isCompleted: true, progressPct: 100.0);
       _queueSync(courseId, lessonId, flushNow: true);
       _logCompletion(courseId, lessonId);
       _notifyDownstreamProgressChanged(courseId, lessonId);
     }
-  }
-
-  void _scheduleDebouncedSync(String courseId, String lessonId) {
-    _syncTimer?.cancel();
-    final buildGeneration = _buildGeneration;
-    _syncTimer = Timer(const Duration(seconds: 10), () {
-      if (buildGeneration != _buildGeneration) return;
-      _queueSync(courseId, lessonId, flushNow: true);
-    });
   }
 
   /// Does NOT use `ref` or `state` — safe to call from onDispose or after disposal.

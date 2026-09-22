@@ -214,63 +214,13 @@ void main() {
     });
   });
 
-  group('getResumeLesson', () {
-    test('maps the single embedded row to a ResumeLesson', () async {
-      final client = await buildSignedInClient((request) async {
-        if (request.url.path.endsWith('/rest/v1/user_progress')) {
-          return http.Response(
-            jsonEncode(tProgressRowCourse1),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
-        }
-        return http.Response('[]', 200);
-      });
-      final dataSource = HomeRemoteDataSourceImpl(client: client);
-
-      final lesson = await dataSource.getResumeLesson();
-
-      expect(lesson, isNotNull);
-      expect(lesson!.courseId, 'course-1');
-      expect(lesson.progressPct, 40.0);
-      expect(
-        lesson.lastWatched,
-        DateTime.parse('2026-09-10T10:00:00.000Z'),
-      );
-    });
-
-    test('returns null when no in-progress row exists', () async {
-      final client = await buildSignedInClient(
-        (_) async => http.Response(
-          jsonEncode(null),
-          200,
-          headers: {'content-type': 'application/json'},
-        ),
-      );
-      final dataSource = HomeRemoteDataSourceImpl(client: client);
-
-      expect(await dataSource.getResumeLesson(), isNull);
-    });
-
-    test('degrades to null on any failure instead of throwing', () async {
-      final client = await buildSignedInClient(
-        (_) async => http.Response(
-          jsonEncode({'message': 'boom', 'code': 'XX999'}),
-          500,
-          headers: {'content-type': 'application/json'},
-        ),
-      );
-      final dataSource = HomeRemoteDataSourceImpl(client: client);
-
-      expect(await dataSource.getResumeLesson(), isNull);
-    });
-  });
-
   group('getRecentCourses', () {
     test('maps the enrollment-embedded course rows and backfills the '
         'tenant and progress fields', () async {
+      http.BaseRequest? enrollmentsRequest;
       final client = await buildSignedInClient((request) async {
         if (request.url.path.endsWith('/rest/v1/enrollments')) {
+          enrollmentsRequest = request;
           return http.Response(
             jsonEncode([
               {
@@ -303,6 +253,15 @@ void main() {
       expect(courses.single.progressPct, 50.0);
       expect(courses.single.completedLessons, 3);
       expect(courses.single.totalLessons, 10);
+      // Phase 10: 'completed' enrollments stay visible — a finished course
+      // must not vanish from Home while still sitting in My Courses. The
+      // status filter must therefore be in.(active,completed), never
+      // eq(active). (PostgREST quotes the list values when the Dart client
+      // passes a List — plain string sets never survive inFilter.)
+      expect(
+        enrollmentsRequest!.url.queryParameters['status'],
+        'in.("active","completed")',
+      );
     });
 
     test('returns [] for an unauthenticated session without querying',

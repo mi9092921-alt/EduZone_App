@@ -84,4 +84,4 @@ final class AppListenersProvider extends $FunctionalProvider<void, void, void>
   }
 }
 
-String _$appListenersHash() => r'31d208015b1a7603126643727a52f6a6d66d7b71';
+String _$appListenersHash() => r'1f20302ba1f10c6b7d477c4b6a6d1739fa50c215';

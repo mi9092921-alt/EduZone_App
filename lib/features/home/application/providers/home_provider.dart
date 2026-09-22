@@ -22,15 +22,8 @@ HomeRepository homeRepository(Ref ref) {
   return HomeRepositoryImpl(dataSource);
 }
 
-@riverpod
-Future<ResumeLesson?> resumeLesson(Ref ref) async {
-  final repository = ref.watch(homeRepositoryProvider);
-  final result = await repository.getResumeLesson();
-  return result.fold(
-    (failure) => throw failure.toAppException(),
-    (lesson) => lesson,
-  );
-}
+// Phase 10: the single-lesson `resumeLesson` provider was deleted with its
+// dead datasource path (zero production watchers; unfiltered by enrollment).
 
 @riverpod
 Future<List<HomeCourseSummary>> recentCourses(Ref ref) async {
@@ -58,7 +51,6 @@ Future<List<HomeTodoSummary>> recentTodos(Ref ref) async {
 /// Called by [Auth.logout]. When you add a new user-scoped provider to this
 /// file, add it here too.
 void invalidateHomeProviders(Ref ref) {
-  ref.invalidate(resumeLessonProvider);
   ref.invalidate(resumeLessonsProvider);
   ref.invalidate(recentCoursesProvider);
   ref.invalidate(recentTodosProvider);

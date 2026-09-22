@@ -249,9 +249,12 @@ void main() {
       expect(state.error, isNull);
       expect(state.todos.single.isCompleted, isTrue);
       verify(() => repository.toggleTodoStatus('t1', true)).called(1);
+      // Phase 10: the notifier now also emits the telemetry-silent
+      // TodoListChangedEvent (home preview refresh) alongside the
+      // TodoCompletedEvent telemetry — filter to the telemetry event.
       final emitted = verify(
         () => eventBus.emit(captureAny()),
-      ).captured.single as TodoCompletedEvent;
+      ).captured.whereType<TodoCompletedEvent>().single;
       expect(emitted.todoId, 't1');
       expect(emitted.userId, _testUser.id);
       expect(emitted.tenantId, _testUser.tenantId);

@@ -205,6 +205,20 @@ class LessonProgressSyncEngine {
     }
   }
 
+  /// Phase 10 (connectivity): called when the device regains connectivity.
+  ///
+  /// The retry budget ([maxConsecutiveFailures]) exists to stop a timer
+  /// cadence against a DETERMINISTIC failure — but an offline stretch is
+  /// not deterministic, and after the budget exhausted offline, pending
+  /// progress used to sit in the outbox until the next user-driven enqueue.
+  /// Reconnect resets the budget and re-arms the flush; no-op when there
+  /// is nothing pending or the session is closed.
+  Future<void> flushOnReconnect() async {
+    if (_isDisposed || !_sessionOpen || _pending.isEmpty) return;
+    _consecutiveFailures = 0;
+    unawaited(flush());
+  }
+
   Future<void> _restoreFromOutbox(String userId) async {
     final List<LessonProgressSyncItem> items;
     try {

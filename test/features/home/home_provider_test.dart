@@ -65,29 +65,29 @@ void main() {
     container.dispose();
   });
 
-  group('resumeLessonProvider', () {
-    test('emits the lesson when the repository call succeeds', () async {
-      when(() => mockRepository.getResumeLesson())
-          .thenAnswer((_) async => Right(tLesson));
+  group('resumeLessonsProvider', () {
+    test('emits the lessons when the repository call succeeds', () async {
+      when(() => mockRepository.getResumeLessons())
+          .thenAnswer((_) async => Right([tLesson]));
 
-      final result = await container.read(resumeLessonProvider.future);
+      final result = await container.read(resumeLessonsProvider.future);
 
-      expect(result, tLesson);
-      verify(() => mockRepository.getResumeLesson()).called(1);
+      expect(result, [tLesson]);
+      verify(() => mockRepository.getResumeLessons()).called(1);
     });
 
-    test('emits null when there is no lesson to resume', () async {
-      when(() => mockRepository.getResumeLesson())
-          .thenAnswer((_) async => const Right(null));
+    test('emits an empty list when there is no lesson to resume', () async {
+      when(() => mockRepository.getResumeLessons())
+          .thenAnswer((_) async => const Right(<ResumeLesson>[]));
 
-      final result = await container.read(resumeLessonProvider.future);
+      final result = await container.read(resumeLessonsProvider.future);
 
-      expect(result, isNull);
+      expect(result, isEmpty);
     });
 
     test('propagates a failure when the repository returns a Left', () async {
-      when(() => mockRepository.getResumeLesson()).thenAnswer(
-        (_) async => const Left(ServerFailure('resume lesson failed')),
+      when(() => mockRepository.getResumeLessons()).thenAnswer(
+        (_) async => const Left(ServerFailure('resume lessons failed')),
       );
 
       // Riverpod's retry/dispose lifecycle may re-wrap the original error
@@ -95,11 +95,11 @@ void main() {
       // propagates (not its exact runtime type) — see the equivalent
       // pattern in player4_provider_test.dart.
       await expectLater(
-        container.read(resumeLessonProvider.future),
+        container.read(resumeLessonsProvider.future),
         throwsA(anything),
       );
 
-      verify(() => mockRepository.getResumeLesson()).called(1);
+      verify(() => mockRepository.getResumeLessons()).called(1);
     });
   });
 
@@ -148,10 +148,10 @@ void main() {
   });
 
   group('invalidateHomeProviders', () {
-    test('forces resumeLesson/recentCourses/recentTodos to re-fetch from '
+    test('forces resumeLessons/recentCourses/recentTodos to re-fetch from '
         'the repository on next read (session/logout cleanup)', () async {
-      when(() => mockRepository.getResumeLesson())
-          .thenAnswer((_) async => Right(tLesson));
+      when(() => mockRepository.getResumeLessons())
+          .thenAnswer((_) async => Right([tLesson]));
       when(() => mockRepository.getRecentCourses())
           .thenAnswer((_) async => Right(tCourses));
       when(() => mockRepository.getRecentTodos())
@@ -160,16 +160,16 @@ void main() {
       // Keep these auto-dispose providers alive for the duration of the
       // test so the cached value truly comes from Riverpod's cache and
       // not from a provider that was silently re-created between reads.
-      container.listen(resumeLessonProvider, (_, _) {});
+      container.listen(resumeLessonsProvider, (_, _) {});
       container.listen(recentCoursesProvider, (_, _) {});
       container.listen(recentTodosProvider, (_, _) {});
 
       // Prime all three providers once.
-      await container.read(resumeLessonProvider.future);
+      await container.read(resumeLessonsProvider.future);
       await container.read(recentCoursesProvider.future);
       await container.read(recentTodosProvider.future);
 
-      verify(() => mockRepository.getResumeLesson()).called(1);
+      verify(() => mockRepository.getResumeLessons()).called(1);
       verify(() => mockRepository.getRecentCourses()).called(1);
       verify(() => mockRepository.getRecentTodos()).called(1);
 
@@ -178,11 +178,11 @@ void main() {
 
       // Reading again after invalidation must hit the repository again,
       // proving stale, user-scoped data isn't leaked into the next session.
-      await container.read(resumeLessonProvider.future);
+      await container.read(resumeLessonsProvider.future);
       await container.read(recentCoursesProvider.future);
       await container.read(recentTodosProvider.future);
 
-      verify(() => mockRepository.getResumeLesson()).called(1);
+      verify(() => mockRepository.getResumeLessons()).called(1);
       verify(() => mockRepository.getRecentCourses()).called(1);
       verify(() => mockRepository.getRecentTodos()).called(1);
     });

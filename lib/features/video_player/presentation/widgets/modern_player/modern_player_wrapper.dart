@@ -212,6 +212,11 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
   // ─── Message handler ───────────────────────────────────────────────────────
 
   void _handleYTMessage(String raw) {
+    // Phase 10: the JS bridge can deliver this callback after dispose()
+    // (timers in the WebView aren't all cleared) — setState/ref on a dead
+    // State crashes. Every other async continuation in this file is guarded
+    // the same way (see _initUA).
+    if (!mounted) return;
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return;

@@ -1,10 +1,13 @@
 import 'package:app/design_system/design_system.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/components/notification_tile.dart';
 import '../../../../shared/providers/home_notifications_gateway.dart';
+import '../../../../shared/utils/error_handler.dart';
+import '../../../../shared/widgets/error_state.dart';
 
 class NotificationsPreview extends ConsumerWidget {
   const NotificationsPreview({super.key});
@@ -79,8 +82,21 @@ class NotificationsPreview extends ConsumerWidget {
       loading: () =>
           const SizedBox.shrink(), // Silent loading for dash consistency
       error: (e, s) {
-        debugPrint('[NotificationsPreview] Error: ${e.runtimeType}');
-        return const SizedBox.shrink();
+        // Phase 10: was a silent SizedBox.shrink() — a failed notifications
+        // fetch was indistinguishable from "no notifications", the exact
+        // error→empty masking the codebase already reclassified as a P1
+        // pattern for the resume section. Show the same retryable error
+        // state the sibling sections use; loading stays silent.
+        if (kDebugMode) {
+          debugPrint('[NotificationsPreview] Error: ${e.runtimeType}');
+        }
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: ErrorState(
+            message: ErrorHandler.getMessage(context, e),
+            onRetry: () => gateway.refresh(),
+          ),
+        );
       },
     );
   }

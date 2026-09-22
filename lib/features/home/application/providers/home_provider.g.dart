@@ -98,45 +98,6 @@ final class HomeRepositoryProvider
 
 String _$homeRepositoryHash() => r'f7a3b02614216fb8c1150138bb9587e6dc7b68e9';
 
-@ProviderFor(resumeLesson)
-final resumeLessonProvider = ResumeLessonProvider._();
-
-final class ResumeLessonProvider
-    extends
-        $FunctionalProvider<
-          AsyncValue<ResumeLesson?>,
-          ResumeLesson?,
-          FutureOr<ResumeLesson?>
-        >
-    with $FutureModifier<ResumeLesson?>, $FutureProvider<ResumeLesson?> {
-  ResumeLessonProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'resumeLessonProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$resumeLessonHash();
-
-  @$internal
-  @override
-  $FutureProviderElement<ResumeLesson?> $createElement(
-    $ProviderPointer pointer,
-  ) => $FutureProviderElement(pointer);
-
-  @override
-  FutureOr<ResumeLesson?> create(Ref ref) {
-    return resumeLesson(ref);
-  }
-}
-
-String _$resumeLessonHash() => r'67718fb574c0b1f727040ef5bebbde34b3efcd9b';
-
 @ProviderFor(recentCourses)
 final recentCoursesProvider = RecentCoursesProvider._();
 

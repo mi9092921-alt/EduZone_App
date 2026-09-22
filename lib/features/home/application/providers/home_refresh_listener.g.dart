@@ -9,9 +9,11 @@ part of 'home_refresh_listener.dart';
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
 /// Listens for [LessonProgressChangedEvent] (emitted by video_player when a
-/// lesson's completion state changes) and invalidates this feature's own
-/// resume/recent providers, so "Continue Learning" sections never show
-/// stale progress after leaving the player.
+/// lesson's completion state changes) and [TodoListChangedEvent] (emitted by
+/// the todo notifier's success branches) and invalidates this feature's own
+/// resume/recent providers, so "Continue Learning" and "Daily tasks"
+/// sections never show stale data after leaving the player or the todo
+/// screen.
 ///
 /// Lives in the home feature (not video_player) so it can invalidate its
 /// own providers without video_player importing home internals.
@@ -22,9 +24,11 @@ part of 'home_refresh_listener.dart';
 final homeRefreshListenerProvider = HomeRefreshListenerProvider._();
 
 /// Listens for [LessonProgressChangedEvent] (emitted by video_player when a
-/// lesson's completion state changes) and invalidates this feature's own
-/// resume/recent providers, so "Continue Learning" sections never show
-/// stale progress after leaving the player.
+/// lesson's completion state changes) and [TodoListChangedEvent] (emitted by
+/// the todo notifier's success branches) and invalidates this feature's own
+/// resume/recent providers, so "Continue Learning" and "Daily tasks"
+/// sections never show stale data after leaving the player or the todo
+/// screen.
 ///
 /// Lives in the home feature (not video_player) so it can invalidate its
 /// own providers without video_player importing home internals.
@@ -40,9 +44,11 @@ final class HomeRefreshListenerProvider
         >
     with $Provider<StreamSubscription<void>> {
   /// Listens for [LessonProgressChangedEvent] (emitted by video_player when a
-  /// lesson's completion state changes) and invalidates this feature's own
-  /// resume/recent providers, so "Continue Learning" sections never show
-  /// stale progress after leaving the player.
+  /// lesson's completion state changes) and [TodoListChangedEvent] (emitted by
+  /// the todo notifier's success branches) and invalidates this feature's own
+  /// resume/recent providers, so "Continue Learning" and "Daily tasks"
+  /// sections never show stale data after leaving the player or the todo
+  /// screen.
   ///
   /// Lives in the home feature (not video_player) so it can invalidate its
   /// own providers without video_player importing home internals.
@@ -83,4 +89,4 @@ final class HomeRefreshListenerProvider
 }
 
 String _$homeRefreshListenerHash() =>
-    r'2218c8852d3f9c0c03534d97fc36aad5547b65f5';
+    r'7848f1ba70a052c959f632db6706bd5764b4a0e9';

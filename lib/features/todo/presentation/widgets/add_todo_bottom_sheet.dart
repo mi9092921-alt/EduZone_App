@@ -26,6 +26,11 @@ class _AddTodoBottomSheetState extends ConsumerState<AddTodoBottomSheet> {
   DateTime? _dueAt;
   int _priority = 0;
 
+  /// Guards against double-submit: a second tap while the first mutation is
+  /// in flight queued a second insert (each with a fresh UUID) — two
+  /// identical tasks. The button is disabled while saving instead.
+  bool _isSaving = false;
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +48,7 @@ class _AddTodoBottomSheetState extends ConsumerState<AddTodoBottomSheet> {
   }
 
   void _saveTodo() async {
+    if (_isSaving) return;
     final l10n = AppLocalizations.of(context)!;
     if (_titleController.text.trim().isEmpty) return;
 
@@ -83,35 +89,36 @@ class _AddTodoBottomSheetState extends ConsumerState<AddTodoBottomSheet> {
       updatedAt: DateTime.now(),
     );
 
+    // The mutations report their real result (like deleteTodo always did)
+    // instead of swallowing failures into state: showing "Task added ✓" and
+    // popping the sheet while the server rejected the write was a false
+    // success — the screen's error listener would fire over an already-closed
+    // sheet. On failure the sheet stays open with the user's input so they
+    // can retry; the classified error surfaces via the screen's listener.
+    _isSaving = true;
+    if (mounted) setState(() {});
     try {
-      if (widget.todoToEdit != null) {
-        await ref.read(todoProvider.notifier).updateTodo(newTodo);
-        if (mounted) {
-          FeedbackService.show(
-            context,
-            message: l10n.taskUpdated,
-            type: FeedbackType.success,
-          );
-        }
-      } else {
-        await ref.read(todoProvider.notifier).addTodo(newTodo);
-        if (mounted) {
-          FeedbackService.show(
-            context,
-            message: l10n.taskAdded,
-            type: FeedbackType.success,
-          );
-        }
-      }
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) {
+      final success = widget.todoToEdit != null
+          ? await ref.read(todoProvider.notifier).updateTodo(newTodo)
+          : await ref.read(todoProvider.notifier).addTodo(newTodo);
+
+      if (!mounted) return;
+      if (success) {
         FeedbackService.show(
           context,
-          message: l10n.errorGeneric,
-          type: FeedbackType.error,
+          message: widget.todoToEdit != null
+              ? l10n.taskUpdated
+              : l10n.taskAdded,
+          type: FeedbackType.success,
         );
+        Navigator.of(context).pop();
       }
+      // Failure: stay open — the screen's ref.listen on TodoState.error
+      // shows the classified error. _isSaving is reset in finally so the
+      // button re-enables for the retry.
+    } finally {
+      _isSaving = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -372,7 +379,7 @@ class _AddTodoBottomSheetState extends ConsumerState<AddTodoBottomSheet> {
               label: widget.todoToEdit == null
                   ? AppLocalizations.of(context)!.addBtn
                   : AppLocalizations.of(context)!.editTask,
-              onPressed: _saveTodo,
+              onPressed: _isSaving ? null : _saveTodo,
             ),
           ],
         ),

@@ -148,19 +148,10 @@ void main() {
     });
 
     testWidgets(
-        'tapping a preview lesson while unenrolled is allowed straight through '
-        '(marks watched + opens the player choice sheet), no enrollment dialog',
+        'tapping a preview lesson while unenrolled opens the player choice '
+        'sheet but does NOT mark the lesson watched (Phase 10 BLOCKER fix: '
+        'tap-to-open must never write completed=true/100% to the server)',
         (tester) async {
-      when(
-        () => coursesRepository.updateLessonProgress(
-          courseId: any(named: 'courseId'),
-          lessonId: any(named: 'lessonId'),
-          completed: any(named: 'completed'),
-          progressPct: any(named: 'progressPct'),
-          watchTimeSec: any(named: 'watchTimeSec'),
-        ),
-      ).thenAnswer((_) async => const Right(null));
-
       await tester.pumpWidget(
         _wrap(coursesRepository: coursesRepository),
       );
@@ -172,15 +163,15 @@ void main() {
 
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(find.text(l10n.enrollmentRequired), findsNothing);
-      verify(
+      verifyNever(
         () => coursesRepository.updateLessonProgress(
-          courseId: 'course-1',
-          lessonId: 'lesson-preview',
-          completed: true,
-          progressPct: 100.0,
+          courseId: any(named: 'courseId'),
+          lessonId: any(named: 'lessonId'),
+          completed: any(named: 'completed'),
+          progressPct: any(named: 'progressPct'),
           watchTimeSec: any(named: 'watchTimeSec'),
         ),
-      ).called(1);
+      );
       // "choose a player" bottom sheet content.
       expect(find.text(l10n.directPlayer), findsOneWidget);
     });
@@ -390,16 +381,9 @@ void main() {
 
       // No assertion on rendering position needed: the pointer is loaded
       // into state under B's (empty) key. Tapping the preview lesson writes
-      // B's own pointer; A's key must remain untouched below.
-      when(
-        () => coursesRepository.updateLessonProgress(
-          courseId: any(named: 'courseId'),
-          lessonId: any(named: 'lessonId'),
-          completed: any(named: 'completed'),
-          progressPct: any(named: 'progressPct'),
-          watchTimeSec: any(named: 'watchTimeSec'),
-        ),
-      ).thenAnswer((_) async => const Right(null));
+      // B's own pointer; A's key must remain untouched below. (Phase 10:
+      // tapping no longer also writes server progress — the resume pointer
+      // is a local hint, deliberately untouched by that fix.)
       await tester.tap(find.text('Intro (free preview)'));
       await tester.pumpAndSettle();
 

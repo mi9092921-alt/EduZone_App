@@ -114,6 +114,19 @@ class DownloadLocalDataSource {
   /// (P6.19/P6.20) so it can later be authorized correctly by
   /// `OfflinePolicyEngine` and filtered correctly by [getDownloads].
   Future<void> insertDownload(DownloadedLesson download) async {
+    // Phase 10 fail-closed: the old code wrote 'user_id': _currentUserId()
+    // straight into the row, so a Supabase-session read failure (background
+    // isolate, not-yet-initialized client) minted a legacy user_id IS NULL
+    // row — a download OfflinePolicyEngine can NEVER authorize, forcing
+    // delete + re-download. Fail loudly instead; the repository surfaces
+    // the failure to the caller.
+    final ownerId = _currentUserId();
+    if (ownerId == null) {
+      throw StateError(
+        'insertDownload: no authenticated account — refusing to bind a '
+        'download row without an owner',
+      );
+    }
     await _storageService.insertDownload({
       'id': download.id,
       'lesson_id': download.lessonId,
@@ -133,7 +146,7 @@ class DownloadLocalDataSource {
       'expires_at': download.expiresAt.millisecondsSinceEpoch,
       'checksum': download.checksum,
       'last_accessed_at': download.lastAccessedAt?.millisecondsSinceEpoch,
-      'user_id': _currentUserId(),
+      'user_id': ownerId,
       'device_id': _deviceFingerprint(),
     });
   }
@@ -205,11 +218,15 @@ class DownloadLocalDataSource {
   /// into this device never sees another account's download tiles. Pass
   /// `scopeToCurrentUser: false` for internal/debug tooling that
   /// deliberately needs every row regardless of owner.
+  ///
+  /// Phase 10 fail-closed: the scoped branch now uses `?? ''` — a null
+  /// session read used to fall through to the UNFILTERED query because
+  /// `StorageService` treats a NULL owner as "no filter".
   Future<List<Map<String, dynamic>>> getDownloads({
     bool scopeToCurrentUser = true,
   }) async {
     return await _storageService.getDownloadedLessons(
-      ownerUserId: scopeToCurrentUser ? _currentUserId() : null,
+      ownerUserId: scopeToCurrentUser ? (_currentUserId() ?? '') : null,
     );
   }
 
@@ -232,9 +249,14 @@ class DownloadLocalDataSource {
     String lessonId, {
     bool scopeToCurrentUser = true,
   }) async {
+    // Phase 10 fail-closed: `StorageService` treats a NULL ownerUserId as
+    // "no filter" (unscoped), so a null session read here silently returned
+    // EVERY account's rows. `''` matches no user_id — the mirror image of
+    // `_defaultDeviceFingerprint`'s fail-closed convention. (The
+    // `: null` branch below is the deliberately-unscoped tooling path.)
     return await _storageService.getDownloadByLessonId(
       lessonId,
-      ownerUserId: scopeToCurrentUser ? _currentUserId() : null,
+      ownerUserId: scopeToCurrentUser ? (_currentUserId() ?? '') : null,
     );
   }
 
@@ -245,7 +267,7 @@ class DownloadLocalDataSource {
   }) async {
     return await _storageService.getDownloadById(
       id,
-      ownerUserId: scopeToCurrentUser ? _currentUserId() : null,
+      ownerUserId: scopeToCurrentUser ? (_currentUserId() ?? '') : null,
     );
   }
 
@@ -260,7 +282,7 @@ class DownloadLocalDataSource {
   Future<List<Map<String, dynamic>>> getDownloadsByCourse(String courseId) async {
     return await _storageService.getDownloadsByCourse(
       courseId,
-      ownerUserId: _currentUserId(),
+      ownerUserId: _currentUserId() ?? '',
     );
   }
 
@@ -268,7 +290,7 @@ class DownloadLocalDataSource {
   Future<List<Map<String, dynamic>>> getDownloadsByStatus(String status) async {
     return await _storageService.getDownloadsByStatus(
       status,
-      ownerUserId: _currentUserId(),
+      ownerUserId: _currentUserId() ?? '',
     );
   }
 
@@ -298,16 +320,31 @@ class DownloadLocalDataSource {
   }
 
   /// Gets expired downloads.
-  Future<List<Map<String, dynamic>>> getExpiredDownloads() async {
-    return await _storageService.getExpiredDownloads(
-      ownerUserId: _currentUserId(),
+  ///
+  /// Phase 10 — account-scoping split (re-scan NEW-1):
+  /// * the SCOPED path ([scopeToCurrentUser] == true) serves the
+  ///   account-facing expired-list/cleanup UI. A null session read used to
+  ///   fall through into the UNFILTERED query (`StorageService` treats a
+  ///   NULL owner as "no filter"), so a signed-out/background caller on a
+  ///   shared device could see — and via the repository cleanup path
+  ///   DELETE — another account's expired rows. `''` matches no user_id
+  ///   (the same fail-closed convention as every other getter here).
+  /// * the UNSCOPED path exists only for the WorkManager isolate
+  ///   ([CleanupScheduler.runCleanup]): Supabase is intentionally absent
+  ///   there, and the sweep is account-agnostic maintenance that must keep
+  ///   covering every account's expired rows.
+  Future<List<Map<String, dynamic>>> getExpiredDownloads({
+    bool scopeToCurrentUser = true,
+  }) {
+    return _storageService.getExpiredDownloads(
+      ownerUserId: scopeToCurrentUser ? (_currentUserId() ?? '') : null,
     );
   }
 
   /// Gets total storage used.
   Future<int> getTotalStorageUsed() async {
     return await _storageService.getTotalStorageUsed(
-      ownerUserId: _currentUserId(),
+      ownerUserId: _currentUserId() ?? '',
     );
   }
 

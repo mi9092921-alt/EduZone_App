@@ -5,7 +5,6 @@ import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/network_exception_mapper.dart';
 import '../../../../core/network/network_guard.dart';
 import '../../../../core/network/supabase_client.dart';
-import '../../../../core/utils/global_error_handler.dart';
 import '../../../../shared/models/course.dart';
 import '../../../../shared/models/todo_item.dart';
 import '../../domain/entities/resume_lesson.dart';
@@ -27,7 +26,11 @@ class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
           .from('enrollments')
           .select('course_id')
           .eq('user_id', userId)
-          .eq('status', 'active');
+          // Phase 10 (re-scan NEW-2): same active+completed rule as
+          // getMyCourses/getUserSubscribedCourseIds/getRecentCourses — a
+          // 100%-flipped enrollment with lagging user_progress rows must not
+          // vanish from Resume while persisting in My Courses.
+          .inFilter('status', ['active', 'completed']);
       final enrolledCourseIds = (enrollmentResponse as List)
           .map((row) => (row as Map)['course_id'] as String)
           .toSet()
@@ -48,7 +51,14 @@ class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
           .eq('completed', false)
           .inFilter('course_id', enrolledCourseIds)
           .order('last_watched', ascending: false)
-          .limit(30);
+          // The per-course dedupe below keeps ONE row per course, but this
+          // cap applies BEFORE it: a user with 30+ incomplete-lesson rows
+          // concentrated in one course pushed every other course's rows past
+          // the window, collapsing the section to a single card. 120 rows
+          // (~4 lessons x 30 courses of recent activity) is still a bounded,
+          // cheap fetch while giving the dedupe a fair window; the UI caps
+          // the section at 3 cards regardless.
+          .limit(120);
 
       final lessons = <ResumeLesson>[];
       final seenCourseIds = <String>{};
@@ -81,114 +91,6 @@ class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
   }
 
   @override
-  Future<ResumeLesson?> getResumeLesson() async {
-    // Deliberately degrades to `null` (home just hides the resume card)
-    // instead of throwing on ANY failure -- including now-classified
-    // network failures. This is a pre-existing, reasonable UX choice for
-    // a non-critical enrichment widget on the home screen and is kept
-    // unchanged; only the underlying call now has a bounded timeout so a
-    // stalled connection can no longer hang this indefinitely.
-    try {
-      return await NetworkGuard.read(() async {
-        final userId = _client.auth.currentUser?.id;
-        if (userId == null) return null;
-
-        // Use direct query instead of RPC to avoid dependency on missing database function
-        //
-        // EDUZONE-1 (Sentry PGRST201): `public.user_progress` carries TWO
-        // foreign keys to `public.courses` — the plain single-column
-        // `user_progress_course_id_fkey` (from the inline
-        // `course_id ... REFERENCES public.courses(id)` in
-        // supabase/schema/03_tables.sql) AND the composite
-        // `user_progress_course_tenant_fkey` (course_id, tenant_id) added
-        // in supabase/schema/04_constraints.sql for tenant-integrity
-        // enforcement. PostgREST embeds a related table via `table(...)`
-        // by resolving exactly one FK between the two tables; with two
-        // candidates it cannot pick and returns PGRST201 ("more than one
-        // relationship was found") on every call — this is a schema
-        // constant, not a transient failure, so it reproduced on every
-        // launch as reported. Disambiguated by naming the intended
-        // constraint explicitly, matching the same
-        // `!<fk_name>` pattern already used elsewhere in this codebase
-        // (see CoursesQueries.teacherJoin and the prerequisite-course
-        // join in courses_remote_ds_impl.dart). `lesson:lessons(...)`
-        // below is left as-is: user_progress has only a single FK to
-        // lessons (`user_progress_lesson_id_fkey`), so that embed is
-        // already unambiguous.
-        final response = await _client
-            .from('user_progress')
-            .select('''
-            lesson_id,
-            completed,
-            progress_pct,
-            last_watched,
-            course:courses!user_progress_course_id_fkey(id, title, thumbnail_url),
-            lesson:lessons(id, title, section_id, section:sections(title))
-          ''')
-            .eq('user_id', userId)
-            .eq('completed', false)
-            .order('last_watched', ascending: false)
-            .limit(1)
-            .maybeSingle();
-
-        if (response == null) return null;
-
-        final data = Map<String, dynamic>.from(response as Map);
-
-        // Map the nested structure to ResumeLesson format
-        final course = data['course'] as Map?;
-        final lesson = data['lesson'] as Map?;
-        final section = lesson?['section'] as Map?;
-
-        if (course == null || lesson == null) return null;
-
-        // Build JSON with snake_case keys to match @JsonKey annotations
-        final json = {
-          'course_id': course['id'] as String,
-          'course_title': course['title'] as String? ?? '',
-          'thumbnail_url': course['thumbnail_url'] as String?,
-          'lesson_id': lesson['id'] as String,
-          'lesson_title': lesson['title'] as String? ?? '',
-          'section_title': section?['title'] as String? ?? '',
-          // Sentry (ServerException: "type 'DateTime' is not a subtype of
-          // type 'String' in type cast", culprit NetworkGuard.read via
-          // this method): must stay a raw ISO8601 *string* here, not a
-          // parsed DateTime. ResumeLesson.fromJson() -> the generated
-          // _$ResumeLessonFromJson in resume_lesson.g.dart does its own
-          // `DateTime.parse(json['last_watched'] as String)` -- handing
-          // it an already-parsed DateTime object made that `as String`
-          // cast fail on every call where a resume-lesson row actually
-          // existed (i.e. whenever data['last_watched'] was non-null),
-          // which every affected user would hit on essentially every
-          // Home-screen load. PostgREST serializes timestamptz columns as
-          // ISO8601 strings, never as a native DateTime, so
-          // `data['last_watched']` here is always either null or already
-          // exactly the string ResumeLesson.fromJson() needs.
-          'last_watched':
-              data['last_watched'] as String? ?? DateTime.now().toIso8601String(),
-          'progress_pct': (data['progress_pct'] as num?)?.toDouble() ?? 0.0,
-        };
-
-        return ResumeLesson.fromJson(json);
-      });
-    } catch (e, stack) {
-      // Section 15: `debugPrint` is NOT release-gated in this codebase
-      // (see GlobalErrorHandler.logError's doc comment) — a raw
-      // `debugPrint('Stack: $stack')` here printed the full stack trace
-      // unconditionally in every build, including release, while also
-      // giving this failure zero Sentry/observability visibility (the
-      // resume-lesson card would just silently disappear from Home with
-      // no diagnostic record anywhere). Routing through
-      // GlobalErrorHandler.logError matches every other datasource in
-      // this codebase: safe exception-type-only console output in
-      // release, full detail gated to kDebugMode, and forwarded to
-      // Sentry either way.
-      GlobalErrorHandler.logError(e, stack);
-      return null;
-    }
-  }
-
-  @override
   Future<List<Course>> getRecentCourses() async {
     return NetworkGuard.read(() async {
       try {
@@ -205,7 +107,13 @@ class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
             course:courses!course_id(*)
           ''')
             .eq('user_id', userId)
-            .eq('status', 'active')
+            // Phase 10: include 'completed' alongside 'active' — the
+            // server's progress recalc flips status to 'completed' at 100%
+            // while access stays entitled (active+completed), and My Courses
+            // now keeps finished courses. Dropping them from this section
+            // would make a just-finished course vanish from Home while still
+            // sitting in /courses. Same fix as getMyCourses.
+            .inFilter('status', ['active', 'completed'])
             .order('enrolled_at', ascending: false)
             .limit(5);
 

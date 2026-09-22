@@ -491,4 +491,15 @@ void invalidateCoursesProviders(Ref ref) {
   ref.invalidate(bookmarkedCoursesProvider);
   ref.invalidate(courseProgressProvider);
   ref.invalidate(myCourseRatingProvider); // family: clears every courseId
+  // Phase 10: these are user/tenant-scoped too and were missing from the
+  // sweep despite the doc above — `publicCourses` resolves the tenant from
+  // the ambient session, `courseDetails` embeds the current user's
+  // `user_progress`, and `myCourseEnrollment`/`lessonContent` return
+  // entitlement-gated rows for the calling account. All are autoDispose,
+  // so this is a no-op unless an instance survives the logout→login
+  // boundary — exactly the case that would leak account A's data to B.
+  ref.invalidate(publicCoursesProvider);
+  ref.invalidate(courseDetailsProvider); // family: clears every courseId
+  ref.invalidate(myCourseEnrollmentProvider); // family
+  ref.invalidate(lessonContentProvider); // family
 }

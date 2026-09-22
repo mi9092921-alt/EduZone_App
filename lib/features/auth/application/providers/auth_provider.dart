@@ -880,11 +880,12 @@ class Auth extends _$Auth {
 
   /// Centralized logout:
   /// 1. Set state to LoggingOut (router → /login immediately)
-  /// 2. Best-effort server cleanup runs FIRST while the session is still
-  ///    intact, so server-side revocation actually has a valid token to act on
-  /// 3. Clear local session (forceLocalCleanup — the critical step)
-  /// 4. Invalidate all user-scoped providers (prevent stale data)
-  /// 5. Set state to Unauthenticated
+  /// 2. Flush pending lesson progress while the session token is still
+  ///    valid AND unrevoked (server revocation would reject its writes)
+  /// 3. Best-effort server cleanup (revocation) while the session is intact
+  /// 4. Clear local session (forceLocalCleanup — the critical step)
+  /// 5. Invalidate all user-scoped providers (prevent stale data)
+  /// 6. Set state to Unauthenticated
   ///
   /// Deliberately uses LogoutOrchestrator rather than the LogoutUser use
   /// case — see the doc comment on LogoutUser for why.
@@ -923,7 +924,26 @@ class Auth extends _$Auth {
       fcmConfigured: AppConfig.fcmEnabled,
     );
 
-    // ── Phase 2: Best-effort server cleanup ────────────────────────────────
+    // ── Phase 2: Flush pending lesson progress (best-effort) ────────────────
+    // Must run BEFORE server-side revocation: the flush's
+    // `update_lesson_progress` RPC writes are executed by the session's own
+    // (still valid, still unrevoked) token here. Previously this ran after
+    // `orchestrator.execute()`, whose `logout_current_user` RPC bumps
+    // `token_version` and terminates the session first — so the flush fired
+    // against a revoked token, every queued write was rejected, and the
+    // progress the user queued right before logging out was silently lost.
+    // The superseded-generation check below still guards every later phase;
+    // the flush itself is inherently safe because the ambient session is
+    // still THIS account's at RPC-dispatch time.
+    try {
+      await flushAndCloseUserProgressSession(ref);
+    } catch (e) {
+      debugPrint(
+        '[Logout] Progress flush error (non-critical): ${e.runtimeType}',
+      );
+    }
+
+    // ── Phase 3: Best-effort server cleanup ────────────────────────────────
     // Keep the current session intact until server-side revocation is attempted.
     try {
       final result = await orchestrator.execute(
@@ -956,12 +976,12 @@ class Auth extends _$Auth {
       // allowed (the newer operation owns the state machine). Two
       // account-agnostic isolation steps must still happen before bailing:
       //
-      //   1. Discard this account's queued progress WITHOUT flushing:
-      //      flushes carry the AMBIENT Supabase user id, which by now
-      //      belongs to the next account — retrying under it would corrupt
-      //      THEIR progress data, not just leak ours (same reasoning as the
-      //      normal path's flushAndClose, which here would flush under the
-      //      wrong user).
+      //   1. Ensure this account's queued progress is discarded without
+      //      flushing: flushes carry the AMBIENT Supabase user id, which by
+      //      now belongs to the next account — retrying under it would
+      //      corrupt THEIR progress data, not just leak ours. (The session
+      //      was already flushed and closed in Phase 2 on the normal path;
+      //      this close is idempotent and covers a Phase 2 that never ran.)
       //   2. Drop all cached user-scoped provider state: isolation is
       //      account-agnostic — without it, a re-login inside this window
       //      (e.g. an offline revoke timing out at 3s) leaves the outgoing
@@ -974,27 +994,16 @@ class Auth extends _$Auth {
       return;
     }
 
-    // Flush any pending lesson-progress writes while the about-to-be-cleared
-    // session's token is still valid, then close the shared queue so it
-    // stops accepting new items and discards anything left over instead of
-    // silently retrying it under whatever account signs in next on this
-    // device (see LessonProgressSyncEngine.closeSession doc comment, and
-    // video_player_remote_ds.dart's syncProgressBatch, which reads the
-    // *ambient* Supabase currentUser.id at flush time -- not at enqueue
-    // time -- so a stale retry after a new login would otherwise be
-    // attributed to the new account, corrupting their progress data).
-    await flushAndCloseUserProgressSession(ref);
-
-    // ── Phase 3: Clear local session securely ───────────────────────────────
+    // ── Phase 4: Clear local session securely ───────────────────────────────
     await orchestrator.forceLocalCleanup();
 
     if (!_isCurrentAuthOperation(generation)) return;
 
-    // ── Phase 4: Invalidate user data Providers ─────────────────────────────
+    // ── Phase 5: Invalidate user data Providers ─────────────────────────────
     // Now that the session is wiped, clear memory safely.
     _invalidateAllUserProviders();
 
-    // ── Phase 5: Finalize State ─────────────────────────────────────────────
+    // ── Phase 6: Finalize State ─────────────────────────────────────────────
     // This triggers GoRouter to immediately snap to /login natively.
     if (_isCurrentAuthOperation(generation)) {
       _safeSetState(const AuthUnauthenticated());

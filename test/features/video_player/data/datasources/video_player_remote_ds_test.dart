@@ -162,11 +162,44 @@ void main() {
       expect(bodies[1].containsKey('p_watch_time_sec'), isFalse);
     });
 
-    test('surfaces a PostgrestException (e.g. RPC entitlement denial) as a '
+    test('dead-letters a deterministic RPC business denial (lesson deleted / '
+        'enrollment revoked) instead of poisoning every later batch, while '
+        'the remaining items still run', () async {
+      var calls = 0;
+      final dataSource = await buildSignedInDataSource((request) async {
+        calls++;
+        if (calls == 1) {
+          // update_lesson_progress raises exactly these on a revoked
+          // enrollment / deleted lesson — retrying the item can never
+          // succeed and used to strand the whole batch (Phase 10).
+          return http.Response(
+            jsonEncode({'message': 'ACCESS_DENIED', 'code': 'P0001'}),
+            400,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('', 204);
+      });
+
+      // Must NOT throw: the denied item is dead-lettered, the valid one is
+      // still attempted (calls == 2).
+      await dataSource.syncProgressBatch(const [
+        tSyncItem,
+        LessonProgressSyncItem(
+          courseId: 'course-2',
+          lessonId: 'lesson-2',
+          completed: false,
+          progressPct: 10.0,
+        ),
+      ]);
+      expect(calls, 2);
+    });
+
+    test('still surfaces a non-business PostgrestException as a '
         'ServerException carrying the message and code', () async {
       final dataSource = await buildSignedInDataSource(
         (_) async => http.Response(
-          jsonEncode({'message': 'LESSON_ACCESS_DENIED', 'code': 'P0001'}),
+          jsonEncode({'message': 'SOME_UNRELATED_RAISE', 'code': 'P0001'}),
           400,
           headers: {'content-type': 'application/json'},
         ),
@@ -176,7 +209,7 @@ void main() {
         () => dataSource.syncProgressBatch(const [tSyncItem]),
         throwsA(
           isA<ServerException>()
-              .having((e) => e.message, 'message', 'LESSON_ACCESS_DENIED')
+              .having((e) => e.message, 'message', 'SOME_UNRELATED_RAISE')
               .having((e) => e.code, 'code', 'P0001'),
         ),
       );

@@ -182,7 +182,14 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
     }
 
     _saveLastWatched(lesson.id.toString());
-    _handleToggleWatched(lesson.id, true); // Mark as watched automatically
+    // Phase 10 (BLOCKER fix): tapping a lesson must NOT mark it watched.
+    // The old `_handleToggleWatched(lesson.id, true)` here wrote
+    // completed=true/progressPct=100 to the server the moment a lesson was
+    // opened — then the player's fresh VideoProgress instance reported the
+    // real (lower) pct and overwrote it back, so completion flapped and
+    // enrollments.progress_pct (server trigger) was corrupted by nothing
+    // more than opening a lesson. Completion is owned by exactly two
+    // paths: the player's >=90% rule and this tile's explicit checkbox.
 
     final flags = ref.read(featureFlagsProvider);
     showPlayerChoiceSheet(

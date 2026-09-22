@@ -62,7 +62,13 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
               ${CoursesQueries.lightSectionsWithLessons}
             )
           ''')
-            .eq('status', 'active')
+            // Phase 10: was `.eq('status', 'active')` — but the server's
+            // progress recalc flips enrollments.status to 'completed' at
+            // 100% (07_functions.sql:7266/7294), and every server-side
+            // access check treats ('active','completed') as entitled
+            // (07_functions.sql:2283/3675). The active-only filter made a
+            // course vanish from My Courses the instant it was finished.
+            .inFilter('status', ['active', 'completed'])
             .eq('user_id', userId)
             .order('enrolled_at', ascending: false);
 
@@ -74,8 +80,8 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
             CoursesJsonMapper.sortCurriculum(sortedCourse);
             enrollmentJson['course'] = sortedCourse;
           }
-          return CourseEnrollment.fromJson(enrollmentJson);
-        }).toList();
+          return _safeEnrollmentFromJson(enrollmentJson);
+        }).whereType<CourseEnrollment>().toList();
       } on PostgrestException catch (e) {
         throw ServerException(e.message, e.code); // check-ignore
       } catch (e) {
@@ -277,21 +283,21 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
     return NetworkGuard.read(() async {
       try {
         final offset = (page - 1) * limit;
-        final currentUser = SupabaseService.client.auth.currentUser;
-        // Check appMetadata first (system-set), then userMetadata
-        var tenantId = currentUser?.appMetadata['tenant_id'] ??
-            currentUser?.userMetadata?['tenant_id'];
 
-        if (tenantId == null && currentUser != null) {
-          final userData = await SupabaseService.client
-              .from('users')
-              .select('tenant_id')
-              .eq('id', currentUser.id)
-              .maybeSingle();
-          tenantId = userData?['tenant_id'] as String?;
-        }
-
-        var query = SupabaseService.client
+        // Phase 10: the manual tenant filter that used to live here was
+        // deleted, not fixed. RLS policy courses_select_merged
+        // (09_rls.sql:1290) already scopes every authenticated read to
+        // tenant_id = get_current_tenant_id(), so:
+        //  * the `.or('tenant_id.eq.<global>,tenant_id.eq.<cached>')` branch
+        //    was dead intent — the global tenant is NOT exempted in RLS, so
+        //    "system-wide" rows never survived the policy anyway, and the
+        //    cached-tenant branch merely duplicated the policy (with a
+        //    STALE value when the cached claim lagged the token);
+        //  * the fallback `.eq('tenant_id', <global>)` (cached claim
+        //    missing) intersected with RLS tenant=T to a guaranteed-empty
+        //    Discover with no error surfaced.
+        // Tenant scoping is the server's job — trust RLS (AGENTS.md).
+        final query = SupabaseService.client
             .from('courses')
             .select('''
             *,
@@ -301,19 +307,14 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
             .eq('status', 'published')
             .eq('is_discoverable', true);
 
-        if (tenantId != null && tenantId is String && tenantId.isNotEmpty) {
-          // Show courses that are either system-wide (global) OR belong to the user's tenant
-          query = query.or(
-              'tenant_id.eq.00000000-0000-0000-0000-000000000001,tenant_id.eq.$tenantId');
-        } else {
-          // Fallback: show only system-wide courses
-          query =
-              query.eq('tenant_id', '00000000-0000-0000-0000-000000000001');
-        }
-
         final response = await query
             .range(offset, offset + limit - 1)
-            .order('created_at', ascending: false);
+            .order('created_at', ascending: false)
+            // Unique tiebreaker: rows sharing `created_at` (bulk seed data)
+            // made the offset window unstable across pages — a course could
+            // be skipped or served twice between page fetches. The secondary
+            // id order pins every row to exactly one offset position.
+            .order('id', ascending: false);
 
         final courses = (response as List).map((json) {
           final rawJson = json as Map<String, dynamic>;
@@ -330,8 +331,8 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
           );
           CoursesJsonMapper.sortCurriculum(fullData);
 
-          return Course.fromJson(fullData);
-        }).toList();
+          return _safeCourseFromJson(fullData);
+        }).whereType<Course>().toList();
 
         return mergeInstructors(courses);
       } on PostgrestException catch (e) {
@@ -357,7 +358,10 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
             .from('enrollments')
             .select('course_id')
             .eq('user_id', userId)
-            .eq('status', 'active');
+            // Same Phase 10 fix as getMyCourses: 'completed' enrollments are
+            // still entitled (server access checks accept active+completed),
+            // so a finished course must keep its "enrolled" CTA/routing.
+            .inFilter('status', ['active', 'completed']);
 
         return (response as List<dynamic>)
             .map((json) {
@@ -623,10 +627,23 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
           );
           CoursesJsonMapper.sortCurriculum(fullData);
 
-          return Course.fromJson(fullData);
-        }).toList();
+          return _safeCourseFromJson(fullData);
+        }).whereType<Course>().toList();
 
-        return mergeInstructors(courses);
+        final merged = await mergeInstructors(courses);
+        // The Saved screen contract is "most recently bookmarked first": the
+        // caller passes ids already ordered by the local bookmarks table
+        // (created_at DESC), but PostgREST returns rows in arbitrary order
+        // (no .order on an inFilter query). Restore the caller's order so
+        // the saved list cannot reshuffle between refetches.
+        final position = {
+          for (final (index, id) in ids.indexed) id: index,
+        };
+        merged.sort(
+          (a, b) => (position[a.id] ?? ids.length)
+              .compareTo(position[b.id] ?? ids.length),
+        );
+        return merged;
       } on PostgrestException catch (e) {
         throw ServerException(e.message, e.code); // check-ignore
       } catch (e) {
@@ -634,5 +651,34 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
         throw NetworkExceptionMapper.map(e);
       }
     });
+  }
+
+  // ── Per-row mapping resilience ─────────────────────────────────────
+  // A single malformed row (a null in a non-nullable Course field, a
+  // non-ISO date, an unexpected embed shape) used to throw out of the
+  // row-mapping loop and fail the ENTIRE list — one bad row in `courses`
+  // or `enrollments` turned the catalog/My Courses/Saved screens into a
+  // permanent AsyncError whose retry could never succeed (the corruption
+  // is server-side data, not a transient fault). Rows that fail mapping
+  // are now skipped with a diagnostic record (mirroring the
+  // LessonProgressOutboxStore policy: discard-and-log, never guess);
+  // genuine network/Postgrest failures keep failing the whole call so
+  // they stay retryable.
+  Course? _safeCourseFromJson(Map<String, dynamic> json) {
+    try {
+      return Course.fromJson(json);
+    } catch (e, stack) {
+      GlobalErrorHandler.logError(e, stack);
+      return null;
+    }
+  }
+
+  CourseEnrollment? _safeEnrollmentFromJson(Map<String, dynamic> json) {
+    try {
+      return CourseEnrollment.fromJson(json);
+    } catch (e, stack) {
+      GlobalErrorHandler.logError(e, stack);
+      return null;
+    }
   }
 }

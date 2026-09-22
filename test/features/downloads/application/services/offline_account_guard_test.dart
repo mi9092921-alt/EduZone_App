@@ -31,6 +31,12 @@ void main() {
     when(() => encryptionService.deleteKey(any())).thenAnswer((_) async {});
     when(() => localDataSource.deleteDownload(any()))
         .thenAnswer((_) async {});
+    // Phase 10: the guard now also deletes the session/chunk manifest rows
+    // with every purged row (no FK cascade is guaranteed).
+    when(() => localDataSource.deleteDownloadSession(any()))
+        .thenAnswer((_) async {});
+    when(() => localDataSource.deleteDownloadChunks(any()))
+        .thenAnswer((_) async {});
   });
 
   tearDown(() {
@@ -58,6 +64,16 @@ void main() {
     expect(File('$encPath.tmp').existsSync(), isFalse);
     verify(() => encryptionService.deleteKey('dl_other_1')).called(1);
     verify(() => localDataSource.deleteDownload('dl_other_1')).called(1);
+    // Phase 10: the manifest rows for all three track ids must be deleted
+    // with the purged row.
+    for (final trackId in [
+      'dl_other_1',
+      'dl_other_1_video',
+      'dl_other_1_audio',
+    ]) {
+      verify(() => localDataSource.deleteDownloadSession(trackId)).called(1);
+      verify(() => localDataSource.deleteDownloadChunks(trackId)).called(1);
+    }
   });
 
   test('does nothing when there are no other accounts on this device',

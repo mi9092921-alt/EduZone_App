@@ -663,4 +663,52 @@ void main() {
       ).called(1);
     });
   });
+
+  // Phase 10 (connectivity): a reconnect is transient, not a deterministic
+  // failure — it must clear the exhausted retry budget and push whatever is
+  // still pending, instead of waiting for the next user-driven enqueue.
+  group('flushOnReconnect', () {
+    test('flushes pending items and resets the failure budget', () async {
+      // Exhaust the budget: maxConsecutiveFailures defaults to 6; 7 failures
+      // guarantee the idle-timer cadence has stopped.
+      var fail = true;
+      when(
+        () => repository.syncProgressBatch(any()),
+      ).thenAnswer(
+        (_) async => fail
+            ? const Left(ServerFailure('offline'))
+            : const Right(null),
+      );
+
+      engine.enqueue(
+        const LessonProgressSyncItem(
+          courseId: 'c1',
+          lessonId: 'l1',
+          completed: false,
+          progressPct: 30,
+        ),
+        flushNow: true,
+      );
+      for (var i = 0; i < 7; i++) {
+        await engine.flush();
+      }
+      expect(engine.pendingCount, 1, reason: 'failed items are kept');
+      clearInteractions(repository);
+
+      // Connectivity returns.
+      fail = false;
+      await engine.flushOnReconnect();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(engine.pendingCount, 0);
+      verify(() => repository.syncProgressBatch(any())).called(1);
+    });
+
+    test('is a no-op when nothing is pending', () async {
+      await engine.flushOnReconnect();
+      await Future<void>.delayed(Duration.zero);
+
+      verifyNever(() => repository.syncProgressBatch(any()));
+    });
+  });
 }

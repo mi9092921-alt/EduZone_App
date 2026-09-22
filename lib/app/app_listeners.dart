@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../features/courses/application/providers/course_refresh_listener.dart';
 import '../../features/downloads/application/listeners/offline_account_purge_listener.dart';
 import '../../features/home/application/providers/home_refresh_listener.dart';
+import '../../features/video_player/application/listeners/progress_connectivity_listener.dart';
 
 part 'app_listeners.g.dart';
 
@@ -23,4 +24,8 @@ void appListeners(Ref ref) {
   ref.watch(offlineAccountPurgeListenerProvider);
   ref.watch(courseRefreshListenerProvider);
   ref.watch(homeRefreshListenerProvider);
+  // Phase 10: flush the progress outbox on connectivity restore (offline
+  // stretches are transient, not deterministic failures — see the
+  // listener's doc).
+  ref.watch(progressConnectivityListenerProvider);
 }

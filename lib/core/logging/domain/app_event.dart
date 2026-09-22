@@ -463,6 +463,25 @@ class LessonProgressChangedEvent extends AppEvent {
   String get entityId => lessonId;
 }
 
+/// Internal cross-feature refresh signal, not telemetry (same contract as
+/// [LessonProgressChangedEvent], for todos).
+///
+/// Phase 10: the home dashboard's "Daily tasks" preview watches
+/// `recentTodosProvider`, which is cached while MainShell keeps the home
+/// branch alive — without this signal the preview went stale after every
+/// todo mutation until a manual pull-to-refresh. Producer: the todo
+/// notifier's success branches; consumer: the home refresh listener.
+class TodoListChangedEvent extends AppEvent {
+  const TodoListChangedEvent({required super.timestamp});
+
+  @override
+  String get activityType => 'ui.todo_list_changed';
+  @override
+  EventCategory get category => EventCategory.ui;
+  @override
+  String get entityId => 'todo_list';
+}
+
 // ─── Navigation Events ──────────────────────────────────────────────────────
 
 class ScreenViewedEvent extends AppEvent {

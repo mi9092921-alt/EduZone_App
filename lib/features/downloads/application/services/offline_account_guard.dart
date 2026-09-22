@@ -2,6 +2,7 @@ import 'dart:io';
 
 import '../../../../core/services/encryption_service.dart';
 import '../../data/datasources/download_local_ds.dart';
+import '../../data/services/download_manifest_service.dart';
 
 /// Enforces P6.20 ("Account Switching") of
 /// `EduZone_Offline_Download_Security_Trusted_Playback_Architecture.md`:
@@ -33,10 +34,13 @@ class OfflineAccountGuard {
     required DownloadLocalDataSource localDataSource,
     required EncryptionService encryptionService,
   })  : _localDataSource = localDataSource,
-        _encryptionService = encryptionService;
+        _encryptionService = encryptionService,
+        _manifestService =
+            DownloadManifestService(localDataSource: localDataSource);
 
   final DownloadLocalDataSource _localDataSource;
   final EncryptionService _encryptionService;
+  final DownloadManifestService _manifestService;
 
   /// Physically deletes every local download (encrypted file + `.idx`
   /// sidecar + `.tmp` partial + secure-storage key + DB row) whose
@@ -87,6 +91,20 @@ class OfflineAccountGuard {
       }
 
       try {
+        // Phase 10: delete the session/chunk manifest rows with the row —
+        // `deleteDownload` only removes the `downloaded_lessons` row and no
+        // FK cascade is guaranteed, so skipping this left the purged
+        // account's manifest (lessonId/courseId/entitlementId metadata)
+        // behind forever, re-scanned by DownloadRecoveryService on every
+        // cold start. Same fix as CleanupScheduler's expired-row pass.
+        // On a manifest failure we still attempt the row delete below (the
+        // next login pass retries via getDownloadsOwnedByOthers only while
+        // the row exists — a row-without-manifest residue is inert).
+        try {
+          await _manifestService.deleteForDownload(id);
+        } catch (_) {
+          // Best-effort: manifest residue is inert without the row.
+        }
         await _localDataSource.deleteDownload(id);
         purged++;
       } catch (_) {

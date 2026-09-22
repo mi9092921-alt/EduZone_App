@@ -18,11 +18,19 @@ import '../models/logout_result.dart';
 /// and every logout silently reset the theme to system. `app_theme` and
 /// `onboarding_completed` are kept for documentation of intent — no code
 /// currently writes them.
+///
+/// Phase 10: `download_wifi_only` (StorageKeys.downloadWifiOnly) is a
+/// DEVICE-scoped preference, not account state — the settings UI documents
+/// it as untouched by logout, so it belongs in this set next to theme and
+/// locale. Per-user keys (feature-flag cache, watched-lesson hints, progress
+/// outbox) are deliberately NOT preserved: they are account-scoped and must
+/// be wiped with the session.
 const _preservedPrefKeys = {
   'onboarding_completed',
   'app_theme',
   'theme_mode',
   'app_locale',
+  'download_wifi_only',
 };
 
 /// Keys that are always wiped on logout.

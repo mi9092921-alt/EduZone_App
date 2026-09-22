@@ -274,8 +274,15 @@ void main() {
               .updateProgress(55.0, 200, courseId, lessonId);
 
           _runInvalidateVideoProgress(container);
-          // The final sync is queued via a debounced/batching engine; give
-          // its microtask/flush chain a turn to run.
+
+          // Phase 10: the tick is handed to the sync engine IMMEDIATELY
+          // (per-tick enqueue — the engine persists it to the on-disk
+          // outbox), so pending progress can never be lost to a provider
+          // rebuild/dispose. Prove the invalidation did not drop it: an
+          // explicit engine flush after the invalidation still delivers the
+          // write to the repository exactly once.
+          final engine = container.read(lessonProgressSyncEngineProvider);
+          await engine.flush();
           await Future<void>.delayed(Duration.zero);
 
           verify(() => repository.syncProgressBatch(any())).called(1);

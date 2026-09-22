@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/network/network_config.dart';
@@ -80,6 +81,28 @@ class VideoPlayerRemoteDataSource {
               },
             );
           } catch (e, st) {
+            // Phase 10 (poison-pill fix): the update_lesson_progress RPC
+            // raises a small, closed set of business errors that can NEVER
+            // succeed on retry — the lesson was deleted, the enrollment was
+            // revoked, or the client sent an out-of-contract value. Re-queueing
+            // such an item re-poisons every subsequent batch until the retry
+            // budget exhausts, stranding the OTHER (valid) pending items too.
+            // Dead-letter exactly those errors: the offending item is dropped,
+            // and the loop continues. Everything else — AUTH_REQUIRED (token
+            // refresh may still fix it), TENANT_CONTEXT_REQUIRED /
+            // CROSS_TENANT_ACCESS_DENIED (account-state signals consumed by
+            // the access-check channel), network/5xx/timeout — keeps the old
+            // propagate-and-requeue behavior. (All five markers below are
+            // RAISE EXCEPTIONs in update_lesson_progress itself — see
+            // 07_functions.sql:1652-1690.)
+            if (e is PostgrestException &&
+                _isDeterministicBusinessDenial(e)) {
+              debugPrint(
+                '[VideoPlayerRemoteDataSource] dead-lettering progress item '
+                '${item.lessonId}: ${e.message}',
+              );
+              continue;
+            }
             firstError ??= e;
             firstStackTrace ??= st;
           }
@@ -127,5 +150,25 @@ class VideoPlayerRemoteDataSource {
     } catch (_) {
       // Best-effort — ignore non-critical analytics errors
     }
+  }
+
+  /// Phase 10 (poison-pill fix): whether [e] is one of the closed set of
+  /// business errors `update_lesson_progress` raises that are deterministic
+  /// — retrying the SAME item will fail identically forever.
+  ///
+  /// The message must name the marker (P0001 is the generic SQLSTATE every
+  /// PL/pgSQL RAISE EXCEPTION shares — see LessonAccessErrorClassifier's
+  /// rationale in the courses feature for why the code alone is not
+  /// sufficient).
+  static bool _isDeterministicBusinessDenial(PostgrestException e) {
+    const markers = [
+      'LESSON_NOT_FOUND',
+      'ACCESS_DENIED',
+      'INVALID_PROGRESS',
+      'INVALID_WATCH_TIME',
+      'INVALID_PROGRESS_STATE',
+    ];
+    return e.code == 'P0001' &&
+        markers.any((marker) => e.message.contains(marker));
   }
 }

@@ -7,6 +7,7 @@ import '../../../../core/security/secure_storage_config.dart';
 import '../../../../core/services/encryption_service.dart';
 import '../../../../core/services/storage_service.dart';
 import '../datasources/download_local_ds.dart';
+import 'download_manifest_service.dart';
 
 /// Service for scheduling automatic cleanup of expired downloads.
 ///
@@ -61,7 +62,20 @@ class CleanupScheduler {
     required DownloadLocalDataSource localDs,
     required EncryptionService encryptionService,
   }) async {
-    final expiredRows = await localDs.getExpiredDownloads();
+    final expiredRows = await localDs.getExpiredDownloads(
+      // WorkManager isolate: Supabase is intentionally absent here, and this
+      // sweep is account-agnostic maintenance — it must keep covering every
+      // account's expired rows (see DownloadLocalDataSource's doc for why
+      // the default scoped path is fail-closed instead).
+      scopeToCurrentUser: false,
+    );
+    // Phase 10: expired rows used to leave their `download_sessions` /
+    // `download_chunks` manifest rows behind forever — `deleteDownload` only
+    // removes the `downloaded_lessons` row and no FK cascade exists, so
+    // `DownloadRecoveryService.reconcile` re-scanned and re-wrote the orphaned
+    // manifest on every cold start (cumulative DB bloat and wasted startup
+    // work). Delete the manifest with the row.
+    final manifestService = DownloadManifestService(localDataSource: localDs);
     var keyDeletionFailures = 0;
 
     for (final row in expiredRows) {
@@ -112,7 +126,11 @@ class CleanupScheduler {
       }
 
       // Remove the DB row last so that a crash mid-loop leaves the
-      // record in place and the next run retries the cleanup.
+      // record in place and the next run retries the cleanup. The
+      // session/chunk manifest rows go with it (see the Phase 10 note
+      // above) — but only on this path, after the key is gone, so a
+      // key-deletion failure still leaves everything in place for retry.
+      await manifestService.deleteForDownload(id);
       await localDs.deleteDownload(id);
     }
 

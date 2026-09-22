@@ -38,6 +38,7 @@ import 'package:app/features/downloads/presentation/screens/downloads_screen.dar
 import 'package:app/features/downloads/presentation/screens/offline_player_screen.dart';
 import 'package:app/features/downloads/presentation/widgets/offline_player_wrapper.dart';
 import 'package:app/features/home/application/providers/home_provider.dart';
+import 'package:app/features/home/domain/entities/resume_lesson.dart';
 import 'package:app/features/home/presentation/screens/home_screen.dart';
 import 'package:app/features/notifications/application/providers/notifications_provider.dart';
 import 'package:app/features/notifications/application/services/home_notifications_gateway_impl.dart';
@@ -513,7 +514,7 @@ ProviderContainer _containerFor(
       ),
       appLocaleProvider.overrideWithValue(locale),
       appThemeModeProvider.overrideWithValue(ThemeMode.light),
-      resumeLessonProvider.overrideWith((ref) async => null),
+      resumeLessonsProvider.overrideWith((ref) async => const <ResumeLesson>[]),
       recentCoursesProvider.overrideWith((ref) async => const []),
       recentTodosProvider.overrideWith((ref) async => const []),
       if (!useRealProfileProvider)
@@ -859,7 +860,7 @@ void main() {
           ),
           appLocaleProvider.overrideWithValue(const Locale('en')),
           appThemeModeProvider.overrideWithValue(ThemeMode.light),
-          resumeLessonProvider.overrideWith((ref) async => null),
+          resumeLessonsProvider.overrideWith((ref) async => const <ResumeLesson>[]),
           recentCoursesProvider.overrideWith((ref) async => const []),
           recentTodosProvider.overrideWith((ref) async => const []),
           profileProvider.overrideWith((ref) async => _profile),

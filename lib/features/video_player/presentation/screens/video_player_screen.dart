@@ -97,6 +97,33 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   final GlobalKey _playerKey = GlobalKey();
 
   @override
+  void initState() {
+    super.initState();
+    // Phase 10 (progress-corruption fix): seed the progress notifier with
+    // the SERVER-known progress for this lesson (embedded per-user in the
+    // course outline the route layer resolved). Without this, re-opening a
+    // completed/further-along lesson started the notifier at 0/false and
+    // the first playback tick overwrote the server's higher progress —
+    // the RPC's ON CONFLICT is last-writer-wins. Seeding only upgrades
+    // (monotonic pct, sticky completion); see VideoProgress.seedFromServer.
+    final lesson = findLessonById(widget.course, widget.lessonId);
+    final progress = (lesson?.userProgress?.isNotEmpty ?? false)
+        ? lesson!.userProgress!.first
+        : null;
+    if (progress != null) {
+      ref
+          .read(
+            videoProgressProvider(widget.courseId, widget.lessonId).notifier,
+          )
+          .seedFromServer(
+            progressPct: progress.progressPct,
+            completed: progress.completed,
+            watchTimeSec: progress.watchTimeSec,
+          );
+    }
+  }
+
+  @override
   void dispose() {
     _resetOrientation();
     super.dispose();

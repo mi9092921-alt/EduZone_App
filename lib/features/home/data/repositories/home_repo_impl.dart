@@ -13,16 +13,6 @@ class HomeRepositoryImpl implements HomeRepository {
   HomeRepositoryImpl(this.remoteDataSource);
 
   @override
-  Future<Either<Failure, ResumeLesson?>> getResumeLesson() async {
-    try {
-      final lesson = await remoteDataSource.getResumeLesson();
-      return Right(lesson);
-    } catch (e) {
-      return Left(failureFromError(e));
-    }
-  }
-
-  @override
   Future<Either<Failure, List<ResumeLesson>>> getResumeLessons() async {
     try {
       return Right(await remoteDataSource.getResumeLessons());

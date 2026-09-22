@@ -77,6 +77,14 @@ class _RealtimeNotificationHandlerState
   final Set<String> _seenNotificationIds = {};
   bool _isFirstLoad = true;
 
+  /// The account the seen-set/first-load state above belongs to. Both are
+  /// per-account state: without resetting on an account change, the next
+  /// account's pre-existing unread notifications would all be "unseen" and
+  /// trigger one toast each at login (this widget outlives sessions — it is
+  /// mounted at the app root above the router), and the set would grow
+  /// unboundedly across accounts.
+  String? _ownerUserId;
+
   static const Duration _minRefreshInterval = Duration(milliseconds: 600);
 
   late final RealtimeRefreshThrottle _refreshThrottle = RealtimeRefreshThrottle(
@@ -98,6 +106,16 @@ class _RealtimeNotificationHandlerState
     // this dependency, the handler created during splash would keep the
     // empty pre-auth stream after login.
     ref.watch(authProvider);
+
+    // Reset the per-account toast state when the account changes (including
+    // logout → null): the next account's first load re-seeds the seen-set
+    // from ITS existing notifications instead of toasting every one of them.
+    final ownerUserId = ref.watch(currentUserIdProvider);
+    if (_ownerUserId != ownerUserId) {
+      _ownerUserId = ownerUserId;
+      _seenNotificationIds.clear();
+      _isFirstLoad = true;
+    }
 
     ref.listen(notificationsChangesProvider, (previous, next) {
       next.whenData((_) => _refreshThrottle.notify());

@@ -167,5 +167,64 @@ void main() {
             },
           )).called(1);
     });
+
+    // Phase 10: re-opening a completed/further-along lesson used to start a
+    // fresh instance at 0/false, so the next playback tick overwrote the
+    // server's higher progress (the RPC's ON CONFLICT is last-writer-wins).
+    // seedFromServer only ever upgrades.
+    group('seedFromServer', () {
+      test('a seeded completion is sticky and never downgraded by later '
+          'ticks', () async {
+        final notifier = container.read(
+          videoProgressProvider(courseId, lessonId).notifier,
+        );
+
+        notifier.seedFromServer(progressPct: 100, completed: true);
+        expect(
+          container.read(videoProgressProvider(courseId, lessonId)).isCompleted,
+          true,
+        );
+
+        // Re-watching from the beginning must not revert completion.
+        notifier.updateProgress(3.0, 10, courseId, lessonId);
+        final state = container.read(videoProgressProvider(courseId, lessonId));
+        expect(state.isCompleted, true);
+      });
+
+      test('a seeded pct is monotonic — a lower tick never lowers what gets '
+          'synced', () async {
+        final notifier = container.read(
+          videoProgressProvider(courseId, lessonId).notifier,
+        );
+
+        notifier.seedFromServer(progressPct: 60, completed: false);
+        notifier.updateProgress(10.0, 20, courseId, lessonId);
+        await Future<void>.delayed(Duration.zero);
+
+        // The UI shows the real playhead (10%) …
+        expect(
+          container.read(videoProgressProvider(courseId, lessonId)).progressPct,
+          10.0,
+        );
+        // … but the write carries the seeded maximum (60%), never the
+        // regression.
+        final engine = container.read(lessonProgressSyncEngineProvider);
+        await engine.flush();
+        await Future<void>.delayed(Duration.zero);
+
+        verify(
+          () => mockSync.batch(
+            any(
+              that: predicate<List<LessonProgressSyncItem>>(
+                (items) =>
+                    items.length == 1 &&
+                    items.single.progressPct == 60.0 &&
+                    !items.single.completed,
+              ),
+            ),
+          ),
+        ).called(1);
+      });
+    });
   });
 }

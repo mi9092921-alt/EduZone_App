@@ -25,8 +25,18 @@ void main() {
     encryptionService = MockEncryptionService();
     tempDir = await Directory.systemTemp.createTemp('cleanup_scheduler_test_');
 
+    when(
+      () => localDs.getExpiredDownloads(
+        scopeToCurrentUser: any(named: 'scopeToCurrentUser'),
+      ),
+    ).thenAnswer((_) async => []);
     when(() => localDs.deleteDownload(any())).thenAnswer((_) async {});
     when(() => encryptionService.deleteKey(any())).thenAnswer((_) async {});
+    // Phase 10: runCleanup now also deletes the session/chunk manifest
+    // rows alongside the downloaded_lessons row (no FK cascade is
+    // guaranteed, so deleteDownload alone left orphans).
+    when(() => localDs.deleteDownloadSession(any())).thenAnswer((_) async {});
+    when(() => localDs.deleteDownloadChunks(any())).thenAnswer((_) async {});
   });
 
   tearDown(() async {
@@ -51,7 +61,7 @@ void main() {
       final audioTmpFile = await writeFile('lesson-1.audio.tmp');
       final audioIdxFile = await writeFile('lesson-1.audio.idx');
 
-      when(() => localDs.getExpiredDownloads()).thenAnswer(
+      when(() => localDs.getExpiredDownloads(scopeToCurrentUser: false)).thenAnswer(
         (_) async => [
           {
             'id': 'dl-1',
@@ -89,7 +99,7 @@ void main() {
       final fileA = await writeFile('a.enc');
       final fileB = await writeFile('b.enc');
 
-      when(() => localDs.getExpiredDownloads()).thenAnswer(
+      when(() => localDs.getExpiredDownloads(scopeToCurrentUser: false)).thenAnswer(
         (_) async => [
           {'id': 'a', 'encrypted_path': fileA.path, 'audio_path': null},
           {'id': 'b', 'encrypted_path': fileB.path, 'audio_path': null},
@@ -117,7 +127,7 @@ void main() {
         () async {
       final file = await writeFile('order.enc');
 
-      when(() => localDs.getExpiredDownloads()).thenAnswer(
+      when(() => localDs.getExpiredDownloads(scopeToCurrentUser: false)).thenAnswer(
         (_) async => [
           {'id': 'order-1', 'encrypted_path': file.path, 'audio_path': null},
         ],
@@ -138,6 +148,46 @@ void main() {
     });
   });
 
+  group('CleanupScheduler.runCleanup — manifest cleanup (Phase 10)', () {
+    test('deletes the session/chunk manifest rows for all three track ids '
+        'together with the DB row', () async {
+      when(() => localDs.getExpiredDownloads(scopeToCurrentUser: false)).thenAnswer(
+        (_) async => [
+          {'id': 'dl-m1', 'encrypted_path': null, 'audio_path': null},
+        ],
+      );
+
+      await CleanupScheduler.runCleanup(
+        localDs: localDs,
+        encryptionService: encryptionService,
+      );
+
+      for (final trackId in ['dl-m1', 'dl-m1_video', 'dl-m1_audio']) {
+        verify(() => localDs.deleteDownloadSession(trackId)).called(1);
+        verify(() => localDs.deleteDownloadChunks(trackId)).called(1);
+      }
+    });
+
+    test('key-deletion failure leaves the manifest rows in place too '
+        '(everything stays retryable together)', () async {
+      when(() => localDs.getExpiredDownloads(scopeToCurrentUser: false)).thenAnswer(
+        (_) async => [
+          {'id': 'dl-fail', 'encrypted_path': null, 'audio_path': null},
+        ],
+      );
+      when(() => encryptionService.deleteKey('dl-fail'))
+          .thenThrow(Exception('boom'));
+
+      await CleanupScheduler.runCleanup(
+        localDs: localDs,
+        encryptionService: encryptionService,
+      );
+
+      verifyNever(() => localDs.deleteDownloadSession(any()));
+      verifyNever(() => localDs.deleteDownloadChunks(any()));
+    });
+  });
+
   group('CleanupScheduler.runCleanup — key-deletion failure safety net', () {
     test(
         'does NOT delete the DB row when key deletion fails, so the item is '
@@ -145,7 +195,7 @@ void main() {
         '(P6.29/P6.30 orphan-prevention invariant)', () async {
       final file = await writeFile('fails.enc');
 
-      when(() => localDs.getExpiredDownloads()).thenAnswer(
+      when(() => localDs.getExpiredDownloads(scopeToCurrentUser: false)).thenAnswer(
         (_) async => [
           {'id': 'fails-1', 'encrypted_path': file.path, 'audio_path': null},
         ],
@@ -172,7 +222,7 @@ void main() {
       final fileA = await writeFile('bad.enc');
       final fileB = await writeFile('good.enc');
 
-      when(() => localDs.getExpiredDownloads()).thenAnswer(
+      when(() => localDs.getExpiredDownloads(scopeToCurrentUser: false)).thenAnswer(
         (_) async => [
           {'id': 'bad', 'encrypted_path': fileA.path, 'audio_path': null},
           {'id': 'good', 'encrypted_path': fileB.path, 'audio_path': null},
@@ -197,7 +247,7 @@ void main() {
   group('CleanupScheduler.runCleanup — edge cases', () {
     test('skips rows with a null or empty id without touching storage',
         () async {
-      when(() => localDs.getExpiredDownloads()).thenAnswer(
+      when(() => localDs.getExpiredDownloads(scopeToCurrentUser: false)).thenAnswer(
         (_) async => [
           {'id': null, 'encrypted_path': '/tmp/whatever.enc'},
           {'id': '', 'encrypted_path': '/tmp/whatever2.enc'},
@@ -217,7 +267,7 @@ void main() {
 
     test('a row whose files are already missing on disk still completes '
         'key + DB-row cleanup instead of throwing', () async {
-      when(() => localDs.getExpiredDownloads()).thenAnswer(
+      when(() => localDs.getExpiredDownloads(scopeToCurrentUser: false)).thenAnswer(
         (_) async => [
           {
             'id': 'ghost-1',
@@ -240,7 +290,7 @@ void main() {
 
     test('a row with neither encrypted_path nor audio_path still deletes '
         'the key and DB row', () async {
-      when(() => localDs.getExpiredDownloads()).thenAnswer(
+      when(() => localDs.getExpiredDownloads(scopeToCurrentUser: false)).thenAnswer(
         (_) async => [
           {'id': 'no-files', 'encrypted_path': null, 'audio_path': null},
         ],
@@ -258,7 +308,8 @@ void main() {
 
     test('no expired rows returns a zeroed-out summary and touches nothing',
         () async {
-      when(() => localDs.getExpiredDownloads()).thenAnswer((_) async => []);
+      when(() => localDs.getExpiredDownloads(scopeToCurrentUser: false))
+          .thenAnswer((_) async => []);
 
       final result = await CleanupScheduler.runCleanup(
         localDs: localDs,

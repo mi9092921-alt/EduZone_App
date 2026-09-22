@@ -167,8 +167,8 @@ void main() {
       expect(queried, isFalse);
     });
 
-    test('getPublicCourses falls back to system-wide courses for a null '
-        'tenant and maps teacher rows + pagination', () async {
+    test('getPublicCourses does NOT filter tenant client-side (RLS is the '
+        'authority) and maps teacher rows + pagination', () async {
       http.BaseRequest? coursesRequest;
       handler = (request) async {
         if (request.url.path.endsWith('/rest/v1/courses')) {
@@ -202,10 +202,14 @@ void main() {
       expect(coursesRequest!.url.path, endsWith('/rest/v1/courses'));
       expect(coursesRequest!.url.queryParameters['offset'], '10');
       expect(coursesRequest!.url.queryParameters['limit'], '10');
-      // Null tenant → only system-wide (global) courses.
+      // Phase 10: tenant scoping is 100% server-side (RLS policy
+      // courses_select_merged). The old client-side `.or(tenant_id...)`
+      // filter was dead intent + a false-empty fallback — the request must
+      // carry NO tenant constraint of any kind.
+      expect(coursesRequest!.url.queryParameters.containsKey('or'), isFalse);
       expect(
-        coursesRequest!.url.queryParameters['tenant_id'],
-        'eq.00000000-0000-0000-0000-000000000001',
+        coursesRequest!.url.queryParameters.containsKey('tenant_id'),
+        isFalse,
       );
     });
   });
@@ -390,8 +394,8 @@ void main() {
       );
     });
 
-    test('getPublicCourses widens the filter to tenant courses when the JWT '
-        'carries a tenant_id', () async {
+    test('getPublicCourses does NOT widen/narrow the tenant client-side — '
+        'RLS (courses_select_merged) is the sole tenant authority', () async {
       http.BaseRequest? coursesRequest;
       handler = (request) async {
         if (request.url.path.endsWith('/rest/v1/courses')) {
@@ -414,9 +418,13 @@ void main() {
 
       await dataSource.getPublicCourses(page: 1, limit: 10);
 
+      // Phase 10: the cached-JWT-claim `.or(...)` filter was deleted — a
+      // stale claim intersected with RLS produced empty/partial catalogs,
+      // and the global-tenant branch could never survive the policy anyway.
+      expect(coursesRequest!.url.queryParameters.containsKey('or'), isFalse);
       expect(
-        coursesRequest!.url.queryParameters['or'],
-        '(tenant_id.eq.00000000-0000-0000-0000-000000000001,tenant_id.eq.tenant-1)',
+        coursesRequest!.url.queryParameters.containsKey('tenant_id'),
+        isFalse,
       );
     });
 
