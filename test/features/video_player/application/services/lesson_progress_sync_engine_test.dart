@@ -504,8 +504,17 @@ void main() {
     );
 
     test('closeSession deletes the owning account snapshot', () async {
-      engine.openSession('user-A');
-      engine.enqueue(
+      // A flush interval far beyond this test's lifetime: the shared 20ms
+      // engine's idle flush can legitimately fire inside the wait below and
+      // clear the key on success, racing the presence assertion instead of
+      // exercising the session boundary.
+      final owner = LessonProgressSyncEngine(
+        syncLessonProgress: SyncLessonProgress(repository),
+        outboxStore: LessonProgressOutboxStore(),
+        flushInterval: const Duration(minutes: 1),
+      );
+      owner.openSession('user-A');
+      owner.enqueue(
         const LessonProgressSyncItem(
           courseId: 'course-a',
           lessonId: 'lesson-a',
@@ -519,7 +528,7 @@ void main() {
         isTrue,
       );
 
-      await engine.closeSession();
+      await owner.closeSession();
       expect(
         (await prefsMap()).containsKey('progress_outbox_v1_user-A'),
         isFalse,
