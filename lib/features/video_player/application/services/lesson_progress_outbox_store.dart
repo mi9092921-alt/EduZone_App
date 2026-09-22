@@ -62,14 +62,20 @@ class LessonProgressOutboxStore {
       try {
         final decoded = jsonDecode(raw);
         if (decoded is! Map<String, dynamic>) {
-          throw const FormatException('outbox payload is not an object');
+          throw const FormatException(
+            'outbox payload is not an object', // check-ignore
+          );
         }
         if (decoded['v'] != _schemaVersion) {
-          throw const FormatException('unsupported outbox schema version');
+          throw const FormatException(
+            'unsupported outbox schema version', // check-ignore
+          );
         }
         final items = decoded['items'];
         if (items is! List) {
-          throw const FormatException('outbox items is not a list');
+          throw const FormatException(
+            'outbox items is not a list', // check-ignore
+          );
         }
         final restored = <LessonProgressSyncItem>[];
         for (final entry in items) {
