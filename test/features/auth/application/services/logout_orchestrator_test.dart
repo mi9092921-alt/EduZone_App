@@ -121,5 +121,32 @@ void main() {
 
       await expectLater(orchestrator.forceLocalCleanup(), completes);
     });
+
+    test(
+        'preserves device-level preferences and wipes user-scoped ones '
+        '(Phase 9: theme_mode is the actually-written theme key)', () async {
+      SharedPreferences.setMockInitialValues({
+        'theme_mode': 'dark', // written by AppThemeMode (app_providers.dart)
+        'app_locale': 'ar', // written by AppLocale
+        'watched_lesson_user-A_lesson-1': true, // account-scoped UI hint
+        'last_watched_lesson_user-A_10': '42', // account-scoped resume hint
+        'feature_flags_cache_v1_user-A': '{}', // account-scoped flag cache
+      });
+
+      await orchestrator.forceLocalCleanup();
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('theme_mode'), 'dark',
+          reason:
+              'the theme key actually written by the app must survive '
+              'logout — preserving only the dead "app_theme" key silently '
+              'reset the theme on every logout (Phase 9 fix)');
+      expect(prefs.getString('app_locale'), 'ar');
+      expect(prefs.getKeys(), isNot(contains('watched_lesson_user-A_lesson-1')));
+      expect(
+          prefs.getKeys(), isNot(contains('last_watched_lesson_user-A_10')));
+      expect(prefs.getKeys(),
+          isNot(contains('feature_flags_cache_v1_user-A')));
+    });
   });
 }

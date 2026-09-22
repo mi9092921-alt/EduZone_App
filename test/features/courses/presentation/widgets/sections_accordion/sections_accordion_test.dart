@@ -1,6 +1,7 @@
 import 'package:app/core/error/failures.dart';
 import 'package:app/core/feature_flags/feature_flag_keys.dart';
 import 'package:app/core/l10n/arb/app_localizations.dart';
+import 'package:app/features/auth/application/providers/auth_provider.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
 import 'package:app/features/courses/presentation/widgets/sections_accordion.dart';
@@ -53,11 +54,15 @@ const _section = Section(
 Widget _wrap({
   required CoursesRepository coursesRepository,
   bool isEnrolled = false,
+  String currentUserId = 'user-A',
   List<Override> extraOverrides = const [],
 }) {
   return ProviderScope(
     overrides: [
       coursesRepositoryProvider.overrideWithValue(coursesRepository),
+      // The accordion scopes its local watched/last-watched hints by the
+      // signed-in account (Phase 9); tests bind a fixed account id here.
+      currentUserIdProvider.overrideWithValue(currentUserId),
       ...extraOverrides,
     ],
     child: MaterialApp(
@@ -299,6 +304,115 @@ void main() {
         false,
         reason: 'the optimistic "completed" update must be reverted on failure',
       );
+    });
+  });
+
+  // Phase 9 account isolation: local watched hints persist across an app
+  // kill or a passive revocation (neither runs the logout prefs wipe). They
+  // are keyed by the signed-in account, so the NEXT account must never see
+  // them rendered as its own completion state.
+  group('SectionsAccordion — local watched hints account isolation', () {
+    testWidgets(
+        "user A's locally persisted watched hint renders for A, and never "
+        'for user B on the same device',
+        (tester) async {
+      when(
+        () => coursesRepository.updateLessonProgress(
+          courseId: any(named: 'courseId'),
+          lessonId: any(named: 'lessonId'),
+          completed: any(named: 'completed'),
+          progressPct: any(named: 'progressPct'),
+          watchTimeSec: any(named: 'watchTimeSec'),
+        ),
+      ).thenAnswer((_) async => const Right(null));
+
+      // Simulate user A's device state left behind by an app kill: the
+      // preview lesson flagged watched under A's account key, with NO
+      // server-side progress for it.
+      SharedPreferences.setMockInitialValues({
+        'watched_lesson_user-A_lesson-preview': true,
+      });
+
+      // Account A: the local hint is honored as an optimistic completion.
+      await tester.pumpWidget(
+        _wrap(coursesRepository: coursesRepository, isEnrolled: true),
+      );
+      await tester.tap(find.text('Getting Started'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<Checkbox>(find.byType(Checkbox).first).value,
+        true,
+        reason: "A's own persisted hint must still apply to A",
+      );
+
+      // Account B signs in on the same device WITHOUT a manual logout in
+      // between (passive revocation / app kill path). B's key is empty, so
+      // the accordion must show server truth only: unchecked. The blank
+      // pump in between forces a full remount — reusing the element tree
+      // in place would keep the previous scope's provider state and the
+      // already-expanded tile, which is a test artifact, not app behavior.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        _wrap(
+          coursesRepository: coursesRepository,
+          isEnrolled: true,
+          currentUserId: 'user-B',
+        ),
+      );
+      await tester.tap(find.text('Getting Started'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<Checkbox>(find.byType(Checkbox).first).value,
+        false,
+        reason:
+            "B must not inherit A's local watched hint — this is the "
+            'cross-account leak fixed in Phase 9',
+      );
+    });
+
+    testWidgets(
+        "user A's last-watched resume pointer is not visible to user B",
+        (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'last_watched_lesson_user-A_0': 'lesson-preview',
+      });
+
+      await tester.pumpWidget(
+        _wrap(
+          coursesRepository: coursesRepository,
+          isEnrolled: true,
+          currentUserId: 'user-B',
+        ),
+      );
+      await tester.tap(find.text('Getting Started'));
+      await tester.pumpAndSettle();
+
+      // No assertion on rendering position needed: the pointer is loaded
+      // into state under B's (empty) key. Tapping the preview lesson writes
+      // B's own pointer; A's key must remain untouched below.
+      when(
+        () => coursesRepository.updateLessonProgress(
+          courseId: any(named: 'courseId'),
+          lessonId: any(named: 'lessonId'),
+          completed: any(named: 'completed'),
+          progressPct: any(named: 'progressPct'),
+          watchTimeSec: any(named: 'watchTimeSec'),
+        ),
+      ).thenAnswer((_) async => const Right(null));
+      await tester.tap(find.text('Intro (free preview)'));
+      await tester.pumpAndSettle();
+
+      final prefs = await SharedPreferences.getInstance();
+      // The fixture's course id ('course-1') is not numeric, so both the
+      // writer and course_details_screen's reader map it through
+      // int.tryParse(...) ?? 0 — the per-fixture key suffix is '0'.
+      expect(prefs.getString('last_watched_lesson_user-B_0'),
+          'lesson-preview',
+          reason: "B's tap must persist B's own resume pointer");
+      expect(prefs.getString('last_watched_lesson_user-A_0'),
+          'lesson-preview',
+          reason: "B's session writing its own pointer must not clobber A's");
     });
   });
 }

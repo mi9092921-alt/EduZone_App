@@ -281,7 +281,7 @@ class Auth extends _$Auth {
           // all crash reports without a user identifier attached.
           SentryService.setUserContext(appUser.id);
 
-          openUserProgressSession(ref);
+          openUserProgressSession(ref, appUser.id);
 
           // Track activity and session in the background (device already validated/re-bound above)
           await ref
@@ -492,6 +492,10 @@ class Auth extends _$Auth {
           _accessService = null;
           closeUserProgressSession(ref);
           _invalidateAllUserProviders();
+          // Telemetry attribution parity with logout()/_forceLocalSignOutOnly:
+          // the revoked account's identity must not keep labeling Sentry
+          // events raised between now and the next authenticated session.
+          SentryService.clearUserContext();
           _safeSetState(const AuthUnauthenticated());
         }
       }
@@ -567,7 +571,7 @@ class Auth extends _$Auth {
         // No email/name/PII is sent — see SentryService.setUserContext doc.
         SentryService.setUserContext(appUser.id);
 
-        openUserProgressSession(ref);
+        openUserProgressSession(ref, appUser.id);
 
         // Offline downloads account isolation (P6.20) is handled by the
         // downloads feature's OfflineAccountPurgeListener, which reacts to

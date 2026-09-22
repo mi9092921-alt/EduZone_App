@@ -18,6 +18,7 @@ import '../../../../../shared/providers/lesson_downloads_gateway.dart';
 import '../../../../../shared/utils/app_snackbar.dart';
 import '../../../../../shared/utils/error_handler.dart';
 import '../../../../../shared/widgets/confirm_dialog.dart';
+import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/courses_provider.dart';
 import '../../../data/services/watched_lessons_service.dart';
 import 'enrollment_required_dialog.dart';
@@ -54,9 +55,23 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
   String? _lastWatchedLessonId;
   final Set<String> _localWatchedIds = {};
 
+  /// Owner of the local watched/last-watched preferences. The local flags
+  /// are optimistic hints persisted per-account (Phase 9 account isolation):
+  /// they survive an app kill or a passive revocation (neither runs the
+  /// logout preferences wipe), so loading them without an account scope
+  /// would show the previous account's watched state to the next one. Null
+  /// (no authenticated account) means server truth only — no local reads or
+  /// writes.
+  String? _localPrefsOwnerId;
+
   @override
   void initState() {
     super.initState();
+    // Read synchronously before any await: the auth state can only move
+    // forward (logout) while this screen is open, and a logout unmounts it
+    // via the router redirect, so the id captured here stays the owner of
+    // everything this state instance reads or writes.
+    _localPrefsOwnerId = ref.read(currentUserIdProvider);
     _loadPreferences();
   }
 
@@ -64,14 +79,21 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
 
-    final lastId = prefs.getString(
-      StorageKeys.lastWatchedLesson(int.tryParse(widget.courseId) ?? 0),
-    );
+    final ownerId = _localPrefsOwnerId;
+    final lastId = ownerId == null
+        ? null
+        : prefs.getString(
+            StorageKeys.lastWatchedLesson(
+              ownerId,
+              int.tryParse(widget.courseId) ?? 0,
+            ),
+          );
 
     // Load local watched status for each lesson
-    if (widget.section.lessons != null) {
+    if (ownerId != null && widget.section.lessons != null) {
       for (final lesson in widget.section.lessons!) {
         final isWatched = await WatchedLessonsService.isLessonWatched(
+          ownerId,
           lesson.id,
         );
         if (isWatched) _localWatchedIds.add(lesson.id);
@@ -86,11 +108,17 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
   }
 
   Future<void> _saveLastWatched(String lessonId) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      StorageKeys.lastWatchedLesson(int.tryParse(widget.courseId) ?? 0),
-      lessonId,
-    );
+    final ownerId = _localPrefsOwnerId;
+    if (ownerId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        StorageKeys.lastWatchedLesson(
+          ownerId,
+          int.tryParse(widget.courseId) ?? 0,
+        ),
+        lessonId,
+      );
+    }
 
     if (mounted) {
       setState(() {
@@ -185,10 +213,16 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
 
     // Start local persistence and the backend write together. SharedPreferences
     // must not delay the user-visible update or the database request.
-    final localPersistence = WatchedLessonsService.toggleWatchedStatus(
-      lessonId,
-      isWatched,
-    );
+    // The persistence target is the account captured at initState — with no
+    // authenticated owner there is nothing safe to persist locally.
+    final ownerId = _localPrefsOwnerId;
+    final localPersistence = ownerId == null
+        ? Future<void>.value()
+        : WatchedLessonsService.toggleWatchedStatus(
+            ownerId,
+            lessonId,
+            isWatched,
+          );
     final repo = ref.read(coursesRepositoryProvider);
     final result = await repo.updateLessonProgress(
       courseId: widget.courseId,
@@ -219,8 +253,14 @@ class _SectionsAccordionState extends ConsumerState<SectionsAccordion> {
               _localWatchedIds.add(lessonId);
             }
           });
-          // Revert local preferences
-          WatchedLessonsService.toggleWatchedStatus(lessonId, !isWatched);
+          // Revert local preferences (same account scope as the write)
+          if (ownerId != null) {
+            WatchedLessonsService.toggleWatchedStatus(
+              ownerId,
+              lessonId,
+              !isWatched,
+            );
+          }
         }
       },
       (_) {

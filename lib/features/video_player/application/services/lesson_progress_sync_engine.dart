@@ -5,9 +5,18 @@ import 'package:fpdart/fpdart.dart';
 import '../../../../core/error/failures.dart';
 import '../../domain/entities/lesson_progress_sync_item.dart';
 import '../../domain/usecases/sync_lesson_progress.dart';
+import 'lesson_progress_outbox_store.dart';
 
 class LessonProgressSyncEngine {
   final SyncLessonProgress _syncLessonProgress;
+
+  /// Disk persistence for the pending queue (Phase 9). Snapshots are
+  /// written under the account id passed to [openSession] and restored only
+  /// for that same account, so queued progress survives an app kill without
+  /// ever being attributable to a different account. Persistence is a no-op
+  /// while no account id is known (see [openSession]).
+  final LessonProgressOutboxStore _outboxStore;
+
   final Duration flushInterval;
   final int maxBatchSize;
 
@@ -32,14 +41,17 @@ class LessonProgressSyncEngine {
   bool _sessionOpen = true;
   bool _discardAfterFlush = false;
   int _consecutiveFailures = 0;
+  String? _activeUserId;
 
   LessonProgressSyncEngine({
     required SyncLessonProgress syncLessonProgress,
+    required LessonProgressOutboxStore outboxStore,
     this.flushInterval = const Duration(seconds: 10),
     this.maxBatchSize = 20,
     this.maxRetryDelay = const Duration(minutes: 2),
     this.maxConsecutiveFailures = 6,
-  }) : _syncLessonProgress = syncLessonProgress;
+  }) : _syncLessonProgress = syncLessonProgress,
+       _outboxStore = outboxStore;
 
   int get pendingCount => _pending.length;
 
@@ -48,6 +60,7 @@ class LessonProgressSyncEngine {
 
     final previous = _pending[item.key];
     _pending[item.key] = previous == null ? item : previous.merge(item);
+    _persistOutbox();
 
     if (flushNow ||
         _pending.length >= maxBatchSize ||
@@ -113,6 +126,12 @@ class LessonProgressSyncEngine {
       _consecutiveFailures = 0;
     });
 
+    // Whatever the outcome, the on-disk snapshot must now mirror the
+    // post-flush queue: succeeded → key removed; failed → items kept for
+    // the next attempt; session closed mid-flush → empty (cleared below by
+    // closeSession as well).
+    _persistOutbox();
+
     _isFlushing = false;
     if (_pending.isNotEmpty && !_isDisposed && _sessionOpen) {
       _scheduleRetry();
@@ -143,7 +162,8 @@ class LessonProgressSyncEngine {
 
   /// Flushes the current account's pending progress, then stops accepting
   /// progress and drops anything that could be retried under a future
-  /// account's Supabase session.
+  /// account's session — including that account's on-disk outbox snapshot,
+  /// so a queued write never outlives the session that owns it.
   Future<void> closeSession({bool flushPending = false}) async {
     _sessionOpen = false;
     _flushTimer?.cancel();
@@ -152,17 +172,81 @@ class LessonProgressSyncEngine {
     if (flushPending) await flush();
     _discardAfterFlush = true;
     _pending.clear();
+    final userId = _activeUserId;
+    _activeUserId = null;
+    if (userId != null) {
+      try {
+        await _outboxStore.clear(userId);
+      } catch (e) {
+        // The logout wipe removes all non-preserved preferences anyway;
+        // a failed clear here must not abort the session boundary.
+      }
+    }
   }
 
-  /// Opens the queue for a newly authenticated account.
-  void openSession() {
+  /// Opens the queue for a newly authenticated account and restores that
+  /// account's on-disk outbox (progress queued by a previous session of
+  /// the SAME account that ended in an app kill). Passing a different
+  /// account id than the previous [closeSession]/[openSession] pair is what
+  /// makes cross-account isolation hold: restore only ever reads the
+  /// caller's own key. A null [userId] opens without persistence (tests,
+  /// or callers without an identity) and never touches disk.
+  void openSession([String? userId]) {
     if (_isDisposed) return;
     _discardAfterFlush = false;
     _sessionOpen = true;
+    _activeUserId = userId;
     // A fresh account's sync failures are independent of the previous
     // account's (e.g. an RPC denial specific to that account) — start its
     // cadence from scratch rather than inheriting an exhausted budget.
     _consecutiveFailures = 0;
+    if (userId != null) {
+      unawaited(_restoreFromOutbox(userId));
+    }
+  }
+
+  Future<void> _restoreFromOutbox(String userId) async {
+    final List<LessonProgressSyncItem> items;
+    try {
+      items = await _outboxStore.load(userId);
+    } catch (e) {
+      // load() already guards its own failures; this only keeps a store
+      // contract change from breaking session open.
+      return;
+    }
+    // The session may have been closed, or re-opened for another account,
+    // while the disk read was in flight — applying another account's (or a
+    // closed session's) snapshot then would be exactly the leak this
+    // design exists to prevent.
+    if (!_sessionOpen || _isDisposed || _activeUserId != userId) return;
+    for (final item in items) {
+      final previous = _pending[item.key];
+      _pending[item.key] = previous == null ? item : previous.merge(item);
+    }
+    if (items.isNotEmpty) {
+      _persistOutbox();
+      // Restored writes were acknowledged by nobody — push them to the
+      // server now that the owning session is live (the RPC upsert is
+      // idempotent on (user, course, lesson), so a restore-and-flush after
+      // a partial earlier delivery cannot duplicate rows).
+      unawaited(flush());
+    }
+  }
+
+  /// Mirrors [_pending] to disk under the active account's key. No-op when
+  /// no account is bound, the session is being torn down
+  /// ([_discardAfterFlush] — closeSession clears the key itself), or the
+  /// queue is empty-but-unbound. Fire-and-forget: a persistence failure
+  /// must never break a progress enqueue or flush (the next event retries
+  /// the snapshot).
+  void _persistOutbox() {
+    final userId = _activeUserId;
+    if (userId == null || _discardAfterFlush) return;
+    unawaited(
+      _outboxStore
+          .save(userId, _pending.values.toList(growable: false))
+          .catchError((Object _) {}),
+    );
   }
 
   Future<void> dispose() async {

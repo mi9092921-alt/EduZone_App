@@ -14,6 +14,7 @@ import '../../../../shared/widgets/app_course_thumbnail.dart';
 import '../../../../shared/widgets/app_refresh_indicator.dart';
 import '../../../../shared/widgets/collapsing_tab_bar_delegate.dart';
 import '../../../../shared/widgets/error_state.dart';
+import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/courses_provider.dart';
 import '../widgets/course_about_tab_content.dart';
 import '../widgets/course_enroll_price_row.dart';
@@ -433,21 +434,30 @@ class _CourseDetailsScreenState extends ConsumerState<CourseDetailsScreen>
 
   /// Audit P0 (H1): the enrolled footer CTA was a dead button
   /// (`onPressed: () {}`). Resume opens the lesson recorded in
-  /// [StorageKeys.lastWatchedLesson], falling back to the first lesson of
-  /// the first section; a completed course ("Review") restarts from the
-  /// first lesson. Navigation uses the default `/lesson/` player route —
-  /// the same entry point ResumeCard uses on Home; the in-player switch
-  /// sheet still allows changing the playback backend.
+  /// [StorageKeys.lastWatchedLesson] — read under the signed-in account's
+  /// key (Phase 9 account isolation: the pointer persists across an app
+  /// kill or passive revocation, so an unscoped read would resume another
+  /// account's lesson) — falling back to the first lesson of the first
+  /// section; a completed course ("Review") restarts from the first
+  /// lesson. Navigation uses the default `/lesson/` player route — the
+  /// same entry point ResumeCard uses on Home; the in-player switch sheet
+  /// still allows changing the playback backend.
   String? _resolveResumeLessonId(
     Course course, {
     required bool restartFromStart,
   }) {
     if (!restartFromStart) {
-      final lastWatched = AppInitializer.prefs.getString(
-        StorageKeys.lastWatchedLesson(int.tryParse(course.id) ?? 0),
-      );
-      if (lastWatched != null && lastWatched.isNotEmpty) {
-        return lastWatched;
+      final ownerId = ref.read(currentUserIdProvider);
+      if (ownerId != null) {
+        final lastWatched = AppInitializer.prefs.getString(
+          StorageKeys.lastWatchedLesson(
+            ownerId,
+            int.tryParse(course.id) ?? 0,
+          ),
+        );
+        if (lastWatched != null && lastWatched.isNotEmpty) {
+          return lastWatched;
+        }
       }
     }
     final sections = course.sections ?? const <Section>[];

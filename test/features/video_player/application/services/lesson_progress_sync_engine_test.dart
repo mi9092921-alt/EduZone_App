@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:app/core/error/failures.dart';
+import 'package:app/features/video_player/application/services/lesson_progress_outbox_store.dart';
 import 'package:app/features/video_player/application/services/lesson_progress_sync_engine.dart';
 import 'package:app/features/video_player/domain/entities/lesson_progress_sync_item.dart';
 import 'package:app/features/video_player/domain/repositories/video_player_repository.dart';
@@ -6,10 +9,13 @@ import 'package:app/features/video_player/domain/usecases/sync_lesson_progress.d
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MockVideoPlayerRepository extends Mock implements VideoPlayerRepository {}
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late MockVideoPlayerRepository repository;
   late LessonProgressSyncEngine engine;
 
@@ -18,9 +24,11 @@ void main() {
   });
 
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     repository = MockVideoPlayerRepository();
     engine = LessonProgressSyncEngine(
       syncLessonProgress: SyncLessonProgress(repository),
+      outboxStore: LessonProgressOutboxStore(),
       flushInterval: const Duration(milliseconds: 20),
       maxBatchSize: 3,
     );
@@ -217,6 +225,7 @@ void main() {
       () async {
         final bounded = LessonProgressSyncEngine(
           syncLessonProgress: SyncLessonProgress(repository),
+          outboxStore: LessonProgressOutboxStore(),
           flushInterval: const Duration(milliseconds: 10),
           maxConsecutiveFailures: 2,
         );
@@ -257,6 +266,7 @@ void main() {
       () async {
         final bounded = LessonProgressSyncEngine(
           syncLessonProgress: SyncLessonProgress(repository),
+          outboxStore: LessonProgressOutboxStore(),
           flushInterval: const Duration(milliseconds: 10),
           maxConsecutiveFailures: 1,
         );
@@ -304,6 +314,7 @@ void main() {
       () async {
         final bounded = LessonProgressSyncEngine(
           syncLessonProgress: SyncLessonProgress(repository),
+          outboxStore: LessonProgressOutboxStore(),
           flushInterval: const Duration(milliseconds: 10),
           maxConsecutiveFailures: 2,
         );
@@ -362,5 +373,294 @@ void main() {
         await bounded.dispose();
       },
     );
+  });
+
+  // ─── Disk outbox (Phase 9: no silent progress loss on app kill) ──────────
+  //
+  // The pending queue used to be memory-only: killing the app (no logout,
+  // no dispose) silently dropped every unacknowledged progress write. The
+  // outbox snapshots the queue under the signed-in account's key and
+  // restores it for that SAME account on the next openSession.
+  group('disk outbox', () {
+    Future<Map<String, Object>> prefsMap() async {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs
+          .getKeys()
+          .fold<Map<String, Object>>({}, (acc, key) {
+            final value = prefs.get(key);
+            if (value != null) acc[key] = value;
+            return acc;
+          });
+    }
+
+    test(
+      'progress queued before an app kill is restored and flushed when the '
+      'same account reopens a session',
+      () async {
+        // "Session 1": account A queues progress, then the process dies
+        // (no flush — the idle timer is minutes away, like the real 10s
+        // one is far beyond this test's lifetime).
+        final killed = LessonProgressSyncEngine(
+          syncLessonProgress: SyncLessonProgress(repository),
+          outboxStore: LessonProgressOutboxStore(),
+          flushInterval: const Duration(minutes: 1),
+        );
+        killed.openSession('user-A');
+        killed.enqueue(
+          const LessonProgressSyncItem(
+            courseId: 'course-a',
+            lessonId: 'lesson-a',
+            completed: false,
+            progressPct: 42,
+            watchTimeSec: 90,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(killed.pendingCount, 1);
+        final disk = await prefsMap();
+        expect(disk.containsKey('progress_outbox_v1_user-A'), isTrue);
+        // (killed is intentionally never disposed — that is the app kill.)
+
+        // "Session 2": the same account reopens; the snapshot must come
+        // back and reach the server.
+        clearInteractions(repository);
+        final revived = LessonProgressSyncEngine(
+          syncLessonProgress: SyncLessonProgress(repository),
+          outboxStore: LessonProgressOutboxStore(),
+          flushInterval: const Duration(milliseconds: 10),
+        );
+        revived.openSession('user-A');
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        verify(
+          () => repository.syncProgressBatch(
+            any(
+              that: predicate<List<LessonProgressSyncItem>>(
+                (items) =>
+                    items.length == 1 &&
+                    items.single.courseId == 'course-a' &&
+                    items.single.lessonId == 'lesson-a' &&
+                    items.single.progressPct == 42 &&
+                    items.single.watchTimeSec == 90,
+              ),
+            ),
+          ),
+        ).called(1);
+        expect(revived.pendingCount, 0);
+        // A clean flush removes the snapshot instead of leaving a stale
+        // file that would re-restore already-acknowledged progress.
+        final diskAfter = await prefsMap();
+        expect(diskAfter.containsKey('progress_outbox_v1_user-A'), isFalse);
+      },
+    );
+
+    test(
+      'account B never restores (or flushes) account A outbox entries, and '
+      "B's session does not destroy A's snapshot",
+      () async {
+        final killed = LessonProgressSyncEngine(
+          syncLessonProgress: SyncLessonProgress(repository),
+          outboxStore: LessonProgressOutboxStore(),
+          flushInterval: const Duration(minutes: 1),
+        );
+        killed.openSession('user-A');
+        killed.enqueue(
+          const LessonProgressSyncItem(
+            courseId: 'course-a',
+            lessonId: 'lesson-a',
+            completed: false,
+            progressPct: 42,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        clearInteractions(repository);
+        final asUserB = LessonProgressSyncEngine(
+          syncLessonProgress: SyncLessonProgress(repository),
+          outboxStore: LessonProgressOutboxStore(),
+          flushInterval: const Duration(milliseconds: 10),
+        );
+        asUserB.openSession('user-B');
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        expect(asUserB.pendingCount, 0);
+        verifyNever(
+          () => repository.syncProgressBatch(
+            any(
+              that: predicate<List<LessonProgressSyncItem>>(
+                (items) => items.any((i) => i.courseId == 'course-a'),
+              ),
+            ),
+          ),
+        );
+
+        // B closes their session (their own, empty outbox is cleared); A's
+        // snapshot must still be on disk, because B's boundary has no
+        // authority over A's account-scoped key.
+        await asUserB.closeSession();
+        final disk = await prefsMap();
+        expect(disk.containsKey('progress_outbox_v1_user-A'), isTrue);
+      },
+    );
+
+    test('closeSession deletes the owning account snapshot', () async {
+      engine.openSession('user-A');
+      engine.enqueue(
+        const LessonProgressSyncItem(
+          courseId: 'course-a',
+          lessonId: 'lesson-a',
+          completed: false,
+          progressPct: 10,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        (await prefsMap()).containsKey('progress_outbox_v1_user-A'),
+        isTrue,
+      );
+
+      await engine.closeSession();
+      expect(
+        (await prefsMap()).containsKey('progress_outbox_v1_user-A'),
+        isFalse,
+        reason:
+            'a session boundary must take its account outbox with it — a '
+            'queued write may never outlive the session that owns it',
+      );
+    });
+
+    test(
+        'a persist still in flight cannot resurrect the snapshot after '
+        'closeSession', () async {
+      engine.openSession('user-A');
+      // The enqueue's disk persist is fire-and-forget; closeSession is
+      // issued while that save may still be queued. The store serializes
+      // its operations, so the clear must land last — regression for the
+      // resurrection race found by this suite (Phase 9).
+      engine.enqueue(
+        const LessonProgressSyncItem(
+          courseId: 'course-a',
+          lessonId: 'lesson-a',
+          completed: false,
+          progressPct: 10,
+        ),
+      );
+      await engine.closeSession();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        (await prefsMap()).containsKey('progress_outbox_v1_user-A'),
+        isFalse,
+        reason:
+            'an in-flight persist must never re-create the outbox key after '
+            'its own session boundary has deleted it',
+      );
+    });
+
+    test('a corrupted snapshot is discarded, not guessed at', () async {
+      SharedPreferences.setMockInitialValues({
+        'progress_outbox_v1_user-A': 'not-json{{{',
+      });
+      engine.openSession('user-A');
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.pendingCount, 0);
+      expect(
+        (await prefsMap()).containsKey('progress_outbox_v1_user-A'),
+        isFalse,
+      );
+
+      // Wrong schema version: treated the same way — discard, never
+      // interpret unknown data as progress.
+      SharedPreferences.setMockInitialValues({
+        'progress_outbox_v1_user-A': jsonEncode({'v': 99, 'items': []}),
+      });
+      engine.openSession('user-A');
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.pendingCount, 0);
+    });
+
+    test('a snapshot with malformed entries restores only the valid rows',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'progress_outbox_v1_user-A': jsonEncode({
+          'v': 1,
+          'items': [
+            {
+              'courseId': 'course-ok',
+              'lessonId': 'lesson-ok',
+              'completed': false,
+              'progressPct': 30,
+            },
+            {
+              'courseId': 'course-bad',
+              // missing lessonId / completed / progressPct types
+            },
+            'garbage-entry',
+          ],
+        }),
+      });
+      engine.openSession('user-A');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // The restore itself flushes the recovered rows; after the flush the
+      // in-memory queue is empty again — the assertion of success is the
+      // batch reaching the repository below.
+      expect(engine.pendingCount, 0);
+      verify(
+        () => repository.syncProgressBatch(
+          any(
+            that: predicate<List<LessonProgressSyncItem>>(
+              (items) =>
+                  items.single.courseId == 'course-ok' &&
+                  items.single.lessonId == 'lesson-ok' &&
+                  items.single.progressPct == 30,
+            ),
+          ),
+        ),
+      ).called(1);
+    });
+
+    test('restore merges with progress already queued in this session',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'progress_outbox_v1_user-A': jsonEncode({
+          'v': 1,
+          'items': [
+            {
+              'courseId': 'c1',
+              'lessonId': 'l1',
+              'completed': false,
+              'progressPct': 30,
+              'watchTimeSec': 50,
+            },
+          ],
+        }),
+      });
+      engine.openSession('user-A');
+      // Racing enqueue in the fresh session (the async restore may not have
+      // applied yet) — the merge must keep both, monotonic per key.
+      engine.enqueue(
+        const LessonProgressSyncItem(
+          courseId: 'c1',
+          lessonId: 'l1',
+          completed: false,
+          progressPct: 80,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(engine.pendingCount, 0);
+      verify(
+        () => repository.syncProgressBatch(
+          any(
+            that: predicate<List<LessonProgressSyncItem>>(
+              (items) =>
+                  items.single.progressPct == 80 &&
+                  items.single.watchTimeSec == 50,
+            ),
+          ),
+        ),
+      ).called(1);
+    });
   });
 }

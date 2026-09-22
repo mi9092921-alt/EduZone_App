@@ -1,3 +1,6 @@
+import 'package:app/app/session/session_invalidation.dart';
+import 'package:app/core/logging/domain/event_metadata.dart';
+import 'package:app/core/logging/logging_providers.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/courses/domain/entities/course_progress_summary.dart';
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
@@ -280,4 +283,45 @@ void main() {
       );
     },
   );
+
+  // Phase 9: the pending telemetry queue is cleared at the session boundary.
+  // LogQueue entries carry the enqueueing account's userId, and the log sync
+  // datasource reads the *ambient* Supabase session at flush time — without
+  // this clear, the outgoing account's queued entries would be retried under
+  // the next account's session (rejected server-side, but misattributed and
+  // cycled into dead-letter), and LogQueue.clear()'s own documented logout
+  // contract had no caller anywhere.
+  group('invalidateAllUserScopedProviders — telemetry queue boundary', () {
+    test(
+        'clears the pending log queue so the outgoing account entries are '
+        "never flushed under the next account's session", () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final queue = container.read(logQueueProvider);
+      queue.add(
+        LogEntry(
+          idempotencyKey: 'idem-1',
+          eventType: 'todo_completed',
+          category: 'activity',
+          userId: 'user-A',
+          details: const {'todoId': 't-1'},
+          createdAt: DateTime(2026, 9, 22),
+        ),
+      );
+      expect(queue.length, 1);
+
+      container.read(
+        Provider<void>((ref) => invalidateAllUserScopedProviders(ref)),
+      );
+
+      expect(
+        queue.length,
+        0,
+        reason:
+            "user A's queued telemetry must not survive the account "
+            "boundary into user B's session",
+      );
+    });
+  });
 }

@@ -12,9 +12,16 @@ import '../models/logout_result.dart';
 
 /// Keys that must be preserved across logout.
 /// Onboarding, theme preferences, and language settings survive.
+///
+/// Phase 9: `theme_mode` is the key actually written by AppThemeMode
+/// (app_providers.dart); the historical `app_theme` entry matched nothing
+/// and every logout silently reset the theme to system. `app_theme` and
+/// `onboarding_completed` are kept for documentation of intent — no code
+/// currently writes them.
 const _preservedPrefKeys = {
   'onboarding_completed',
   'app_theme',
+  'theme_mode',
   'app_locale',
 };
 

@@ -11,6 +11,7 @@ import '../../data/repositories/video_player_repo_impl.dart';
 import '../../domain/entities/lesson_progress_sync_item.dart';
 import '../../domain/repositories/video_player_repository.dart';
 import '../../domain/usecases/sync_lesson_progress.dart';
+import '../services/lesson_progress_outbox_store.dart';
 import '../services/lesson_progress_sync_engine.dart';
 
 part 'video_provider.g.dart';
@@ -49,6 +50,7 @@ final lessonProgressSyncEngineProvider = Provider<LessonProgressSyncEngine>(( //
   // check-ignore
   final engine = LessonProgressSyncEngine(
     syncLessonProgress: ref.watch(syncLessonProgressProvider),
+    outboxStore: LessonProgressOutboxStore(),
   );
   ref.onDispose(engine.dispose);
   return engine;

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app/core/feature_flags/feature_flags_provider.dart';
+import 'package:app/core/logging/logging_providers.dart';
 import 'package:app/features/courses/application/providers/course_refresh_listener.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/downloads/application/listeners/offline_account_purge_listener.dart';
@@ -52,6 +53,15 @@ void invalidateAllUserScopedProviders(Ref ref) {
   // rebuilds from safe defaults (no session → no cache to load); the next
   // authenticated session re-fetches via the auth flow's refresh hook.
   ref.invalidate(featureFlagsProvider);
+  // Pending telemetry queued by the outgoing account must not be flushed
+  // after the account boundary: LogQueue entries carry the enqueueing
+  // account's userId, and the sync datasource reads the *ambient* Supabase
+  // session at flush time — under the next account they would be retried
+  // (and rejected server-side) with the wrong attribution. The queue is
+  // in-memory only and its own contract documents clear() as the logout
+  // cleanup step (log_queue.dart), so dropping it here is the intended
+  // behavior, not silent data loss.
+  ref.read(logQueueProvider).clear();
   invalidateCourseRefreshProviders(ref);
   invalidateOfflineAccountPurgeProviders(ref);
   invalidateHomeRefreshProviders(ref);
@@ -73,6 +83,12 @@ void closeUserProgressSession(Ref ref) {
 }
 
 /// Reopens the shared queue after a new authenticated session is established.
-void openUserProgressSession(Ref ref) {
-  ref.read(lessonProgressSyncEngineProvider).openSession();
+///
+/// [userId] scopes the engine's disk outbox: progress queued by a previous
+/// session of this SAME account (app kill) is restored here; any other
+/// account's snapshot stays on its own key, unread. Callers must pass the
+/// id of the account that was just authenticated — never the ambient
+/// session read, so the scope cannot drift from the state machine's verdict.
+void openUserProgressSession(Ref ref, String userId) {
+  ref.read(lessonProgressSyncEngineProvider).openSession(userId);
 }

@@ -37,7 +37,15 @@ class AppRoutes {
 
 class StorageKeys {
   static const String downloadWifiOnly = 'download_wifi_only';
-  static String lastWatchedLesson(int courseId) => 'last_watched_lesson_$courseId';
+
+  /// Last-watched lesson pointer per course. Keyed by the signed-in user id
+  /// (Phase 9 account isolation): the pointer is an optimistic resume hint
+  /// written by whichever account is watching and must never resolve for a
+  /// different account after an app kill or passive revocation skipped the
+  /// logout preferences wipe. An empty [ownerId] yields a key that no
+  /// caller may read or write (callers guard on it first).
+  static String lastWatchedLesson(String ownerId, int courseId) =>
+      'last_watched_lesson_${ownerId}_$courseId';
 
   /// Stores the latest version string the user dismissed the optional dialog for.
   /// Prevents re-showing the dialog on every app launch for the same version.

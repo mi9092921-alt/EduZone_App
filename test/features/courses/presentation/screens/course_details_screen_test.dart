@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app/core/l10n/arb/app_localizations.dart';
+import 'package:app/features/auth/application/providers/auth_provider.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/courses/domain/entities/course_enrollment.dart';
 import 'package:app/features/courses/presentation/screens/course_details_screen.dart';
@@ -19,7 +20,13 @@ Future<void> pumpCourseDetails(
 }) {
   return tester.pumpWidget(
     ProviderScope(
-      overrides: overrides,
+      overrides: [
+        // The resume CTA reads the signed-in account's last-watched pointer
+        // (Phase 9 account scoping); tests bind a fixed account id instead
+        // of letting currentUserIdProvider build the real auth graph.
+        currentUserIdProvider.overrideWithValue('user-A'),
+        ...overrides,
+      ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
