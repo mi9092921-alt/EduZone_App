@@ -204,7 +204,10 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           return [
             SliverFillRemaining(
               hasScrollBody: false,
-              child: Center(child: Text(l10n.noContentAvailable)),
+              child: AppEmptyState(
+                icon: Icons.search_off_rounded,
+                title: l10n.noContentAvailable,
+              ),
             ),
           ];
         }

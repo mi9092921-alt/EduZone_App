@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app/core/error/failures.dart';
 import 'package:app/core/l10n/arb/app_localizations.dart';
+import 'package:app/design_system/components/status/app_empty_state.dart';
 import 'package:app/features/courses/application/providers/courses_provider.dart';
 import 'package:app/features/courses/domain/entities/course_enrollment.dart';
 import 'package:app/features/courses/domain/repositories/courses_repository.dart';
@@ -87,6 +88,7 @@ void main() {
 
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(find.text(l10n.noContentAvailable), findsOneWidget);
+      expect(find.byType(AppEmptyState), findsOneWidget);
     });
 
     testWidgets(
@@ -198,6 +200,7 @@ void main() {
 
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(find.text(l10n.noContentAvailable), findsOneWidget);
+      expect(find.byType(AppEmptyState), findsOneWidget);
     });
   });
 

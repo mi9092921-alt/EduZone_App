@@ -184,8 +184,9 @@ class NotificationTile extends StatelessWidget {
                       ),
                     ),
                     if (!notification.isRead)
-                      Positioned(
-                        right: -2,
+                      Positioned.directional(
+                        textDirection: Directionality.of(context),
+                        end: -2,
                         top: -2,
                         child: Container(
                           width: 12,

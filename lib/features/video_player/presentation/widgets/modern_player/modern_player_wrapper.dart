@@ -376,9 +376,10 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
       return Stack(
         children: [
           Center(child: playerWidget),
-          Positioned(
+          Positioned.directional(
+            textDirection: Directionality.of(context),
             top: 16,
-            left: 16,
+            start: 16,
             child: SafeArea(
               child: ModernPlayerFullscreenExitButton(
                 tooltip: AppLocalizations.of(context)!.exitFullScreenButtonTooltip,

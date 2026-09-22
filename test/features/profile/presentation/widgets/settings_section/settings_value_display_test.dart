@@ -31,5 +31,35 @@ void main() {
       expect(text.maxLines, 1);
       expect(text.overflow, TextOverflow.ellipsis);
     });
+
+    testWidgets('chevron points forward in LTR and mirrors in RTL', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        buildTestableWidget(
+          const Directionality(
+            textDirection: TextDirection.ltr,
+            child: SettingsValueDisplay(value: 'Dark'),
+          ),
+        ),
+      );
+      expect(
+        tester.widget<Icon>(find.byType(Icon)).icon,
+        Icons.arrow_forward_ios_rounded,
+      );
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          const Directionality(
+            textDirection: TextDirection.rtl,
+            child: SettingsValueDisplay(value: 'Dark'),
+          ),
+        ),
+      );
+      expect(
+        tester.widget<Icon>(find.byType(Icon)).icon,
+        Icons.arrow_back_ios_rounded,
+      );
+    });
   });
 }

@@ -335,7 +335,7 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
               SettingsTile(
                 icon: AppIcons.support,
                 title: l10n.helpAndSupport,
-                trailing: _forwardIcon(ds),
+                trailing: _forwardIcon(context, ds),
                 onTap: () => _handleLinkTap(
                   'https://eduzone.com/support',
                   l10n.errorLinkUnavailable,
@@ -345,7 +345,7 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
               SettingsTile(
                 icon: Icons.thumb_up_rounded,
                 title: l10n.followUs,
-                trailing: _forwardIcon(ds),
+                trailing: _forwardIcon(context, ds),
                 onTap: () => _handleLinkTap(
                   'https://eduzone.com/eduzone',
                   l10n.errorLinkUnavailable,
@@ -355,21 +355,21 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
               SettingsTile(
                 icon: Icons.description_rounded,
                 title: l10n.termsAndConditions,
-                trailing: _forwardIcon(ds),
+                trailing: _forwardIcon(context, ds),
                 onTap: () => context.push('${AppRoutes.legal}/terms'),
               ),
               SettingsDivider(color: scheme.outlineVariant),
               SettingsTile(
                 icon: Icons.privacy_tip_rounded,
                 title: l10n.privacyPolicy,
-                trailing: _forwardIcon(ds),
+                trailing: _forwardIcon(context, ds),
                 onTap: () => context.push('${AppRoutes.legal}/privacy'),
               ),
               SettingsDivider(color: scheme.outlineVariant),
               SettingsTile(
                 icon: AppIcons.info,
                 title: l10n.about,
-                trailing: _forwardIcon(ds),
+                trailing: _forwardIcon(context, ds),
                 onTap: () => showSettingsAboutDialog(
                   context,
                   '${l10n.appTitle} ${l10n.versionLabel(_appVersion)}',
@@ -473,7 +473,11 @@ class _SettingsSectionState extends ConsumerState<SettingsSection> {
     );
   }
 
-  Widget _forwardIcon(DesignSystemColors ds) {
-    return Icon(AppIcons.arrowForward, size: 16, color: ds.textSecondary);
+  Widget _forwardIcon(BuildContext context, DesignSystemColors ds) {
+    return Icon(
+      AppIcons.chevronForward(context),
+      size: 16,
+      color: ds.textSecondary,
+    );
   }
 }

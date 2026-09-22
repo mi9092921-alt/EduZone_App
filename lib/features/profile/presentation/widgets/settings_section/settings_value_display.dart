@@ -27,7 +27,7 @@ class SettingsValueDisplay extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.xs),
         Icon(
-          AppIcons.arrowForward,
+          AppIcons.chevronForward(context),
           size: 14,
           color: ds.textSecondary.withValues(alpha: 0.6),
         ),

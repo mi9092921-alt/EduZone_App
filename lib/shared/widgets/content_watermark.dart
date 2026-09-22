@@ -53,7 +53,7 @@ class ContentWatermark extends StatelessWidget {
           ),
           child: Text(
             watermarkText,
-            style: AppTextStyles.labelTiny.copyWith(color: Colors.white),
+            style: AppTextStyles.labelTiny.copyWith(color: AppColors.neutral0),
           ),
         ),
       ),
