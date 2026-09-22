@@ -83,6 +83,22 @@ class NetworkBannerNotifier extends Notifier<NetworkBannerState> {
     }
   }
 
+  /// Re-polls the current connectivity and applies it to [state].
+  ///
+  /// Called when the app returns to the foreground. The OS/plugin stream
+  /// does not guarantee delivery of every transition observed on-device
+  /// (a missed online→offline event was reproduced on a real device:
+  /// airplane mode on for 60s+ with the app foregrounded never surfaced
+  /// the banner, while the startup check and the offline→online event
+  /// both work). Without this poll a missed event would leave a stale
+  /// online state — and hide the banner — until the next delivered event
+  /// or provider rebuild. Unchanged readings are a no-op by contract of
+  /// [_onConnectivityChanged]; calls after dispose are dropped via the
+  /// build-generation guard.
+  Future<void> refreshStatus() async {
+    await _checkInitialStatus(_buildGeneration);
+  }
+
   /// Called when the student taps the close (X) button.
   ///
   /// Only takes effect while offline — there's nothing to dismiss when

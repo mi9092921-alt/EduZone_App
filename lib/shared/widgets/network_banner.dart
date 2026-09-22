@@ -21,13 +21,14 @@ class NetworkBanner extends ConsumerStatefulWidget {
 }
 
 class _NetworkBannerState extends ConsumerState<NetworkBanner>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _animController;
   late final Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _animController = AnimationController(
       vsync: this,
       duration: AppMotion.medium,
@@ -41,8 +42,20 @@ class _NetworkBannerState extends ConsumerState<NetworkBanner>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _animController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-poll on foregrounding: transitions missed while backgrounded (or
+    // never delivered by the plugin stream on some OEM builds) would
+    // otherwise leave a stale connectivity state indefinitely. Unchanged
+    // readings are a no-op inside the notifier.
+    if (state == AppLifecycleState.resumed) {
+      ref.read(networkBannerProvider.notifier).refreshStatus();
+    }
   }
 
   @override

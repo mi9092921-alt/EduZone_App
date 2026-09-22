@@ -809,6 +809,19 @@ void main() {
       handle.dispose();
     });
 
+    // KNOWN DEVICE-LAB FLAKE (diagnosed 2026-09-22, Phase 13): on a real
+    // Android device with accessibility services enabled
+    // (`settings get secure accessibility_enabled` == 1), the OS can announce
+    // semantics mid-test. SemanticsBinding then holds a PLATFORM-owned
+    // SemanticsHandle (`_handleSemanticsEnabledChanged`) that outlives this
+    // test and trips flutter_test's end-of-test delta check ("A
+    // SemanticsHandle was active at the end of the test") even though every
+    // functional expectation below already passed. Neither the app nor this
+    // file creates that handle (only the a11y scenario calls
+    // tester.ensureSemantics, and it disposes its own handle). If this
+    // scenario fails ONLY on that harness assertion, re-run it in isolation
+    // (--plain-name) before treating it as a regression; do NOT "fix" it by
+    // touching production code.
     testWidgets(
         'authenticated user loads My Courses and opens a course into '
         'CourseDetailsScreen', (tester) async {
