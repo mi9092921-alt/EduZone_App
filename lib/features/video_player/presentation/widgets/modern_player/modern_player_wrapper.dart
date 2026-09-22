@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../../core/feature_flags/feature_flag_keys.dart';
+import '../../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../../core/utils/device_info_helper.dart';
@@ -13,6 +15,7 @@ import '../../../../../design_system/design_system.dart';
 import '../../../../../shared/models/lesson_content.dart';
 import '../../../../../shared/utils/player_ui_helpers.dart';
 import '../../../../../shared/utils/youtube_video_id.dart';
+import '../../../../../shared/widgets/content_watermark.dart';
 import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/video_provider.dart';
 import 'modern_player_error_overlay.dart';
@@ -316,11 +319,33 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
       WidgetsBinding.instance.addPostFrameCallback((_) => _switchVideo(videoId));
     }
 
+    // Phase 11 watermark gate: screen_watermark remote flag, fail-closed
+    // (unevaluated → default true → mark shows). Same posture in all four
+    // players; see ContentWatermark for the security boundary.
+    final showWatermark = ref
+        .watch(featureFlagsProvider)
+        .isEnabled(FeatureFlagKey.screenWatermark);
+
     final playerWidget = AspectRatio(
       aspectRatio: widget.isVertical ? 9 / 16 : 16 / 9,
       child: Stack(
         children: [
           _buildWebView(videoId),
+          // Phase 11 content watermark: IgnorePointer-rooted (see
+          // ContentWatermark) so WebView taps/gestures pass through
+          // untouched. Top-right over the video area — this player has no
+          // native top/bottom chrome of its own, so no control can sit
+          // beneath it. Rides into fullscreen inside [playerWidget].
+          if (showWatermark)
+            Positioned(
+              top: AppSpacing.sm,
+              right: AppSpacing.md,
+              child: ContentWatermark(
+                watermarkText: watermarkFragmentForUserId(
+                  ref.watch(currentUserIdProvider),
+                ),
+              ),
+            ),
           if (_isLoading)
             const Positioned(
               top: 0,

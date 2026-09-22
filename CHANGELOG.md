@@ -9,6 +9,29 @@
 
 ### Added / Fixed
 
+- **الفيديو والمحتوى (2026-09-22, Phase 11)**: إغلاق ثلاثة ثغرات إنتاجية
+  مثبتة بالاختبار:
+  - علامة مائية (`ContentWatermark` في `lib/shared/widgets/`) على المشغلات
+    الأربعة (YouTube/Modern/Player4/offline): آخر 4 أحرف من معرّف المستخدم
+    فقط (بلا اسم/بريد/هاتف)، جذرها `IgnorePointer` فلا تعترض أي control،
+    متموضعة بعيدًا عن الأزرار والترجمة وشريط التقدم، وتظهر في ملء الشاشة.
+    مربوطة بـ flag `screen_watermark` (مُسجَّل في `FeatureFlagKey`
+    بقيمة افتراضية `true` تُظهر العلامة عند أي حالة مجهولة — fail-closed)،
+    وتُخفى فقط بقرار خادم مسجَّل. ردع وتتبّع فقط — ليست حدًّا أمنيًا
+    (الحماية الفعلية `FLAG_SECURE`).
+  - عزل cache عناوين التشغيل الموقّعة لكل حساب: مفتاح
+    `player4VideoInfoProvider` أصبح `(videoId, userId)` — حساب جديد لا يقرأ
+    أبدًا URLs صادرة لحساب سابق (إثبات حتمي بهوية المفتاح لا بتوقيت
+    rebuild)، مع `ref.invalidate` للعائلة كاملة وتصفير
+    `player4PendingLessonIdProvider` عند كل session boundary، وفحص
+    `currentUserId` قبل/بعد كل fetch في `Player4Wrapper._refreshAndPlay`
+    (فشل مغلق عند تغيّر الحساب أثناء الجلب).
+  - تمييز رفض الصلاحية عن عطل الخادم في `mapPlayer4ErrorToMessage`: مفتاح
+    l10n جديد `videoAccessDenied` (ar+en، ‏382 مفتاحًا) لإشارات 401/403/
+    404/410 و`access denied` — بلا أي خلط بين عطل شبكة عابر وفشل auth.
+  - اختبارات جديدة: `content_watermark_test.dart` (مرور اللمس عبر العلامة)،
+    تقسيم الـ cache لكل حساب، وحالات denial في الـ mapper.
+
 - **الأمان (2026-09-20)**: سياسة تهديدات مركزية بدل «كل تهديد يُنهي التطبيق»
   (`lib/core/security/threat_policy.dart`):
   - الإنهاء فقط لـ App Integrity وHooks وPrivileged Access (root). أما

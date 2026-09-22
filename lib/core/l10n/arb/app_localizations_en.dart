@@ -274,6 +274,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Video data error. Please try again or contact support.';
 
   @override
+  String get videoAccessDenied =>
+      'You no longer have access to this video. If you believe this is a mistake, contact support.';
+
+  @override
   String get autoQuality => 'Auto';
 
   @override

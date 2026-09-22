@@ -8,14 +8,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../../../../../core/feature_flags/feature_flag_keys.dart';
+import '../../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../core/logging/logging_providers.dart';
 import '../../../../../core/security/secure_storage_config.dart';
 import '../../../../../core/services/encryption_service.dart'
     show detectContainerExt;
 import '../../../../../core/services/offline_playback_service.dart';
+import '../../../../../design_system/design_system.dart';
 import '../../../../../shared/models/downloaded_lesson.dart';
 import '../../../../../shared/utils/player_ui_helpers.dart';
+import '../../../../../shared/widgets/content_watermark.dart';
 import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/downloads_provider.dart';
 import '../../../application/services/offline_clock_guard.dart';
@@ -515,6 +519,26 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
               color: Colors.black,
               child: Video(controller: videoController, controls: NoVideoControls),
             ),
+            // Phase 11 content watermark (see ContentWatermark for the
+            // security posture): IgnorePointer-rooted, so the tap-to-toggle
+            // gesture and every button below stay reachable. Top-right over
+            // the video area — this chrome has no top bar (controls live at
+            // the bottom, play button centered), so no control sits beneath
+            // it. Above the overlay so the mark stays legible whether
+            // controls are shown or auto-hidden. Gated by the
+            // screen_watermark remote flag, fail-closed.
+            if (ref
+                .watch(featureFlagsProvider)
+                .isEnabled(FeatureFlagKey.screenWatermark))
+              Positioned(
+                top: AppSpacing.sm,
+                right: AppSpacing.md,
+                child: ContentWatermark(
+                  watermarkText: watermarkFragmentForUserId(
+                    ref.watch(currentUserIdProvider),
+                  ),
+                ),
+              ),
             // SafeArea only in fullscreen: system bars are hidden here, so
             // notches/gesture-bar insets would otherwise shift the bottom
             // control row and slider relative to where they sit in
@@ -545,6 +569,20 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
             color: Colors.black,
             child: Video(controller: videoController, controls: NoVideoControls),
           ),
+          // Same watermark rationale as the fullscreen branch above
+          // (flag-gated, fail-closed).
+          if (ref
+              .watch(featureFlagsProvider)
+              .isEnabled(FeatureFlagKey.screenWatermark))
+            Positioned(
+              top: AppSpacing.sm,
+              right: AppSpacing.md,
+              child: ContentWatermark(
+                watermarkText: watermarkFragmentForUserId(
+                  ref.watch(currentUserIdProvider),
+                ),
+              ),
+            ),
           // _buildControlsOverlay's own GestureDetector already handles
           // tap-to-toggle in both shown/hidden states, so no separate
           // InkWell layer is needed here.

@@ -295,6 +295,25 @@ sees other apps if the merged manifest declares package visibility; Google Play
 restricts `QUERY_ALL_PACKAGES`, so re-evaluate this guard before a store
 build.
 
+**Content watermark (Phase 11).** Every player (YouTube, modern WebView,
+Player4 streaming, offline) renders a `ContentWatermark`
+(`lib/shared/widgets/content_watermark.dart`) over the video area when the
+`screen_watermark` remote flag resolves enabled: the last
+4 characters of the opaque user id only — no name, email, phone, or full
+identifier. The flag defaults to **true fail-closed** (unevaluated /
+unregistered / offline → the mark shows; only a registered server `false`
+hides it — see `FeatureFlagKey.screenWatermark`). The overlay is
+`IgnorePointer`-rooted (verified by `content_watermark_test.dart`,
+including a tap pass-through test), placed clear of controls/subtitles/
+progress UI, and rides into fullscreen with the player widget. It is a
+deterrence/traceability aid, NOT a security
+boundary: capture itself is blocked by `FLAG_SECURE`/screenshot guards
+above, and a cropped or re-recorded leak defeats any overlay by
+construction. Honest limits, same class as the offline HMAC/clock notes:
+YouTube-backed lessons additionally resolve to public YouTube IDs (the RPC
+gates *knowledge* of the id, not playback of it — only the Player4
+signed-URL path and offline encrypted downloads are bearer-protected).
+
 ### `security_incidents` telemetry
 
 - **One row per (device, threat, session).** A session is one app process;

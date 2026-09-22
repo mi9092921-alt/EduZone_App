@@ -11,6 +11,7 @@ import 'package:app/features/home/application/providers/home_refresh_listener.da
 import 'package:app/features/notifications/application/providers/notifications_provider.dart';
 import 'package:app/features/profile/application/providers/profile_provider.dart';
 import 'package:app/features/todo/application/providers/todo_provider.dart';
+import 'package:app/features/video_player/application/providers/player4_provider.dart';
 import 'package:app/features/video_player/application/providers/video_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -47,6 +48,18 @@ void invalidateAllUserScopedProviders(Ref ref) {
   invalidateNotificationsProviders(ref);
   invalidateDownloadsProviders(ref);
   invalidateVideoProgressProviders(ref);
+  // Phase 11: drop every cached signed-URL entry (the family key already
+  // partitions them per account, so the next account could never HIT a
+  // stale entry — this is memory hygiene for the keepAlive'd instances,
+  // same pattern as invalidateVideoProgressProviders above).
+  ref.invalidate(player4VideoInfoProvider);
+  // Phase 11: the Player4 lesson side-channel (set by Player4Wrapper before
+  // every video-info read so the Edge Function can authorize the specific
+  // lesson) is autoDispose and normally dies with its last listener at the
+  // router redirect — but a logout that lands anywhere except a lesson
+  // route must not leave a stale lesson id behind for the next account's
+  // first video-info call to inherit.
+  ref.invalidate(player4PendingLessonIdProvider);
   // Feature-flag snapshots are user-scoped too: the evaluator targets by
   // JWT (rollout/user/tenant overrides), so the keep-alive snapshot of the
   // outgoing account must not be served to the next one. Invalidation

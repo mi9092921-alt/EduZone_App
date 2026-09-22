@@ -566,6 +566,12 @@ abstract class AppLocalizations {
   /// **'Video data error. Please try again or contact support.'**
   String get videoParseError;
 
+  /// No description provided for @videoAccessDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'You no longer have access to this video. If you believe this is a mistake, contact support.'**
+  String get videoAccessDenied;
+
   /// No description provided for @autoQuality.
   ///
   /// In en, this message translates to:

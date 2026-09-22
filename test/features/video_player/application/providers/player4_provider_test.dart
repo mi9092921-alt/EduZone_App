@@ -55,7 +55,7 @@ void main() {
           .thenAnswer((_) async => tVideoInfo);
 
       // Act
-      final result = await container.read(player4VideoInfoProvider('video-1').future);
+      final result = await container.read(player4VideoInfoProvider('video-1', 'test-user').future);
 
       // Assert
       expect(result.title, 'Test Video');
@@ -69,8 +69,8 @@ void main() {
           .thenAnswer((_) async => tVideoInfo);
 
       // Act
-      final result1 = await container.read(player4VideoInfoProvider('video-1').future);
-      final result2 = await container.read(player4VideoInfoProvider('video-1').future);
+      final result1 = await container.read(player4VideoInfoProvider('video-1', 'test-user').future);
+      final result2 = await container.read(player4VideoInfoProvider('video-1', 'test-user').future);
 
       // Assert
       expect(result1, result2);
@@ -90,7 +90,7 @@ void main() {
           .thenAnswer((_) async => expiredVideoInfo);
 
       // Act
-      final result1 = await container.read(player4VideoInfoProvider('video-2').future);
+      final result1 = await container.read(player4VideoInfoProvider('video-2', 'test-user').future);
       expect(result1.title, 'Expired Video');
 
       // Wait for the 100ms self-expiry window to elapse. Bounded polling
@@ -113,7 +113,7 @@ void main() {
       when(() => mockDataSource.getVideoInfo(any()))
           .thenAnswer((_) async => freshVideoInfo);
 
-      final result2 = await container.read(player4VideoInfoProvider('video-2').future);
+      final result2 = await container.read(player4VideoInfoProvider('video-2', 'test-user').future);
 
       // Assert
       expect(result2.title, 'Fresh Video');
@@ -130,7 +130,7 @@ void main() {
       // ServerException is not the final exception type on the future.
       // We verify that an error IS thrown (propagation works), not its exact type.
       await expectLater(
-        container.read(player4VideoInfoProvider('video-err').future),
+        container.read(player4VideoInfoProvider('video-err', 'test-user').future),
         throwsA(anything),
       );
     });
@@ -150,7 +150,7 @@ void main() {
           .thenAnswer((_) => completer.future);
 
       // Act — start the fetch but do NOT await it yet
-      final future = container.read(player4VideoInfoProvider('video-slow').future);
+      final future = container.read(player4VideoInfoProvider('video-slow', 'test-user').future);
 
       // Simulate navigation away: dispose the container while the call is in-flight
       // This must NOT cause UnmountedRefException when build() resumes.
@@ -165,6 +165,49 @@ void main() {
       await future.then((_) {}).catchError((_) {});
       // If we reach here without an unhandled UnmountedRefException, the fix works.
     });
+
+    test(
+      'Phase 11: signed-URL cache is partitioned per account '
+      '(a new account never hits the previous one)',
+      () async {
+        // The cached StreamingVideoInfo holds signed CDN URLs issued for
+        // one account's entitlement. The family key is (videoId, userId),
+        // so after a logout/login as a different account the same videoId
+        // resolves to a DIFFERENT key and re-authorizes under the new
+        // session — by key identity, not by rebuild timing.
+        //
+        // Fetch counting uses a closure counter (not mocktail verify):
+        // the verified behavior is "a second network authorization ran",
+        // and the counter observes the datasource boundary directly.
+        var fetches = 0;
+        when(
+          () => mockDataSource.getVideoInfo(any()),
+        ).thenAnswer((_) async {
+          fetches++;
+          return tVideoInfo;
+        });
+
+        final forA = await container.read(
+          player4VideoInfoProvider('video-acct', 'user-A').future,
+        );
+        expect(forA.title, 'Test Video');
+        expect(fetches, 1);
+
+        // Same video, different account → different key → re-authorizes.
+        final forB = await container.read(
+          player4VideoInfoProvider('video-acct', 'user-B').future,
+        );
+        expect(forB.title, 'Test Video');
+        expect(fetches, 2);
+
+        // Same video, same account → cache hit, no new authorization.
+        final forAAgain = await container.read(
+          player4VideoInfoProvider('video-acct', 'user-A').future,
+        );
+        expect(forAAgain.title, 'Test Video');
+        expect(fetches, 2);
+      },
+    );
   });
 
   // ─── StreamingVideoInfo.fromJson — format filtering tests ───────────────────

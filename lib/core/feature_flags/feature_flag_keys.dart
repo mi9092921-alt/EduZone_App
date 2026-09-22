@@ -105,6 +105,27 @@ enum FeatureFlagKey {
     description:
         'Course rating input (star picker) on the course About tab. '
         'false hides the input; aggregate rating display stays.',
+  ),
+
+  /// Controls the content watermark overlay on every video player
+  /// (YouTube, modern WebView, Player4 streaming, offline) — Phase 11.
+  ///
+  /// Default `true` = the watermark renders. This default is a deliberate
+  /// fail-closed choice, not "current behavior preservation": the watermark
+  /// is a content-protection control, so an unknown state (flag never
+  /// registered server-side, offline cold start with no cache, malformed
+  /// response) must SHOW the mark, never silently drop it. A registered
+  /// server row (version >= 1) with `false` hides it — e.g. for
+  /// accessibility or support-triage sessions — via the same per-student
+  /// rollout / tenant override / global kill-switch model as every other
+  /// flag here. Not an authorization boundary: playback/download
+  /// entitlements stay server-enforced regardless of this flag.
+  screenWatermark(
+    'screen_watermark',
+    defaultValue: true,
+    description:
+        'Content watermark overlay on all video players. '
+        'false hides the mark; true (and any unknown state) shows it.',
   );
 
   const FeatureFlagKey(

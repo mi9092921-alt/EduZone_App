@@ -324,10 +324,13 @@ class VideoProgress extends _$VideoProgress {
 /// of watch time are persisted rather than silently dropped.
 ///
 /// [player4VideoInfoProvider] (Player4VideoInfo, in player4_provider.dart)
-/// is deliberately NOT invalidated here: it caches a signed streaming URL
-/// keyed by videoId, not by account, and already self-invalidates on its
-/// own `cacheExpiresAt` timer regardless of which account is signed in, so
-/// leaving it alive across a logout does not leak account-specific data.
+/// needs no per-instance entry here: its family key is (videoId, userId),
+/// so a logout/account-switch can never hit the previous account's signed
+/// streaming URLs — the next account reads a different key and
+/// re-authorizes under its own session. `invalidateAllUserScopedProviders`
+/// still invalidates the whole family at the session boundary (memory
+/// hygiene for the keepAlive'd entries) and resets the lesson side-channel
+/// ([player4PendingLessonIdProvider]) — see lib/app/session/.
 void invalidateVideoProgressProviders(Ref ref) {
   ref.invalidate(videoProgressProvider);
 }

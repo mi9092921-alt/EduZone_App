@@ -82,8 +82,7 @@ void main() {
       );
     });
 
-    test('values map is defensively unmodifiable', () {
-      final snapshot = FeatureFlagSnapshot.fromEvaluations([
+    test('values map is defensively unmodifiable', () {      final snapshot = FeatureFlagSnapshot.fromEvaluations([
         const FeatureFlagEvaluation(
           key: FeatureFlagKey.playerDirectPlayer,
           enabled: false,
@@ -104,6 +103,49 @@ void main() {
 
       expect(snapshot.isEnabled(FeatureFlagKey.playerDirectPlayer), isFalse);
       expect(snapshot2.isEnabled(FeatureFlagKey.playerDirectPlayer), isTrue);
+    });
+  });
+
+  group('screen_watermark resolution (Phase 11)', () {
+    test('unknown state shows the mark (fail-closed default)', () {
+      // Defaults snapshot (cold start, signed out, unregistered key):
+      // the watermark must render.
+      expect(
+        FeatureFlagSnapshot.defaults().isEnabled(
+          FeatureFlagKey.screenWatermark,
+        ),
+        isTrue,
+      );
+    });
+
+    test('registered server false hides the mark', () {
+      final snapshot = FeatureFlagSnapshot.fromEvaluations([
+        const FeatureFlagEvaluation(
+          key: FeatureFlagKey.screenWatermark,
+          enabled: false,
+          version: 1,
+        ),
+      ], evaluatedAt: evaluatedAt);
+
+      expect(
+        snapshot.isEnabled(FeatureFlagKey.screenWatermark),
+        isFalse,
+      );
+    });
+
+    test('registered server true shows the mark', () {
+      final snapshot = FeatureFlagSnapshot.fromEvaluations([
+        const FeatureFlagEvaluation(
+          key: FeatureFlagKey.screenWatermark,
+          enabled: true,
+          version: 1,
+        ),
+      ], evaluatedAt: evaluatedAt);
+
+      expect(
+        snapshot.isEnabled(FeatureFlagKey.screenWatermark),
+        isTrue,
+      );
     });
   });
 }

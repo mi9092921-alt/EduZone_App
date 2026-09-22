@@ -76,8 +76,18 @@ void main() {
           'player_modern': true,
           'courses_downloads': true,
           'course_rating': true,
+          'screen_watermark': true,
         },
       );
+    });
+
+    test('screen_watermark default is fail-closed (true)', () {
+      // Phase 11: the watermark is a content-protection control, so its
+      // unevaluated state must SHOW the mark. If this default ever needs
+      // to become false, that change must be reviewed as a security
+      // decision — not slipped in as a routine flag tweak.
+      expect(FeatureFlagKey.screenWatermark.serverKey, 'screen_watermark');
+      expect(FeatureFlagKey.screenWatermark.defaultValue, isTrue);
     });
 
     test('every flag documents its description', () {

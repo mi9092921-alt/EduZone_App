@@ -276,6 +276,10 @@ class AppLocalizationsAr extends AppLocalizations {
       'خطأ في بيانات الفيديو. حاول مجدداً أو تواصل مع الدعم الفني.';
 
   @override
+  String get videoAccessDenied =>
+      'لم تعد لديك صلاحية الوصول إلى هذا الفيديو. إذا كنت تعتقد أن هذا خطأ، تواصل مع الدعم الفني.';
+
+  @override
   String get autoQuality => 'تلقائي';
 
   @override

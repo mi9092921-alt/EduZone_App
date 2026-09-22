@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
+import '../../../../core/feature_flags/feature_flag_keys.dart';
+import '../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../core/utils/device_info_helper.dart';
+import '../../../../design_system/design_system.dart';
 import '../../../../shared/models/lesson_content.dart';
 import '../../../../shared/utils/player_ui_helpers.dart';
+import '../../../../shared/widgets/content_watermark.dart';
 import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/video_provider.dart';
 import 'youtube_player_widget.dart';
@@ -164,9 +168,32 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return CustomYoutubePlayer(
-      controller: _controller!,
-      isVertical: widget.isVertical,
+    // Phase 11 content watermark: IgnorePointer-rooted (see
+    // ContentWatermark), top-right over the video area — clear of the
+    // center playback buttons and the bottom progress/time row — so taps
+    // still reach the overlay GestureDetector below untouched. Gated by
+    // the screen_watermark remote flag, fail-closed: an unevaluated flag
+    // (default true) still shows the mark.
+    final showWatermark = ref
+        .watch(featureFlagsProvider)
+        .isEnabled(FeatureFlagKey.screenWatermark);
+    final watermarkText = watermarkFragmentForUserId(
+      ref.watch(currentUserIdProvider),
+    );
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        CustomYoutubePlayer(
+          controller: _controller!,
+          isVertical: widget.isVertical,
+        ),
+        if (showWatermark)
+          Positioned(
+            top: AppSpacing.sm,
+            right: AppSpacing.md,
+            child: ContentWatermark(watermarkText: watermarkText),
+          ),
+      ],
     );
   }
 }

@@ -64,7 +64,7 @@ final class Player4VideoInfoProvider
     extends $AsyncNotifierProvider<Player4VideoInfo, StreamingVideoInfo> {
   Player4VideoInfoProvider._({
     required Player4VideoInfoFamily super.from,
-    required String super.argument,
+    required (String, String?) super.argument,
   }) : super(
          retry: null,
          name: r'player4VideoInfoProvider',
@@ -80,7 +80,7 @@ final class Player4VideoInfoProvider
   String toString() {
     return r'player4VideoInfoProvider'
         ''
-        '($argument)';
+        '$argument';
   }
 
   @$internal
@@ -98,7 +98,7 @@ final class Player4VideoInfoProvider
   }
 }
 
-String _$player4VideoInfoHash() => r'ecbd71928ad0ae6c953fabef6f47f2c5541b7007';
+String _$player4VideoInfoHash() => r'713e29ee87d92dd7f1c9607e52f978452559fcec';
 
 final class Player4VideoInfoFamily extends $Family
     with
@@ -107,7 +107,7 @@ final class Player4VideoInfoFamily extends $Family
           AsyncValue<StreamingVideoInfo>,
           StreamingVideoInfo,
           FutureOr<StreamingVideoInfo>,
-          String
+          (String, String?)
         > {
   Player4VideoInfoFamily._()
     : super(
@@ -118,18 +118,19 @@ final class Player4VideoInfoFamily extends $Family
         isAutoDispose: true,
       );
 
-  Player4VideoInfoProvider call(String videoId) =>
-      Player4VideoInfoProvider._(argument: videoId, from: this);
+  Player4VideoInfoProvider call(String videoId, String? userId) =>
+      Player4VideoInfoProvider._(argument: (videoId, userId), from: this);
 
   @override
   String toString() => r'player4VideoInfoProvider';
 }
 
 abstract class _$Player4VideoInfo extends $AsyncNotifier<StreamingVideoInfo> {
-  late final _$args = ref.$arg as String;
-  String get videoId => _$args;
+  late final _$args = ref.$arg as (String, String?);
+  String get videoId => _$args.$1;
+  String? get userId => _$args.$2;
 
-  FutureOr<StreamingVideoInfo> build(String videoId);
+  FutureOr<StreamingVideoInfo> build(String videoId, String? userId);
   @$mustCallSuper
   @override
   void runBuild() {
@@ -143,6 +144,6 @@ abstract class _$Player4VideoInfo extends $AsyncNotifier<StreamingVideoInfo> {
               Object?,
               Object?
             >;
-    element.handleCreate(ref, () => build(_$args));
+    element.handleCreate(ref, () => build(_$args.$1, _$args.$2));
   }
 }

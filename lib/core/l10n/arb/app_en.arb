@@ -127,6 +127,7 @@
   "checkInternetConnection": "Check your internet connection and try again",
   "serverError": "Unexpected server error",
   "videoParseError": "Video data error. Please try again or contact support.",
+  "videoAccessDenied": "You no longer have access to this video. If you believe this is a mistake, contact support.",
   "autoQuality": "Auto",
   "invalidVideoUrl": "Invalid Video URL",
 

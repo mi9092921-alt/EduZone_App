@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../../../../../core/feature_flags/feature_flag_keys.dart';
+import '../../../../../core/feature_flags/feature_flags_provider.dart';
 import '../../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../../core/utils/device_info_helper.dart';
@@ -13,6 +15,7 @@ import '../../../../../design_system/design_system.dart';
 import '../../../../../shared/models/lesson_content.dart';
 import '../../../../../shared/utils/player_ui_helpers.dart';
 import '../../../../../shared/utils/youtube_video_id.dart';
+import '../../../../../shared/widgets/content_watermark.dart';
 import '../../../../auth/application/providers/auth_provider.dart';
 import '../../../application/providers/player4_provider.dart';
 import '../../../application/providers/video_provider.dart';
@@ -192,20 +195,35 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
     // authorization to the video-info Edge Function. See
     // player4PendingLessonIdProvider for why this is a side-channel
     // provider rather than a second family parameter.
+    //
+    // Phase 11 (account isolation): the signed-URL cache is keyed per
+    // account — capture the authorizing account BEFORE the fetch and bail
+    // after it if the session changed underneath us, so a logout/login
+    // racing this fetch can never hand one account URLs issued for
+    // another. Null (no signed-in account on a route that requires auth)
+    // fails closed into the error view via the catch below.
+    final requestUserId = ref.read(currentUserIdProvider);
+    if (requestUserId == null || requestUserId.isEmpty) {
+      throw StateError('Cannot load video without a signed-in account'); // check-ignore: developer-facing detail, mapped to localized copy below
+    }
     ref
         .read(player4PendingLessonIdProvider.notifier)
         .setLessonId(widget.lessonId);
 
     try {
       if (forceRefresh) {
-        ref.invalidate(player4VideoInfoProvider(videoId));
+        ref.invalidate(player4VideoInfoProvider(videoId, requestUserId));
       }
 
       final videoInfo = await ref.read(
-        player4VideoInfoProvider(videoId).future,
+        player4VideoInfoProvider(videoId, requestUserId).future,
       );
 
       if (!mounted || _loadedVideoId != videoId) return;
+      // The account changed while the fetch was in flight: the URLs above
+      // belong to the previous session — never play them here. The new
+      // account's own fetch (from its own wrapper build) re-authorizes.
+      if (ref.read(currentUserIdProvider) != requestUserId) return;
 
       if (videoInfo.formats.isEmpty) {
         throw Exception('No formats available'); // check-ignore
@@ -503,6 +521,28 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
 
     final playerWidget = Center(child: Video(controller: _videoController));
 
+    // Phase 11 content watermark (see ContentWatermark for the security
+    // posture): IgnorePointer-rooted, so every control stays tappable.
+    // Top-right BELOW the top control bar (which spans the full width at
+    // top:sm with ~40px-tall buttons) and above the bottom seek bar, so it
+    // sits over video pixels only — never over a button, slider, or the
+    // center playback controls. Gated by the screen_watermark remote flag,
+    // fail-closed (unevaluated → default true → mark shows).
+    final showWatermark = ref
+        .watch(featureFlagsProvider)
+        .isEnabled(FeatureFlagKey.screenWatermark);
+    final watermark = showWatermark
+        ? Positioned(
+            top: AppSpacing.xl4 + AppSpacing.xs,
+            right: AppSpacing.md,
+            child: ContentWatermark(
+              watermarkText: watermarkFragmentForUserId(
+                ref.watch(currentUserIdProvider),
+              ),
+            ),
+          )
+        : const SizedBox.shrink();
+
     if (widget.isFullScreen) {
       return Scaffold(
         backgroundColor: Colors.black,
@@ -510,6 +550,10 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
           children: [
             playerWidget,
             _buildControlsOverlay(ds),
+            // Above the controls overlay (which dims the video when shown)
+            // so the mark stays legible in every controls state. Taps still
+            // reach the overlay below via ContentWatermark's IgnorePointer.
+            watermark,
             if (_isLoadingVideoData)
               Player4LoadingOverlay(
                 backgroundColor: Colors.black.withValues(alpha: 0.8),
@@ -527,6 +571,8 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
         children: [
           ColoredBox(color: Colors.black, child: playerWidget),
           _buildControlsOverlay(ds),
+          // Same ordering rationale as the fullscreen branch above.
+          watermark,
           if (_isLoadingVideoData)
             Player4LoadingOverlay(
               backgroundColor: Colors.black54,
