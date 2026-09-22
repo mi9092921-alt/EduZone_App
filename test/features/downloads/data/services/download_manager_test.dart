@@ -347,6 +347,36 @@ void main() {
 
       expect(size, isNull);
     });
+
+    test('P14-01: closes the HttpClient on the success path', () async {
+      final client = MockHttpClient();
+      final request = MockHttpClientRequest();
+      final response = MockHttpClientResponse();
+      when(() => client.headUrl(any())).thenAnswer((_) async => request);
+      when(() => request.close()).thenAnswer((_) async => response);
+      when(() => response.contentLength).thenReturn(12345);
+
+      final manager = buildManager();
+      await manager.getFileSize(
+        'https://cdn.example.com/video.mp4',
+        clientFactory: () => client,
+      );
+
+      verify(() => client.close()).called(1);
+    });
+
+    test('P14-01: closes the HttpClient on the failure path', () async {
+      final client = MockHttpClient();
+      when(() => client.headUrl(any())).thenThrow(const SocketException(''));
+
+      final manager = buildManager();
+      await manager.getFileSize(
+        'https://cdn.example.com/video.mp4',
+        clientFactory: () => client,
+      );
+
+      verify(() => client.close()).called(1);
+    });
   });
 
   group('startDownload — certificate pinning wiring', () {

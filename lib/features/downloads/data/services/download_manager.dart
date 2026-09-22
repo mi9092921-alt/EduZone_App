@@ -1074,8 +1074,15 @@ class DownloadManager {
     @visibleForTesting Duration timeout = NetworkConfig.readTimeout,
     @visibleForTesting HttpClient Function()? clientFactory,
   }) async {
+    // P14-01: the client is closed in `finally` — every return path below
+    // (success, null-length, timeout, SocketException) previously leaked
+    // the underlying socket/connection-table entry because the created
+    // HttpClient was never closed. `close()` with force=false only shuts
+    // down idle connections, so an in-flight HEAD is unaffected; it just
+    // guarantees the connection table is released once this probe ends.
+    HttpClient? client;
     try {
-      final client = clientFactory?.call() ?? HttpClient();
+      client = clientFactory?.call() ?? HttpClient();
       final request = await client.headUrl(Uri.parse(url)).timeout(timeout);
       headers?.forEach((key, value) {
         request.headers.set(key, value);
@@ -1085,6 +1092,8 @@ class DownloadManager {
       return contentLength > 0 ? contentLength : null;
     } catch (e) {
       return null;
+    } finally {
+      client?.close();
     }
   }
 
