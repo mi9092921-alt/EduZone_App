@@ -6,6 +6,12 @@ enum AccountStatus {
   suspended,
   locked,
   banned,
+
+  /// Soft-deleted account (`deleted_at IS NOT NULL`), reported by the access
+  /// gate as reason `deleted`; also covers a missing profile row
+  /// (`user_not_found`). Denial is fail-closed; the local session is torn
+  /// down at login/cold-start (DENIAL-SESSION-CLEANUP, 2026-09-25).
+  deleted,
   maintenance,
   unauthenticated,
   appLocked,
@@ -30,15 +36,24 @@ enum AccountStatus {
   unrecognized;
 
   /// Deserialize from DB string or RPC reason.
+  ///
+  /// MAPPING-FIX (2026-09-25): `deleted`, `user_not_found`,
+  /// `account_inactive` and `token_version_mismatch` previously fell through
+  /// to [unrecognized], which was fail-closed but left the fresh JWT on disk
+  /// at login/cold-start and showed an unexplained plain login screen. They
+  /// are now explicit; see [isKeepSessionRestriction] for the session
+  /// teardown rule that consumes these values.
   static AccountStatus fromString(String value) {
     return switch (value) {
       'active' => AccountStatus.active,
-      'inactive' => AccountStatus.inactive,
+      'inactive' || 'account_inactive' => AccountStatus.inactive,
       'suspended' || 'account_suspended' => AccountStatus.suspended,
       'locked' || 'account_locked' => AccountStatus.locked,
       'banned' || 'account_banned' => AccountStatus.banned,
+      'deleted' || 'user_not_found' => AccountStatus.deleted,
       'maintenance' || 'maintenance_mode' => AccountStatus.maintenance,
-      'unauthenticated' || 'auth_required' => AccountStatus.unauthenticated,
+      'unauthenticated' || 'auth_required' || 'token_version_mismatch' =>
+        AccountStatus.unauthenticated,
       'appLocked' || 'app_locked' => AccountStatus.appLocked,
       _ => AccountStatus.unrecognized,
     };
@@ -51,9 +66,22 @@ enum AccountStatus {
         suspended => 'suspended',
         locked => 'locked',
         banned => 'banned',
+        deleted => 'deleted',
         maintenance => 'maintenance',
         unauthenticated => 'unauthenticated',
         appLocked => 'appLocked',
         unrecognized => 'unrecognized',
       };
+
+  /// Whether this denial must KEEP the local session alive.
+  ///
+  /// Only maintenance_mode and app_locked are "keep-session" restrictions:
+  /// their screens re-check access against the live session on a timer, and
+  /// a mid-outage restart would otherwise re-login the user into a session
+  /// that is immediately destroyed again. EVERY other denial (suspended,
+  /// locked, banned, deleted, inactive, token_version_mismatch,
+  /// unauthenticated, unrecognized, …) represents an account or session the
+  /// server has refused, so the local JWT must be torn down instead of
+  /// lingering in secure storage (DENIAL-SESSION-CLEANUP, 2026-09-25).
+  bool get isKeepSessionRestriction => this == maintenance || this == appLocked;
 }

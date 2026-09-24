@@ -481,6 +481,7 @@
   "statusLocked": "Locked",
   "statusSuspended": "Suspended",
   "statusBanned": "Banned",
+  "statusDeleted": "Account deleted",
   "statusInactive": "Inactive",
   "statusMaintenance": "Maintenance",
   "statusUnauthenticated": "Unauthenticated",

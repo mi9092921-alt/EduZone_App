@@ -91,11 +91,15 @@ class CoursesRemoteDataSourceImpl implements CoursesRemoteDataSource {
     });
   }
 
-  // ── v11: getCourseDetails now delegates to get_course_outline RPC ──
-  // This ensures that lesson metadata (titles, duration) is returned
-  // while video_path (stored in lesson_contents) is never exposed via
-  // a direct PostgREST join. The RPC also merges user_progress for
-  // enrolled users automatically.
+  // ── Course details ────────────────────────────────────────────────
+  // COMMENT-FIX (2026-09-25): the old comment claimed this delegates to a
+  // `get_course_outline` RPC — it never did. getCourseDetails and
+  // getCourseOutline are both direct PostgREST multi-join selects (below):
+  // lesson metadata (titles, duration) is returned via the embed while
+  // video_path (stored in lesson_contents) is intentionally NOT selected,
+  // so lesson playback URLs are never exposed through this path. The
+  // server-side get_course_outline SQL function currently has no caller in
+  // either app.
   @override
   Future<Course> getCourseDetails(String courseId) async {
     return getCourseOutline(courseId);

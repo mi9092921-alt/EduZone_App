@@ -68,6 +68,14 @@ dependencies:
   installed_apps: ^2.1.1
   background_downloader: ^9.5.7
 
+  # Test-only runtime dep: integration_test/app_test.dart imports
+  # wakelock_plus to keep the emulator display awake during the nightly
+  # integration run (tester.pump() blocks forever if the screen turns off).
+  # integration_test/ compiles inside the app package, so the dependency
+  # must be a direct one — dev_dependencies is not enough
+  # (DEAD-DEP-FIX, 2026-09-25; depend_on_referenced_packages lint).
+  wakelock_plus: ^1.5.2
+
 
 dev_dependencies:
   # Testing
@@ -87,7 +95,6 @@ dev_dependencies:
 
   # Linting
   flutter_lints: ^6.0.0
-  wakelock_plus: ^1.5.2
 
 
 flutter:

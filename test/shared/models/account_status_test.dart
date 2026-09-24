@@ -42,6 +42,23 @@ void main() {
         AccountStatus.fromString('app_locked'),
         AccountStatus.appLocked,
       );
+      // DENIAL-SESSION-CLEANUP (2026-09-25): previously-unmapped denial
+      // reasons are now explicit instead of falling through to
+      // unrecognized, so the session teardown rule in auth_provider can
+      // clear the stored JWT for them.
+      expect(AccountStatus.fromString('deleted'), AccountStatus.deleted);
+      expect(
+        AccountStatus.fromString('user_not_found'),
+        AccountStatus.deleted,
+      );
+      expect(
+        AccountStatus.fromString('account_inactive'),
+        AccountStatus.inactive,
+      );
+      expect(
+        AccountStatus.fromString('token_version_mismatch'),
+        AccountStatus.unauthenticated,
+      );
     });
 
     // SECURITY REGRESSION: the default case here used to be
@@ -57,8 +74,6 @@ void main() {
         'falls back to unrecognized (fail-closed) for any unknown '
         'string, never to active', () {
       for (final unknownReason in [
-        'token_version_mismatch',
-        'user_not_found',
         'some_brand_new_server_side_reason',
         '',
         'ACTIVE', // case-sensitive mismatch is also "unknown" here
@@ -73,6 +88,22 @@ void main() {
 
     test('unrecognized round-trips through toDbString without throwing', () {
       expect(AccountStatus.unrecognized.toDbString, 'unrecognized');
+    });
+
+    test('only maintenance and app_locked keep the session', () {
+      // DENIAL-SESSION-CLEANUP (2026-09-25): every denial except the two
+      // "keep-session restriction" screens must trigger the local session
+      // teardown in auth_provider. Pin the predicate so a newly added enum
+      // value cannot silently default to keep-session.
+      for (final status in AccountStatus.values) {
+        final keeps = status.isKeepSessionRestriction;
+        expect(
+          keeps,
+          status == AccountStatus.maintenance ||
+              status == AccountStatus.appLocked,
+          reason: '$status must respect the keep-session matrix',
+        );
+      }
     });
   });
 }

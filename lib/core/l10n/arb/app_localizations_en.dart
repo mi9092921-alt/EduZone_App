@@ -963,6 +963,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get statusBanned => 'Banned';
 
   @override
+  String get statusDeleted => 'Account deleted';
+
+  @override
   String get statusInactive => 'Inactive';
 
   @override

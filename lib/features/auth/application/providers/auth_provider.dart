@@ -19,7 +19,6 @@ import '../../../../core/services/location_service.dart';
 import '../../../../core/services/push_token_registration_service.dart';
 import '../../../../core/services/sentry_service.dart';
 import '../../../../core/utils/global_error_handler.dart';
-import '../../../../shared/models/account_status.dart';
 import '../../../../shared/models/app_user.dart';
 import '../../../../shared/models/auth_state.dart';
 import '../../../../shared/models/update_info.dart';
@@ -315,20 +314,19 @@ class Auth extends _$Auth {
         // Explicit denial from the server — always AuthRestricted,
         // regardless of the transient-error policy below.
         //
-        // Audit P0 (M11): for statuses whose forced-sign-out matrix
-        // behavior is "sign out" (locked / banned / suspended), mirror
-        // login() and clear the local session so a denied account never
-        // keeps a live JWT in secure storage after a cold start.
-        // maintenance_mode and app_locked deliberately KEEP the session
-        // (matrix: no sign-out) so the screen's re-check loop keeps
-        // working. Local-only cleanup (no server revocation attempt —
-        // the account is already server-denied); the restricted screen
-        // still renders because the router maps AuthRestricted
-        // independently of any stored session. Best-effort: a cleanup
-        // failure must not override the user-facing restricted state.
-        if (access.status == AccountStatus.locked ||
-            access.status == AccountStatus.banned ||
-            access.status == AccountStatus.suspended) {
+        // Audit P0 (M11) + DENIAL-SESSION-CLEANUP (2026-09-25): clear the
+        // local session for every server denial EXCEPT the keep-session
+        // restrictions (maintenance_mode / app_locked), whose screens
+        // re-check access against the live session on a timer. Previously
+        // only locked / banned / suspended tore the session down, so a
+        // deleted, inactive, token-revoked or unrecognized denial left a
+        // fresh JWT in secure storage behind an unexplained plain login
+        // screen. Local-only cleanup (no server revocation attempt — the
+        // account is already server-denied); the restricted screen still
+        // renders because the router maps AuthRestricted independently of
+        // any stored session. Best-effort: a cleanup failure must not
+        // override the user-facing restricted state.
+        if (!access.status.isKeepSessionRestriction) {
           try {
             await _forceLocalSignOutOnly();
           } catch (e, st) {
@@ -619,17 +617,15 @@ class Auth extends _$Auth {
         if (!_isCurrentAuthOperation(generation)) return;
         // Explicit denial from the server — always AuthRestricted.
         //
-        // Forced-sign-out matrix (mirrors _initializeSession): only
-        // locked / banned / suspended tear the (just-created) session
-        // down. maintenance_mode and app_locked deliberately KEEP the
-        // session (matrix: no sign-out) — the restricted screen's
-        // re-check loop calls verifyAccess() against the live session,
-        // and a mid-outage restart would otherwise re-login the user
-        // into a session that is immediately destroyed again. A cleanup
-        // failure must not override the user-facing restricted screen.
-        if (access.status == AccountStatus.locked ||
-            access.status == AccountStatus.banned ||
-            access.status == AccountStatus.suspended) {
+        // Forced-sign-out matrix (mirrors _initializeSession,
+        // DENIAL-SESSION-CLEANUP 2026-09-25): every denial EXCEPT the
+        // keep-session restrictions (maintenance_mode / app_locked) tears
+        // the (just-created) session down — the keep-session screens'
+        // re-check loops call verifyAccess() against the live session, and
+        // a mid-outage restart would otherwise re-login the user into a
+        // session that is immediately destroyed again. A cleanup failure
+        // must not override the user-facing restricted screen.
+        if (!access.status.isKeepSessionRestriction) {
           try {
             await _remoteDataSource.signOutCurrentSession();
           } catch (e, st) {

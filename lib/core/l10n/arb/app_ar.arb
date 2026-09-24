@@ -481,6 +481,7 @@
   "statusLocked": "مقفل",
   "statusSuspended": "موقوف",
   "statusBanned": "محظور",
+  "statusDeleted": "الحساب محذوف",
   "statusInactive": "غير نشط",
   "statusMaintenance": "صيانة",
   "statusUnauthenticated": "غير مسجل",

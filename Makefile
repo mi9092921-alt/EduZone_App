@@ -22,8 +22,12 @@ build-prod:
 build-prod-aab:
 	flutter build appbundle --release --dart-define-from-file=.env --build-number=$(BUILD_NUMBER)
 
+# iOS CFBundleVersion: mirrors the Android rule above. Without an explicit
+# --build-number every IPA carries the pubspec `+1` suffix, so App Store
+# Connect rejects successive uploads with "CFBundleVersion must be higher"
+# (IOS-BUILD-NUMBER, 2026-09-25). Same BUILD_NUMBER default/override.
 build-ios:
-	flutter build ipa --release --dart-define-from-file=.env
+	flutter build ipa --release --dart-define-from-file=.env --build-number=$(BUILD_NUMBER)
 
 ## ─── Code Generation ──────────────────────────────────────────────────
 

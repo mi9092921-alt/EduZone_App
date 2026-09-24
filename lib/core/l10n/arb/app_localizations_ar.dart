@@ -962,6 +962,9 @@ class AppLocalizationsAr extends AppLocalizations {
   String get statusBanned => 'محظور';
 
   @override
+  String get statusDeleted => 'الحساب محذوف';
+
+  @override
   String get statusInactive => 'غير نشط';
 
   @override

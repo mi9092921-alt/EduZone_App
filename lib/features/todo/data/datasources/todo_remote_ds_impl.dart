@@ -16,13 +16,19 @@ class TodoRemoteDataSourceImpl implements TodoRemoteDataSource {
   Future<List<TodoItem>> fetchTodos(String userId) async {
     return NetworkGuard.read(() async {
       try {
+        // BOUND-FIX (2026-09-25): explicit cap on the user's own todos.
+        // Rows are already RLS-scoped to this user, so unbounded reads were
+        // safe but could still grow with the account's lifetime; 500 keeps
+        // the payload sane. The remaining todos UI pages read through the
+        // same repository path.
         final response = await supabaseClient
             .from('todos')
             .select()
             .eq('user_id', userId)
             .isFilter('deleted_at', null)
             .order('due_at', ascending: true)
-            .order('priority', ascending: false);
+            .order('priority', ascending: false)
+            .limit(500);
 
         return (response as List)
             .map((json) => TodoItem.fromJson(json))

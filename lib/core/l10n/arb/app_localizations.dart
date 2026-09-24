@@ -1802,6 +1802,12 @@ abstract class AppLocalizations {
   /// **'Banned'**
   String get statusBanned;
 
+  /// No description provided for @statusDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Account deleted'**
+  String get statusDeleted;
+
   /// No description provided for @statusInactive.
   ///
   /// In en, this message translates to:
