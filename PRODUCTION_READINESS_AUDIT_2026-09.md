@@ -1,5 +1,10 @@
 # EduZone Production Readiness Audit — 2026-09-13
 
+> **Historical snapshot:** this report records a dated audit run. Its pass
+> counts, commit references, and readiness statements are not current unless
+> the referenced checks are re-run against the present checkout and external
+> systems.
+
 > **Addendum (same day, CI bring-up session):** the first real CI executions surfaced
 > and closed five more defects. (1) `subosito/flutter-action@v2` could not resolve the
 > pubspec flutter RANGE → every flutter job died at setup; fixed by pinning

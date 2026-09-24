@@ -1,5 +1,9 @@
 # EduZone App — Design System Audit
 
+> **Dated audit:** the commit-specific findings below are historical evidence,
+> not a current design-system or release sign-off. Re-run the guard against
+> the current tree before relying on them.
+
 Status: **verified against repository state as of commit `4a01228`**
 (local checkpoint on top of `origin/main` @ `4a9a0d2`, which itself
 already includes the Auth Security Guard, CI integration-test job, and

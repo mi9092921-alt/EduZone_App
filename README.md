@@ -42,7 +42,7 @@ The platform is built on **Supabase** with Row Level Security (RLS) policies and
 │      Next.js 15              Flutter           Flutter      │
 │                                                 ← You are here │
 │                    ↕ Supabase Backend ↕                     │
-│         PostgreSQL 16 · RLS · Edge Functions               │
+│       PostgreSQL 17 (local config) · RLS · Edge Functions  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -81,11 +81,6 @@ The platform is built on **Supabase** with Row Level Security (RLS) policies and
 - Personal inbox (`user_notifications`)
 - Unread notification badge with counter
 - Mark individual or all notifications as read
-
-### ⚠️ Warnings
-- Display warnings issued by admins or teachers
-- Severity levels: low / medium / high
-- Automatic alert when a temporary suspension is approaching
 
 ### 📱 User Experience
 - Full bilingual support: Arabic (RTL) and English (LTR)
@@ -202,11 +197,11 @@ today versus manually verified only.
 
 | Tool | Minimum Version | Check |
 |---|---|---|
-| Flutter SDK | 3.22.0+ | `flutter --version` |
-| Dart SDK | 3.4.0+ | `dart --version` |
+| Flutter SDK | 3.41.4 to <4.0.0 | `flutter --version` |
+| Dart SDK | ^3.11.1 | `dart --version` |
 | Android Studio / Xcode | Latest | — |
 | Git | 2.x+ | `git --version` |
-| Supabase CLI | 1.150+ | `supabase --version` |
+| Supabase CLI | verify locally | `supabase --version` |
 
 ### 1. Clone the Repository
 
@@ -360,6 +355,11 @@ open coverage/html/index.html
 
 ### Test Structure
 
+The tree below is an illustrative grouping from the original project plan,
+not a current file inventory. The current repository uses the actual paths
+under `test/` and `integration_test/app_test.dart`; do not infer a test file
+from the example names below.
+
 ```
 test/
 ├── unit/
@@ -386,7 +386,10 @@ test/
     └── notification_test.dart  ← Receive → Read
 ```
 
-### Coverage Targets
+### Coverage Targets (planning guidance)
+
+CI runs coverage, but these percentages are not a current measured result
+unless a specific run is recorded.
 
 | Layer | Target | Tooling |
 |---|---|---|
@@ -520,7 +523,7 @@ lib/
 ```
 
 ```json
-// lib/l10n/app_en.arb
+// lib/core/l10n/arb/app_en.arb
 {
   "@@locale": "en",
   "appTitle": "EduZone",
@@ -553,12 +556,12 @@ The app has a real token system at `lib/design_system/tokens/` (colors,
 typography, spacing, radius, motion, elevation/shadows, icons) — see
 **[`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md)** for the audit of what's
 enforced by `tool/check_design_tokens.py` today, what's deliberately not
-enforced (and why), and known gaps. There is no separate
-`EduZone_App_Design_System_v1.md` doc — an earlier version of this section
-referenced one, but it does not exist anywhere in this repository, and the
-example color names below it (`AppColors.primary700`, `success700`,
-`error700`, `warning700`) don't match any member of the actual `AppColors`
-class either. Fixed below to the real token names.
+enforced (and why), and known gaps. The longer
+`docs/EduZone_App_Design_System_v1.md` file is a historical design reference;
+the current implementation is the `lib/design_system/` tree and its token
+classes. The example color names below it (`AppColors.primary700`,
+`success700`, `error700`, `warning700`) do not match the current `AppColors`
+class.
 
 ### Primary Colors
 
@@ -617,23 +620,22 @@ building each check.
 ```
 /                          ← splash (session check)
 │
-├── /auth
-│   ├── /login             ← Sign in
-│   └── /forgot-password   ← Password recovery
+├── /login                  ← Sign in
 │
 ├── /maintenance           ← Maintenance screen (no sign-out)
 ├── /app-locked            ← App lock screen
-├── /onboarding            ← Welcome screen
+├── /force-update          ← Forced update screen
 │
 └── /home                  ← Shell (Bottom Navigation)
     ├── /courses            ← Course list
     │   └── /courses/:id    ← Course details
     │       └── /lesson/:id ← Watch lesson
-    ├── /notifications      ← Notification inbox
-    ├── /warnings           ← Warnings
+    ├── /discover            ← Public course discovery and preview
+    ├── /home/notifications  ← Notification inbox
+    ├── /courses/downloads   ← Offline downloads
+    ├── /todo                ← Personal tasks
     └── /profile            ← User profile
-        ├── /sessions        ← Active sessions
-        └── /devices         ← Linked devices
+        └── /legal/:type     ← Legal documents
 ```
 
 ---
@@ -642,7 +644,7 @@ building each check.
 
 ### Before You Start
 
-1. Read `docs/EduZone_App_Design_System_v1.md` before modifying any UI
+1. Read `DESIGN_SYSTEM.md` and the current files under `lib/design_system/` before modifying UI
 2. Ensure you follow Clean Architecture — no cross-feature imports
 3. Every PR must pass CI (tests + lint + analyze)
 
@@ -694,7 +696,13 @@ chore(deps):       Dependency updates
 
 ## 📋 Roadmap
 
-### v1.0 — Initial Launch ✅
+### Roadmap and historical targets
+
+The remaining checklist below is a planning record, not proof of a released
+version. Confirm each item against source, tests, and release evidence before
+calling it complete.
+
+### v1.0 — Initial Launch
 - [x] Full authentication with token_version
 - [x] Course and lesson display
 - [x] Integrated YouTube player
@@ -734,13 +742,11 @@ chore(deps):       Dependency updates
 | `SECURITY.md` | Certificate pinning strategy, threat model, verification procedures |
 | `IMPLEMENTATION.md` | Implementation notes |
 
-(An earlier version of this table pointed at four files under `docs/` —
-`EduZone_App_Design_System_v1.md`, `EduZone_API_Design_v1.md`,
-`EduZone_Clean_Architecture.md`, `SECURITY_DESIGN.md` — none of which exist
-anywhere in this repository. `docs/` itself is excluded in `.gitignore`
-alongside AI-agent scratch folders, so anything placed there would never
-actually be committed; every doc above lives at the repo root instead,
-which is why it's visible in this list at all.)
+The `docs/` directory also contains dated design, audit, and planning
+documents. It is ignored by the app repository, so those files are local
+references rather than part of the tracked application documentation set.
+They must not override the current source tree or be treated as release
+evidence without a dated, executable result.
 
 ---
 

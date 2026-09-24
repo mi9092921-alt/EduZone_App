@@ -1,5 +1,9 @@
 # EduZone App — Accessibility Audit
 
+> **Dated audit:** the commit-specific findings below are historical evidence,
+> not a current accessibility or release sign-off. Re-run the guards and
+> device checks against the current tree before relying on them.
+
 Status: **verified against repository state as of commit `1fc9d7a`**
 (`origin/main`, includes SECURITY.md/Fastlane, the design-system patch, the
 offline-security-hardening work, and an auth-error-observability commit —

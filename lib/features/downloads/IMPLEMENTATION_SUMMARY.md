@@ -1,8 +1,16 @@
 # Secure Offline Video System - Implementation Summary
 
+> **Historical implementation note:** this file summarizes an earlier work
+> session. It is not proof that the backend is deployed, that the listed
+> commands still apply, or that coverage/release requirements are currently
+> met. Use the current Dart source, `supabase/config.toml`, and executed test
+> output as the authority.
+
 ## Session Summary - Final Integration
 
-This session completed the full integration of the downloads feature into the EduZone Student App. All high-priority tasks have been completed, and the feature is ready for testing once the Supabase backend is deployed.
+This session recorded an integration pass for the downloads feature. The
+current implementation and backend deployment still require independent
+verification.
 
 ### What Was Accomplished in This Session:
 
@@ -46,8 +54,9 @@ This session completed the full integration of the downloads feature into the Ed
    - Downloads now accessible via AppBar button in Courses Screen (MyCoursesScreen)
 
 ### Overall Progress: ~85%
-- All app-side implementation: ✅ Complete
-- Backend code: ✅ Complete (needs deployment)
+- App-side implementation: recorded as completed in that session; current
+  behavior must be rechecked against source and tests.
+- Backend code: source files are present; deployment is unverified.
 - Testing: ⏳ Pending
 - Background downloads: ⏳ Partial (cleanup only)
 
@@ -266,7 +275,12 @@ Pending:
 - Sync background download status with local database
 
 #### 5. Supabase Backend ⏳
-**Status:** Code Complete, Deployment Required
+**Status:** Historical note; current source and deployment state require verification.
+
+The original session listed several download functions and SQL files that are
+not present in the current tree. The current repository contains the
+download-related Edge Function entrypoints that can be verified under
+`supabase/functions/`; their deployment and remote behavior are unverified.
 
 Completed:
 - **Supabase Edge Functions** (TypeScript/Deno):
@@ -291,8 +305,9 @@ supabase functions deploy validate-offline-access
 supabase functions deploy validate-course-access
 supabase functions deploy get-subscription-expiry
 
-# Run SQL migrations
-supabase db push
+# Apply the ordered schema only through the repository's documented
+# deployment procedure after reviewing the target database.
+supabase\deploy.ps1 local
 ```
 
 #### 6. Testing
@@ -437,6 +452,11 @@ lib/
 
 ## Next Steps
 
+> The deployment command block below is retained as historical work-session
+> text only. Several named functions and migration commands are not present in
+> the current repository; do not execute it without rechecking the current
+> `supabase/functions/` tree and deployment helper.
+
 1. **Deploy Supabase backend:**
    ```bash
    # Deploy Edge Functions
@@ -447,8 +467,8 @@ lib/
    supabase functions deploy validate-course-access
    supabase functions deploy get-subscription-expiry
 
-   # Run SQL migrations
-   supabase db push
+   # Review and run the repository deployment helper for a disposable local DB
+   supabase\deploy.ps1 local
    ```
 
 2. **Write tests** to achieve required coverage:
