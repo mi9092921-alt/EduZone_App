@@ -31,8 +31,8 @@ class AppInitializer {
       prefs = await SharedPreferences.getInstance().timeout(
         const Duration(seconds: 5),
         onTimeout: () => throw TimeoutException(
-          'SharedPreferences timed out',
-        ), // check-ignore
+          'SharedPreferences timed out', // check-ignore -- diagnostic-only exception text
+        ),
       );
 
       // 2. Platform Config

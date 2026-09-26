@@ -360,7 +360,11 @@ class _CompactPlaybackSpeedButton extends StatelessWidget {
           )
           .toList(growable: false),
       child: const Padding(
-        padding: EdgeInsets.fromLTRB(8, 8, 0, 8),
+        padding: EdgeInsetsDirectional.only(
+          start: AppSpacing.sm,
+          top: AppSpacing.sm,
+          bottom: AppSpacing.sm,
+        ),
         child: Icon(Icons.speed_rounded, color: Colors.white, size: 28),
       ),
     );
