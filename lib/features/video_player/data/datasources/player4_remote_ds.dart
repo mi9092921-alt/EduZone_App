@@ -37,15 +37,15 @@ class Player4RemoteDataSource {
   /// "authenticated but not entitled to this specific lesson" gap for the
   /// streaming player (see supabase/functions/video-info/index.ts).
   ///
-  /// Verified 2026-08-24: this parameter is optional at the API level only
-  /// as a defensive contract. The sole current caller, `Player4Wrapper`,
-  /// declares `lessonId` as a required (non-nullable) field and always
-  /// sets `player4PendingLessonIdProvider` from it before this method runs
-  /// -- so in the current codebase every call is already lesson-scoped.
-  /// If a future caller is added without a lesson context, it will silently
-  /// fall back to the authenticated+rate-limited (not lesson-scoped) gate;
-  /// treat any new caller that omits [lessonId] as a finding to review, not
-  /// as expected behavior.
+  /// Verified 2026-09-26 against the live function: `video-info` now
+  /// REQUIRES `lesson_id` (HTTP 400 when absent) — the old
+  /// optional-with-fallback contract described here previously no longer
+  /// exists server-side. The Dart parameter stays nullable only so the
+  /// signature documents the type honestly; every real caller
+  /// (`Player4Wrapper`, the sole current one, which declares `lessonId` as
+  /// a required non-nullable field) must supply it. Treat any new caller
+  /// that omits [lessonId] as a guaranteed 400 at runtime, not as a
+  /// defensive fallback.
   Future<StreamingVideoInfo> getVideoInfo(
     String videoId, {
     String? lessonId,

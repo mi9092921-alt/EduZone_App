@@ -147,6 +147,17 @@ function loadVideo(id) {
   }
 }
 
+// Dart-side pause hook (app lifecycle: paused/inactive). Guarded the same
+// way as loadVideo() so a call before onReady is a harmless no-op — the
+// player cannot be playing yet in that case.
+function pauseVideo() {
+  try {
+    if (isPlayerReady && player && typeof player.pauseVideo === "function") {
+      player.pauseVideo();
+    }
+  } catch (e) {}
+}
+
 function onYouTubeIframeAPIReady() {
   player = new YT.Player("ytPlayer", {
     host: host,
@@ -293,7 +304,12 @@ function onYouTubeIframeAPIReady() {
     } catch (e) {
       try { cleanupFailures++; } catch (_) { cleanupFailures = cleanupFailures + 1; }
     }
-  }, 40);
+  }, 400);
+  // NOTE: the cleanup sweep above runs every 400ms (previously 40ms — 25
+  // DOM sweeps/second for the whole lesson, an unmotivated CPU/battery tax
+  // measured during launch-blocker profiling). 400ms still strips branding
+  // menus promptly after they open — those menus persist until dismissed,
+  // so a sub-second cadence buys nothing user-visible.
 
   window.onbeforeunload = function () {
     try { clearInterval(cleanupInterval); } catch (_) {}

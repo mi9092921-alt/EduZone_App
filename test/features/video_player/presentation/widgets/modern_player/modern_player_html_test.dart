@@ -67,6 +67,35 @@ void main() {
       expect(html, contains('loadVideo'));
     });
 
+    test('exposes a guarded pauseVideo() hook for the app-lifecycle pause', () {
+      // The Dart side calls pauseVideo() on paused/inactive (see
+      // ModernPlayerWrapper.didChangeAppLifecycleState). The hook must
+      // exist in the generated document and guard against the player not
+      // being ready yet.
+      final html = buildModernPlayerHtml(
+        videoId: 'dQw4w9WgXcQ',
+        platform: 'android',
+        playerVars: '{}',
+      );
+
+      expect(html, contains('function pauseVideo()'));
+      expect(html, contains('player.pauseVideo()'));
+    });
+
+    test('cleanup loop runs at the throttled 400ms cadence, not 40ms', () {
+      // The launch-blocker profiling round replaced the original 40ms
+      // sweep (25 DOM sweeps/second for the whole lesson) with a 400ms one;
+      // this pins the throttled cadence so it cannot silently regress.
+      final html = buildModernPlayerHtml(
+        videoId: 'dQw4w9WgXcQ',
+        platform: 'android',
+        playerVars: '{}',
+      );
+
+      expect(html, contains('}, 400);'));
+      expect(html, isNot(contains('}, 40);')));
+    });
+
     test(
       'SECURITY (AUTH/WEBVIEW-01): substitutes an unsafe videoId instead of '
       'interpolating it unescaped',

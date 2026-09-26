@@ -63,7 +63,8 @@ class Player4Wrapper extends ConsumerStatefulWidget {
   ConsumerState<Player4Wrapper> createState() => _Player4WrapperState();
 }
 
-class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
+class _Player4WrapperState extends ConsumerState<Player4Wrapper>
+    with WidgetsBindingObserver {
   late final Player _player;
   late final VideoController _videoController;
   final List<StreamSubscription> _subscriptions = [];
@@ -122,6 +123,7 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Player4 is the first path that needs libmpv. Keep this native startup
     // cost off the global app bootstrap so the YouTube player can render
     // without paying for an unrelated backend.
@@ -145,7 +147,22 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Pause on both `paused` (backgrounded) and `inactive` (e.g. an
+    // incoming call or the notification shade). Intentionally NO
+    // auto-resume on foreground — same policy as OfflinePlayerWrapper, and
+    // consistent with iOS (no `audio` UIBackgroundModes entry declared).
+    // Launch-blocker fix: previously libmpv kept decoding/playing audio
+    // while the app was in the background.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _player.pause();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _hideControlsTimer.dispose();
     for (final sub in _subscriptions) {
       sub.cancel();
@@ -367,7 +384,11 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
   }
 
   void _handlePlayerError(dynamic error) {
-    debugPrint('🎥 Player4 error occurred: ${error.runtimeType}');
+    // kDebugMode-gated like every other debug print in this file — never
+    // leak runtime diagnostics to release logcat.
+    if (kDebugMode) {
+      debugPrint('🎥 Player4 error occurred: ${error.runtimeType}');
+    }
     if (!mounted) return;
 
     final videoId = _loadedVideoId;
@@ -384,9 +405,11 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
       final now = DateTime.now();
       if (_lastErrorRefreshAt != null &&
           now.difference(_lastErrorRefreshAt!) < const Duration(seconds: 3)) {
-        debugPrint(
-          '🎥 Ignoring error event: debounced (last refresh < 3s ago)',
-        );
+        if (kDebugMode) {
+          debugPrint(
+            '🎥 Ignoring error event: debounced (last refresh < 3s ago)',
+          );
+        }
         return;
       }
 
@@ -396,9 +419,11 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
       }
       _retryCount++;
       _lastErrorRefreshAt = now;
-      debugPrint(
-        '🎥 Error detected during playback. Retrying URL refresh ($_retryCount/2)...',
-      );
+      if (kDebugMode) {
+        debugPrint(
+          '🎥 Error detected during playback. Retrying URL refresh ($_retryCount/2)...',
+        );
+      }
 
       unawaited(
         Future.delayed(const Duration(milliseconds: 500), () {

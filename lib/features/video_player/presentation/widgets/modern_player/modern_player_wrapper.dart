@@ -67,7 +67,7 @@ class ModernPlayerWrapper extends ConsumerStatefulWidget {
 }
 
 class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   final GlobalKey _webViewKey = GlobalKey();
 
   InAppWebViewController? _webViewController;
@@ -96,8 +96,24 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _platform = kIsWeb ? 'web' : (Platform.isAndroid ? 'android' : 'ios');
     _initUA();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Pause on both `paused` (backgrounded) and `inactive` (e.g. an
+    // incoming call or the notification shade). Intentionally NO
+    // auto-resume on foreground — same policy as OfflinePlayerWrapper, and
+    // consistent with iOS (no `audio` UIBackgroundModes entry declared).
+    // Launch-blocker fix: previously the iframe's audio kept playing while
+    // the app was backgrounded. pauseVideo() is defined in the generated
+    // player document (modern_player_html.dart).
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _webViewController?.evaluateJavascript(source: 'pauseVideo();');
+    }
   }
 
   @override
@@ -110,6 +126,7 @@ class _ModernPlayerWrapperState extends ConsumerState<ModernPlayerWrapper>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     try {
       _webViewController?.evaluateJavascript(source: '''
         try { if (timerId) clearInterval(timerId); } catch(_) {}
