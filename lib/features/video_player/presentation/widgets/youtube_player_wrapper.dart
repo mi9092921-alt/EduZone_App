@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -45,6 +47,7 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
   YoutubePlayerController? _controller;
   final _activityLogger = LogRemoteDataSource();
   bool _isPlayerReady = false;
+  PlayerState? _lastCaptionSuppressionState;
   String? _lastVideoId;
   // Guards against scheduling more than one pending post-frame
   // controller-swap callback for the same videoId (e.g. if build() runs
@@ -83,11 +86,18 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
     _controller = YoutubePlayerController(
       initialVideoId: videoId,
       flags: const YoutubePlayerFlags(
+        // Keep the final rendered frame visible when playback ends. The
+        // package otherwise fades its thumbnail over the video at the ended
+        // state. loop remains false so playback never restarts automatically.
+        hideThumbnail: true,
+        forceHD: true,
+        // Captions are intentionally disabled for this player.
         enableCaption: false,
       ),
     )..addListener(_videoListener);
 
     _isPlayerReady = false;
+    _lastCaptionSuppressionState = null;
   }
 
   /// Schedules [_initController] for after the current frame instead of
@@ -110,7 +120,18 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
 
     if (!_isPlayerReady) {
       _isPlayerReady = true;
+      _disableYoutubeCaptions();
+      _lastCaptionSuppressionState = _controller!.value.playerState;
       _logLessonStarted();
+    } else {
+      // YouTube can restore the caption module after a state transition
+      // (for example when buffering or resuming). Re-apply the suppression
+      // only when the state changes; never poll the WebView on every tick.
+      final playerState = _controller!.value.playerState;
+      if (playerState != _lastCaptionSuppressionState) {
+        _lastCaptionSuppressionState = playerState;
+        _disableYoutubeCaptions();
+      }
     }
 
     if (!_progressReporter.shouldReport(_controller!.value.position)) return;
@@ -122,7 +143,9 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
       final pct = (position.inSeconds / duration.inSeconds) * 100;
 
       ref
-          .read(videoProgressProvider(widget.courseId, widget.lessonId).notifier)
+          .read(
+            videoProgressProvider(widget.courseId, widget.lessonId).notifier,
+          )
           .updateProgress(
             pct,
             position.inSeconds,
@@ -130,6 +153,45 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
             widget.lessonId,
           );
     }
+  }
+
+  /// `enableCaption: false` sets YouTube's initial `cc_load_policy`, but the
+  /// iframe can still restore a previously selected caption track. Unload both
+  /// caption-module names used by YouTube's iframe runtime. This is called on
+  /// readiness and meaningful player-state transitions, not on every position
+  /// tick, so the workaround does not add continuous WebView work.
+  void _disableYoutubeCaptions() {
+    final webViewController = _controller?.value.webViewController;
+    if (webViewController == null) return;
+
+    unawaited(
+      webViewController.evaluateJavascript(
+        source: """
+(function () {
+  try {
+    // Some YouTube WebView builds restore the caption module from the user's
+    // account preference even after unloadModule(). A permanent CSS rule is a
+    // cheaper and more reliable fallback than polling or covering the video
+    // with a Flutter overlay. It only targets YouTube's caption container.
+    var styleId = 'eduzone-hide-youtube-captions';
+    if (!document.getElementById(styleId)) {
+      var style = document.createElement('style');
+      style.id = styleId;
+      style.textContent =
+          '.ytp-caption-window-container, .ytp-caption-segment {' +
+          'display: none !important; visibility: hidden !important;}';
+      (document.head || document.documentElement).appendChild(style);
+    }
+
+    if (window.player && typeof window.player.unloadModule === 'function') {
+      window.player.unloadModule('captions');
+      window.player.unloadModule('cc');
+    }
+  } catch (_) {}
+})();
+""",
+      ),
+    );
   }
 
   /// Best-effort analytics ping: failure here must never block or
@@ -186,6 +248,8 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
         CustomYoutubePlayer(
           controller: _controller!,
           isVertical: widget.isVertical,
+          isFullScreen: widget.isFullScreen,
+          onToggleFullScreen: widget.onToggleFullScreen,
         ),
         if (showWatermark)
           Positioned(

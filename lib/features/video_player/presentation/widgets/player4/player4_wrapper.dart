@@ -122,6 +122,10 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
   @override
   void initState() {
     super.initState();
+    // Player4 is the first path that needs libmpv. Keep this native startup
+    // cost off the global app bootstrap so the YouTube player can render
+    // without paying for an unrelated backend.
+    MediaKit.ensureInitialized();
     _player = Player();
     _videoController = VideoController(_player);
 
@@ -204,7 +208,9 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
     // fails closed into the error view via the catch below.
     final requestUserId = ref.read(currentUserIdProvider);
     if (requestUserId == null || requestUserId.isEmpty) {
-      throw StateError('Cannot load video without a signed-in account'); // check-ignore: developer-facing detail, mapped to localized copy below
+      throw StateError(
+        'Cannot load video without a signed-in account',
+      ); // check-ignore: developer-facing detail, mapped to localized copy below
     }
     ref
         .read(player4PendingLessonIdProvider.notifier)
@@ -378,7 +384,9 @@ class _Player4WrapperState extends ConsumerState<Player4Wrapper> {
       final now = DateTime.now();
       if (_lastErrorRefreshAt != null &&
           now.difference(_lastErrorRefreshAt!) < const Duration(seconds: 3)) {
-        debugPrint('🎥 Ignoring error event: debounced (last refresh < 3s ago)');
+        debugPrint(
+          '🎥 Ignoring error event: debounced (last refresh < 3s ago)',
+        );
         return;
       }
 

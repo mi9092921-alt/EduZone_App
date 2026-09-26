@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:app/core/l10n/arb/app_localizations.dart';
 import 'package:app/design_system/design_system.dart';
 import 'package:app/shared/utils/player_ui_helpers.dart';
@@ -9,12 +11,16 @@ class CustomYoutubePlayer extends StatefulWidget {
   final YoutubePlayerController controller;
   final bool showControls;
   final bool isVertical;
+  final bool isFullScreen;
+  final VoidCallback? onToggleFullScreen;
 
   const CustomYoutubePlayer({
     super.key,
     required this.controller,
     this.showControls = true,
     this.isVertical = false,
+    this.isFullScreen = false,
+    this.onToggleFullScreen,
   });
 
   @override
@@ -82,15 +88,21 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
 
   @override
   Widget build(BuildContext context) {
-    final player = YoutubePlayer(
-      controller: widget.controller,
-      aspectRatio: widget.isVertical ? 9 / 16 : 16 / 9,
-      onReady: () {
-        _startHideTimer();
-      },
+    // The package keeps its own aspect ratio from initState and does not
+    // update it when this widget changes orientation. Give it tight external
+    // bounds instead; this makes the app-owned orientation state authoritative
+    // without recreating the YouTube controller or reloading the video.
+    final player = SizedBox.expand(
+      child: YoutubePlayer(
+        controller: widget.controller,
+        aspectRatio: widget.isVertical ? 9 / 16 : 16 / 9,
+        onReady: () {
+          _startHideTimer();
+        },
+      ),
     );
 
-    return Stack(
+    final playerContent = Stack(
       alignment: Alignment.center,
       children: [
         player,
@@ -102,25 +114,94 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
               child: AnimatedOpacity(
                 opacity: _showOverlay ? 1.0 : 0.0,
                 duration: AppMotion.medium,
-                child: ColoredBox(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  child: AnimatedBuilder(
-                    animation: widget.controller,
-                    builder: (context, child) {
-                      return widget.controller.value.isReady
-                          ? _buildControls()
-                          : const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                              ),
-                            );
-                    },
-                  ),
+                // Do not keep rebuilding the complete controls tree on
+                // every YouTube position tick while it is hidden.
+                child: _showOverlay
+                    ? ColoredBox(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        child: AnimatedBuilder(
+                          animation: widget.controller,
+                          builder: (context, child) {
+                            return widget.controller.value.isReady
+                                ? _buildControls()
+                                : const Center(
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                    ),
+                                  );
+                          },
+                        ),
+                      )
+                    : const SizedBox.expand(),
+              ),
+            ),
+          ),
+        if (widget.isFullScreen && widget.onToggleFullScreen != null)
+          Positioned.directional(
+            textDirection: Directionality.of(context),
+            top: AppSpacing.sm,
+            start: AppSpacing.sm,
+            child: SafeArea(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  borderRadius: AppRadius.xsBorder,
+                ),
+                child: AppIconButton(
+                  icon: Icons.fullscreen_exit_rounded,
+                  color: Colors.white,
+                  iconSize: 28,
+                  semanticLabel: AppLocalizations.of(
+                    context,
+                  )!.exitFullScreenButtonTooltip,
+                  onPressed: widget.onToggleFullScreen,
                 ),
               ),
             ),
           ),
       ],
+    );
+
+    // Keep the same LayoutBuilder -> SizedBox -> playerContent hierarchy in
+    // both modes. Switching the root widget type here would dispose the
+    // package's YoutubePlayer subtree (and its platform WebView), which makes
+    // YouTube load the video again from 0 when fullscreen is entered.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final maxHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : MediaQuery.sizeOf(context).height;
+
+        if (widget.isFullScreen) {
+          return SizedBox(
+            width: width,
+            height: maxHeight,
+            child: playerContent,
+          );
+        }
+
+        final naturalHeight = widget.isVertical
+            ? width * 16 / 9
+            : width * 9 / 16;
+        // A 9:16 lesson is naturally taller than the remaining viewport on
+        // many phones. Cap only the non-fullscreen surface so the sidebar's
+        // Expanded child always receives usable height.
+        final uncappedHeight = widget.isVertical
+            ? math.min(naturalHeight, MediaQuery.sizeOf(context).height * 0.52)
+            : naturalHeight;
+        // The screen also gives the player a loose Flexible slot so the
+        // lesson list always retains a valid finite remainder. Respect that
+        // max height when the app bar/system insets leave less space than the
+        // viewport-based vertical cap.
+        final height = constraints.maxHeight.isFinite
+            ? math.min(uncappedHeight, constraints.maxHeight)
+            : uncappedHeight;
+
+        return SizedBox(width: width, height: height, child: playerContent);
+      },
     );
   }
 
@@ -140,7 +221,9 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
                 icon: Icons.replay_10_rounded,
                 color: Colors.white,
                 iconSize: 36,
-                semanticLabel: AppLocalizations.of(context)!.rewindButtonTooltip,
+                semanticLabel: AppLocalizations.of(
+                  context,
+                )!.rewindButtonTooltip,
                 onPressed: _showOverlay ? () => _seekRelative(-10) : null,
               ),
               const SizedBox(width: AppSpacing.xl),
@@ -160,7 +243,9 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
                 icon: Icons.forward_10_rounded,
                 color: Colors.white,
                 iconSize: 36,
-                semanticLabel: AppLocalizations.of(context)!.fastForwardButtonTooltip,
+                semanticLabel: AppLocalizations.of(
+                  context,
+                )!.fastForwardButtonTooltip,
                 onPressed: _showOverlay ? () => _seekRelative(10) : null,
               ),
             ],
@@ -227,13 +312,8 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
                       ),
                       child: Tooltip(
                         message: AppLocalizations.of(context)!.speedTooltip,
-                        child: PlaybackSpeedButton(
+                        child: _CompactPlaybackSpeedButton(
                           controller: widget.controller,
-                          icon: const Icon(
-                            Icons.speed_rounded,
-                            color: Colors.white,
-                            size: 28,
-                          ),
                         ),
                       ),
                     ),
@@ -244,6 +324,45 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A compact speed menu for the first (YouTube) player.
+///
+/// The package's [PlaybackSpeedButton] exposes eight fixed entries, which
+/// makes the menu unnecessarily tall on mobile. Keep the common lecture
+/// speeds here while preserving the controller's selected-rate check mark.
+class _CompactPlaybackSpeedButton extends StatelessWidget {
+  static final _speeds = <double, String>{
+    2.0: '2.0x',
+    1.5: '1.5x',
+    1.25: '1.25x',
+    1.0: 'Normal',
+    0.5: '0.5x',
+  };
+
+  final YoutubePlayerController controller;
+
+  const _CompactPlaybackSpeedButton({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<double>(
+      onSelected: controller.setPlaybackRate,
+      itemBuilder: (context) => _speeds.entries
+          .map(
+            (entry) => CheckedPopupMenuItem<double>(
+              value: entry.key,
+              checked: controller.value.playbackRate == entry.key,
+              child: Text(entry.value),
+            ),
+          )
+          .toList(growable: false),
+      child: const Padding(
+        padding: EdgeInsets.fromLTRB(8, 8, 0, 8),
+        child: Icon(Icons.speed_rounded, color: Colors.white, size: 28),
+      ),
     );
   }
 }

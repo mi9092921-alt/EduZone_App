@@ -101,8 +101,14 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
   bool _isPlaying = false;
   bool _showControls = true;
   int _speedIndex = 2; // Index 2 = 1.0x in _speeds below
-  late final List<double> _speeds =
-      [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]; // Indices: [0, 1, 2, 3, 4, 5]
+  late final List<double> _speeds = [
+    0.5,
+    0.75,
+    1.0,
+    1.25,
+    1.5,
+    2.0,
+  ]; // Indices: [0, 1, 2, 3, 4, 5]
   StreamSubscription<bool>? _playingSubscription; // Nullable: avoids
   // LateInitializationError in dispose() if _initializePlayer() throws
   // before this is ever assigned (e.g. decryption failure).
@@ -132,8 +138,9 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
       encryptionService: ref.read(encryptionServiceProvider),
       // Server revalidation reaches Supabase only through the downloads
       // datasource (pre-classified network_error/server_error contract).
-      revalidateEntitlement:
-          ref.read(downloadRemoteDataSourceProvider).revalidateOfflineEntitlement,
+      revalidateEntitlement: ref
+          .read(downloadRemoteDataSourceProvider)
+          .revalidateOfflineEntitlement,
       // Auth-state-derived identity for ownership/telemetry checks.
       currentUserId: () => ref.read(currentUserIdProvider),
       // Real secure-storage-backed clock guard (P6.16) — see
@@ -172,7 +179,8 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
       // what this does and does not guarantee.
       await _policyEngine.authorize(widget.download.id);
 
-      final isDualTrack = widget.download.audioPath != null &&
+      final isDualTrack =
+          widget.download.audioPath != null &&
           widget.download.audioPath!.isNotEmpty;
 
       if (isDualTrack) {
@@ -238,6 +246,10 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
         }
       }
 
+      // Offline playback is another libmpv consumer. Initialize it only when
+      // this screen is actually used; AppInitializer deliberately leaves
+      // MediaKit lazy so YouTube startup stays light.
+      MediaKit.ensureInitialized();
       final player = Player();
 
       // If the widget was disposed while we were awaiting decryption/proxy
@@ -517,7 +529,10 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
           children: [
             ColoredBox(
               color: Colors.black,
-              child: Video(controller: videoController, controls: NoVideoControls),
+              child: Video(
+                controller: videoController,
+                controls: NoVideoControls,
+              ),
             ),
             // Phase 11 content watermark (see ContentWatermark for the
             // security posture): IgnorePointer-rooted, so the tap-to-toggle
@@ -546,9 +561,7 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
             // normal safe-area-aware layout). Without this, the same
             // overlay widget ends up visually offset between the two
             // modes even though the widget tree is identical.
-            Positioned.fill(
-              child: SafeArea(child: _buildControlsOverlay()),
-            ),
+            Positioned.fill(child: SafeArea(child: _buildControlsOverlay())),
             // Centered play button — kept identical (same size, opacity,
             // and paused-only visibility) between fullscreen and
             // non-fullscreen so the control layout doesn't shift when the
@@ -567,7 +580,10 @@ class _OfflinePlayerWrapperState extends ConsumerState<OfflinePlayerWrapper>
         children: [
           ColoredBox(
             color: Colors.black,
-            child: Video(controller: videoController, controls: NoVideoControls),
+            child: Video(
+              controller: videoController,
+              controls: NoVideoControls,
+            ),
           ),
           // Same watermark rationale as the fullscreen branch above
           // (flag-gated, fail-closed).

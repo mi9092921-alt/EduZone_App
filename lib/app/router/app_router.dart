@@ -36,6 +36,7 @@ import '../../features/video_player/presentation/widgets/modern_player_wrapper.d
 import '../../features/video_player/presentation/widgets/player4_wrapper.dart';
 import '../../features/video_player/presentation/widgets/youtube_player_wrapper.dart';
 import '../../shared/models/auth_state.dart';
+import '../../shared/utils/app_snackbar.dart';
 import '../../shared/utils/error_handler.dart';
 import '../../shared/widgets/error_state.dart';
 import '../state/app_state_provider.dart';
@@ -175,9 +176,7 @@ String? evaluateAppRedirect({
 
     // Force update: block ALL routes until the app is updated
     case AppAuthState.forceUpdate:
-      return location == AppRoutes.forceUpdate
-          ? null
-          : AppRoutes.forceUpdate;
+      return location == AppRoutes.forceUpdate ? null : AppRoutes.forceUpdate;
 
     // Logging out: cleanup in progress → redirect to login immediately.
     // Also drop any pending deep link: a destination requested under
@@ -233,9 +232,7 @@ String? evaluateAppRedirect({
       return location == AppRoutes.appLocked ? null : AppRoutes.appLocked;
 
     case AppAuthState.maintenance:
-      return location == AppRoutes.maintenance
-          ? null
-          : AppRoutes.maintenance;
+      return location == AppRoutes.maintenance ? null : AppRoutes.maintenance;
   }
 }
 
@@ -311,21 +308,18 @@ GoRouter router(Ref ref) {
     // The full redirect decision lives in [evaluateAppRedirect] (pure,
     // unit-testable); this closure only adapts go_router's inputs.
     redirect: (context, state) => evaluateAppRedirect(
-          appState: ref.read(appStateProvider),
-          location: state.matchedLocation,
-          killSwitchEngaged: SecurityService.killSwitchEngaged,
-          uri: state.uri.toString(),
-          linkStore: const _StaticPendingLinkStore(),
-        ),
-
+      appState: ref.read(appStateProvider),
+      location: state.matchedLocation,
+      killSwitchEngaged: SecurityService.killSwitchEngaged,
+      uri: state.uri.toString(),
+      linkStore: const _StaticPendingLinkStore(),
+    ),
 
     routes: [
       GoRoute(
         path: AppRoutes.forceUpdate,
-        pageBuilder: (context, state) => buildTransitionPage(
-          state: state,
-          child: const ForceUpdateScreen(),
-        ),
+        pageBuilder: (context, state) =>
+            buildTransitionPage(state: state, child: const ForceUpdateScreen()),
       ),
       GoRoute(
         path: AppRoutes.splash,
@@ -480,13 +474,13 @@ GoRouter router(Ref ref) {
                             playerBuilder: (courseId, lessonId, content) =>
                                 (context, isFS, toggleFS, isVertical) =>
                                     YoutubePlayerWrapper(
-                              courseId: courseId,
-                              lessonId: lessonId,
-                              lessonContent: content,
-                              isFullScreen: isFS,
-                              onToggleFullScreen: toggleFS,
-                              isVertical: isVertical,
-                            ),
+                                      courseId: courseId,
+                                      lessonId: lessonId,
+                                      lessonContent: content,
+                                      isFullScreen: isFS,
+                                      onToggleFullScreen: toggleFS,
+                                      isVertical: isVertical,
+                                    ),
                           ),
                         ),
                       ),
@@ -502,13 +496,13 @@ GoRouter router(Ref ref) {
                             playerBuilder: (courseId, lessonId, content) =>
                                 (context, isFS, toggleFS, isVertical) =>
                                     ModernPlayerWrapper(
-                              courseId: courseId,
-                              lessonId: lessonId,
-                              lessonContent: content,
-                              isFullScreen: isFS,
-                              onToggleFullScreen: toggleFS,
-                              isVertical: isVertical,
-                            ),
+                                      courseId: courseId,
+                                      lessonId: lessonId,
+                                      lessonContent: content,
+                                      isFullScreen: isFS,
+                                      onToggleFullScreen: toggleFS,
+                                      isVertical: isVertical,
+                                    ),
                           ),
                         ),
                       ),
@@ -524,13 +518,13 @@ GoRouter router(Ref ref) {
                             playerBuilder: (courseId, lessonId, content) =>
                                 (context, isFS, toggleFS, isVertical) =>
                                     Player4Wrapper(
-                              courseId: courseId,
-                              lessonId: lessonId,
-                              lessonContent: content,
-                              isFullScreen: isFS,
-                              onToggleFullScreen: toggleFS,
-                              isVertical: isVertical,
-                            ),
+                                      courseId: courseId,
+                                      lessonId: lessonId,
+                                      lessonContent: content,
+                                      isFullScreen: isFS,
+                                      onToggleFullScreen: toggleFS,
+                                      isVertical: isVertical,
+                                    ),
                           ),
                         ),
                       ),
@@ -663,6 +657,8 @@ class _VideoLessonRoute extends ConsumerWidget {
             lessonContent: content,
             isEnrolled: isEnrolled,
             playerType: playerType,
+            onLessonTap: (newLessonId) =>
+                _prefetchAndNavigate(context, ref, newLessonId),
             playerBuilder: playerBuilder(courseId, lessonId, content),
           ),
           loading: () => const AppSkeleton(child: VideoPlayerSkeleton()),
@@ -678,6 +674,37 @@ class _VideoLessonRoute extends ConsumerWidget {
         onRetry: () => ref.invalidate(courseDetailsProvider(courseId)),
       ),
     );
+  }
+
+  Future<void> _prefetchAndNavigate(
+    BuildContext context,
+    WidgetRef ref,
+    String newLessonId,
+  ) async {
+    try {
+      // Resolve the next lesson while the current route is still mounted.
+      // A transient RPC/network failure therefore leaves the working player
+      // visible instead of replacing it with a route-level error state.
+      await ref.read(lessonContentProvider(newLessonId).future);
+      if (!context.mounted) return;
+
+      final route = playerType == PlayerType.modern
+          ? 'lesson3'
+          : playerType == PlayerType.player4
+          ? 'lesson4'
+          : 'lesson';
+      context.replace('${AppRoutes.courses}/$courseId/$route/$newLessonId');
+    } catch (error) {
+      // The current lesson remains usable. The route-level retry screen is
+      // still available for cold/deep-link loads where no current player
+      // exists, but same-section taps use this less disruptive path.
+      ref.invalidate(lessonContentProvider(newLessonId));
+      if (!context.mounted) return;
+      AppSnackbar.showError(
+        context: context,
+        message: ErrorHandler.getMessage(context, error),
+      );
+    }
   }
 }
 

@@ -1,11 +1,12 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:app/design_system/design_system.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../shared/models/course.dart';
 import '../../../../shared/models/lesson_content.dart';
@@ -19,20 +20,22 @@ export 'video_player/player_type.dart';
 
 /// The player widget handed to [VideoPlayerScreen], built once per frame by
 /// the route composition layer with the already-resolved lesson content.
-typedef PlayerWidgetBuilder = Widget Function(
-  BuildContext context,
-  bool isFullScreen,
-  VoidCallback toggleFullScreen,
-  bool isVertical,
-);
+typedef PlayerWidgetBuilder =
+    Widget Function(
+      BuildContext context,
+      bool isFullScreen,
+      VoidCallback toggleFullScreen,
+      bool isVertical,
+    );
 
 /// Factory used by `app_router.dart` to bind the resolved lesson content
 /// into the concrete player widget for the selected player type.
-typedef VideoPlayerBuilderFactory = PlayerWidgetBuilder Function(
-  String courseId,
-  String lessonId,
-  LessonContent content,
-);
+typedef VideoPlayerBuilderFactory =
+    PlayerWidgetBuilder Function(
+      String courseId,
+      String lessonId,
+      LessonContent content,
+    );
 
 // ─────────────────────────────────────────────────────────────────────────────
 // مشغّل الدروس الموحّد (Universal Video Player Screen)
@@ -66,6 +69,10 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   /// composition layer from the courses feature's `isEnrolledProvider`.
   final bool isEnrolled;
   final PlayerWidgetBuilder playerBuilder;
+
+  /// Route-composition callback that preloads and navigates to another lesson.
+  /// Optional to keep this screen usable with isolated/test player builders.
+  final Future<void> Function(String lessonId)? onLessonTap;
   final PlayerType playerType;
 
   const VideoPlayerScreen({
@@ -76,6 +83,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     required this.lessonContent,
     required this.isEnrolled,
     required this.playerBuilder,
+    this.onLessonTap,
     this.playerType = PlayerType.youtube,
   });
 
@@ -86,6 +94,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
 class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   bool _isFullScreen = false;
   bool _isVertical = false;
+  bool _isSwitchingLesson = false;
 
   // مفتاح ثابت (يُنشأ مرة واحدة فقط لكل درس) يحافظ على عنصر شجرة الـ widget
   // الخاص بالمشغّل عند انتقاله بين التخطيط العادي (داخل Column) ووضع ملء
@@ -99,6 +108,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    // Provider state must not be mutated while Flutter is mounting the
+    // widget tree. Defer the monotonic server seed until the first frame;
+    // this keeps the server-known progress protection without causing
+    // "Tried to modify a provider while the widget tree was building".
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _seedProgressFromServer();
+    });
+  }
+
+  void _seedProgressFromServer() {
     // Phase 10 (progress-corruption fix): seed the progress notifier with
     // the SERVER-known progress for this lesson (embedded per-user in the
     // course outline the route layer resolved). Without this, re-opening a
@@ -165,6 +185,26 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     }
   }
 
+  Future<void> _handleLessonTap(String lessonId) async {
+    final onLessonTap = widget.onLessonTap;
+    if (_isSwitchingLesson ||
+        lessonId == widget.lessonId ||
+        onLessonTap == null) {
+      return;
+    }
+
+    setState(() => _isSwitchingLesson = true);
+    try {
+      // The route layer preloads and validates the next lesson before it
+      // replaces this page. Keeping the current player mounted during that
+      // request prevents a transient RPC/network failure from replacing a
+      // working lesson with an error page.
+      await onLessonTap(lessonId);
+    } finally {
+      if (mounted) setState(() => _isSwitchingLesson = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final course = widget.course;
@@ -179,9 +219,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         child: Center(
           child: Text(
             AppLocalizations.of(context)!.lessonNotFound,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: ds.textSecondary,
-            ),
+            style: AppTextStyles.bodyMedium.copyWith(color: ds.textSecondary),
           ),
         ),
       );
@@ -201,22 +239,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       ),
     );
 
-    if (_isFullScreen) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        body: playerWidget,
-      );
-    }
-
     final videoState = ref.watch(
       videoProgressProvider(widget.courseId, widget.lessonId),
     );
 
     return AppScreen(
       scrollable: false,
+      backgroundColor: _isFullScreen ? Colors.black : null,
       appBar: AppBar(
-        elevation: 0,
-        title: Text(currentLesson.title, style: AppTextStyles.h3),
+        elevation: _isFullScreen ? 0 : null,
+        backgroundColor: _isFullScreen ? Colors.black : null,
+        toolbarHeight: _isFullScreen ? 0 : kToolbarHeight,
+        title: _isFullScreen
+            ? null
+            : Text(currentLesson.title, style: AppTextStyles.h3),
         // The in-player switch button was removed deliberately: its sheet
         // listed every player backend unconditionally and bypassed the
         // remote feature-flag kill switches that the lesson-tap choice
@@ -227,90 +263,137 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ─── مشغّل الفيديو (Injected) ───────────────────────────
-          playerWidget,
+          // Keep one stable flex slot for the platform-view-backed player in
+          // both modes. Moving that subtree between two Scaffold bodies on a
+          // fullscreen toggle can dirty Flutter's semantics tree.
+          Flexible(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth.isFinite
+                    ? constraints.maxWidth
+                    : MediaQuery.sizeOf(context).width;
+                final maxHeight = constraints.maxHeight.isFinite
+                    ? constraints.maxHeight
+                    : MediaQuery.sizeOf(context).height;
+                final naturalHeight = _isVertical
+                    ? width * 16 / 9
+                    : width * 9 / 16;
+                final normalHeight = _isVertical
+                    ? math.min(
+                        naturalHeight,
+                        MediaQuery.sizeOf(context).height * 0.52,
+                      )
+                    : naturalHeight;
+                final height = _isFullScreen
+                    ? maxHeight
+                    : math.min(normalHeight, maxHeight);
 
-          if (videoState.progressPct > 0)
+                // The explicit finite size is required for the platform view
+                // in fullscreen; SizedBox.expand inside the player cannot
+                // resolve an unbounded loose-flex constraint safely.
+                return SizedBox(
+                  width: width,
+                  height: height,
+                  child: playerWidget,
+                );
+              },
+            ),
+          ),
+
+          if (!_isFullScreen && videoState.progressPct > 0)
             LinearProgressIndicator(
               value: videoState.progressPct / 100,
               backgroundColor: ds.border,
               color: videoState.isCompleted ? ds.success : ds.primary,
               minHeight: 4,
             ),
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg,
-              vertical: AppSpacing.xs,
-            ),
-            child: Row(
-              children: [
-                // زر تغيير الابعاد 9:16 , 16:9 للفيديوهات العمودية
-                AppIconButton(
-                  icon: _isVertical
-                      ? Icons.crop_portrait_rounded
-                      : Icons.crop_landscape_rounded,
-                  semanticLabel: _isVertical
-                      ? AppLocalizations.of(context)!.videoOrientationLandscape
-                      : AppLocalizations.of(context)!.videoOrientationPortrait,
-                  iconSize: 18,
-                  onPressed: () {
-                    setState(() {
-                      _isVertical = !_isVertical;
-                    });
-                  },
-                  style: IconButton.styleFrom(
-                    backgroundColor: ds.surface2,
-                    padding: const EdgeInsets.all(AppSpacing.xs),
-                    minimumSize: const Size(32, 32),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          if (!_isFullScreen)
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.xs,
+              ),
+              child: Row(
+                children: [
+                  // زر تغيير الابعاد 9:16 , 16:9 للفيديوهات العمودية
+                  AppIconButton(
+                    icon: _isVertical
+                        ? Icons.crop_portrait_rounded
+                        : Icons.crop_landscape_rounded,
+                    semanticLabel: _isVertical
+                        ? AppLocalizations.of(
+                            context,
+                          )!.videoOrientationLandscape
+                        : AppLocalizations.of(
+                            context,
+                          )!.videoOrientationPortrait,
+                    iconSize: 18,
+                    onPressed: () {
+                      setState(() {
+                        _isVertical = !_isVertical;
+                      });
+                    },
+                    style: IconButton.styleFrom(
+                      backgroundColor: ds.surface2,
+                      padding: const EdgeInsets.all(AppSpacing.xs),
+                      minimumSize: const Size(32, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                // زر ملء الشاشة
-                AppIconButton(
-                  icon: Icons.fullscreen_rounded,
-                  semanticLabel: AppLocalizations.of(context)!.videoEnterFullscreen,
-                  iconSize: 18,
-                  onPressed: _toggleFullScreen,
-                  style: IconButton.styleFrom(
-                    backgroundColor: ds.surface2,
-                    padding: const EdgeInsets.all(AppSpacing.xs),
-                    minimumSize: const Size(32, 32),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  const SizedBox(width: AppSpacing.sm),
+                  // زر ملء الشاشة
+                  AppIconButton(
+                    icon: Icons.fullscreen_rounded,
+                    semanticLabel: AppLocalizations.of(
+                      context,
+                    )!.videoEnterFullscreen,
+                    iconSize: 18,
+                    onPressed: _toggleFullScreen,
+                    style: IconButton.styleFrom(
+                      backgroundColor: ds.surface2,
+                      padding: const EdgeInsets.all(AppSpacing.xs),
+                      minimumSize: const Size(32, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                   ),
-                ),
-                if (videoState.isCompleted) ...[
-                  const Spacer(),
-                  Icon(
-                    Icons.check_circle_rounded,
-                    color: ds.success,
-                    size: 20,
-                  ),
+                  if (videoState.isCompleted) ...[
+                    const Spacer(),
+                    Icon(
+                      Icons.check_circle_rounded,
+                      color: ds.success,
+                      size: 20,
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          Divider(height: 1, color: ds.border),
+          if (!_isFullScreen) Divider(height: 1, color: ds.border),
 
           // ─── قائمة الدروس الجانبية ───────────────────────────────
-          Expanded(
-            child: LessonsSidebar(
-              course: course,
-              currentLessonId: widget.lessonId,
-              isEnrolled: widget.isEnrolled,
-              onLessonTap: (newId) {
-                if (newId != widget.lessonId) {
-                  final route = widget.playerType == PlayerType.modern
-                      ? 'lesson3'
-                      : widget.playerType == PlayerType.player4
-                      ? 'lesson4'
-                      : 'lesson';
-                  context.replace(
-                    '${AppRoutes.courses}/${widget.courseId}/$route/$newId',
-                  );
-                }
-              },
+          if (!_isFullScreen)
+            Expanded(
+              child: Stack(
+                children: [
+                  AbsorbPointer(
+                    absorbing: _isSwitchingLesson,
+                    child: LessonsSidebar(
+                      course: course,
+                      currentLessonId: widget.lessonId,
+                      isEnrolled: widget.isEnrolled,
+                      onLessonTap: (newId) =>
+                          unawaited(_handleLessonTap(newId)),
+                    ),
+                  ),
+                  if (_isSwitchingLesson)
+                    const Positioned.fill(
+                      child: ColoredBox(
+                        color: Colors.black12,
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

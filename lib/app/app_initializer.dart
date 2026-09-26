@@ -4,7 +4,6 @@ import 'dart:ui';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
@@ -31,7 +30,9 @@ class AppInitializer {
       // 1. Mandatory Local Prefs with Timeout
       prefs = await SharedPreferences.getInstance().timeout(
         const Duration(seconds: 5),
-        onTimeout: () => throw TimeoutException('SharedPreferences timed out'), // check-ignore
+        onTimeout: () => throw TimeoutException(
+          'SharedPreferences timed out',
+        ), // check-ignore
       );
 
       // 2. Platform Config
@@ -74,8 +75,10 @@ class AppInitializer {
         ]);
       });
 
-      // 4.5. Initialize Media Kit (libmpv)
-      MediaKit.ensureInitialized();
+      // 4.5. MediaKit is initialized lazily by the player4/offline player
+      // immediately before their first native Player is created. The YouTube
+      // player does not use libmpv, so loading it before runApp needlessly
+      // blocks the first frame and causes large startup frame drops.
 
       // 5. Initialize Notifications. FCM init also wires the local
       // notification channels (FcmService.init → _setupLocalNotifications),
@@ -99,17 +102,17 @@ class AppInitializer {
         CleanupScheduler.initialize()
             .then((_) => CleanupScheduler.scheduleCleanup())
             .catchError((Object e, StackTrace stack) {
-          debugPrint('⚠️ CleanupScheduler init failed: ${e.runtimeType}');
-          // Section 15 ("background-task failures" is explicitly in the
-          // audit list): this used to be debugPrint-only, so a
-          // CleanupScheduler init failure in production had zero
-          // observability — the offline-download expiry/orphan sweep
-          // would simply never run again with no diagnostic record
-          // anywhere. Sentry is already configured by this point (see
-          // handleTokenRefresh's identical precedent in
-          // download_manager.dart) so this is safe to call unconditionally.
-          GlobalErrorHandler.logError(e, stack);
-        }),
+              debugPrint('⚠️ CleanupScheduler init failed: ${e.runtimeType}');
+              // Section 15 ("background-task failures" is explicitly in the
+              // audit list): this used to be debugPrint-only, so a
+              // CleanupScheduler init failure in production had zero
+              // observability — the offline-download expiry/orphan sweep
+              // would simply never run again with no diagnostic record
+              // anywhere. Sentry is already configured by this point (see
+              // handleTokenRefresh's identical precedent in
+              // download_manager.dart) so this is safe to call unconditionally.
+              GlobalErrorHandler.logError(e, stack);
+            }),
       );
       unawaited(
         FileDownloader().start().catchError((Object e, StackTrace stack) {
@@ -151,7 +154,8 @@ class AppInitializer {
       // another.
       unawaited(
         _runRecoverySweep<DownloadRecoveryReport>(
-          label: 'Durable download recovery', // check-ignore -- debug-only sweep label, never user-facing
+          label:
+              'Durable download recovery', // check-ignore -- debug-only sweep label, never user-facing
           // Section 15: a reconcile() failure here means potentially
           // corrupted/half-written encrypted downloads are never
           // detected/repaired for this launch — worth Sentry visibility,
@@ -161,9 +165,9 @@ class AppInitializer {
             chunksReset: 0,
             chunksInvalidated: 0,
           ),
-          sweep: (localDataSource) =>
-              DownloadRecoveryService(localDataSource: localDataSource)
-                  .reconcile(),
+          sweep: (localDataSource) => DownloadRecoveryService(
+            localDataSource: localDataSource,
+          ).reconcile(),
         ),
       );
 
@@ -177,7 +181,8 @@ class AppInitializer {
       // the kind of failure that must never go unobserved.
       unawaited(
         _runRecoverySweep<int>(
-          label: 'Orphaned plaintext playback file cleanup', // check-ignore -- debug-only
+          label:
+              'Orphaned plaintext playback file cleanup', // check-ignore -- debug-only
           fallback: 0,
           sweep: (localDataSource) => OfflineCrashRecovery(
             localDataSource: localDataSource,
@@ -197,7 +202,8 @@ class AppInitializer {
       // and failure modes deserve independent best-effort sweeps.
       unawaited(
         _runRecoverySweep<int>(
-          label: 'Interrupted download reconciliation', // check-ignore -- debug-only
+          label:
+              'Interrupted download reconciliation', // check-ignore -- debug-only
           fallback: 0,
           sweep: (localDataSource) => OfflineCrashRecovery(
             localDataSource: localDataSource,
@@ -236,14 +242,14 @@ class AppInitializer {
       // OfflineCrashRecovery.reconcileMissingCompletedFiles's doc comment.
       unawaited(
         _runRecoverySweep<int>(
-          label: 'Missing completed-download file reconciliation', // check-ignore -- debug-only
+          label:
+              'Missing completed-download file reconciliation', // check-ignore -- debug-only
           fallback: 0,
           sweep: (localDataSource) => OfflineCrashRecovery(
             localDataSource: localDataSource,
           ).reconcileMissingCompletedFiles(),
         ),
       );
-
     } catch (e) {
       debugPrint('CRITICAL INITIALIZATION ERROR: ${e.runtimeType}');
       // Re-throw to be caught by runZonedGuarded
