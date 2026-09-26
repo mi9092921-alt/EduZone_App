@@ -6,6 +6,7 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 import '../../../../core/feature_flags/feature_flag_keys.dart';
 import '../../../../core/feature_flags/feature_flags_provider.dart';
+import '../../../../core/l10n/arb/app_localizations.dart';
 import '../../../../core/logging/data/log_remote_ds.dart';
 import '../../../../core/utils/device_info_helper.dart';
 import '../../../../design_system/design_system.dart';
@@ -14,6 +15,8 @@ import '../../../../shared/utils/player_ui_helpers.dart';
 import '../../../../shared/widgets/content_watermark.dart';
 import '../../../auth/application/providers/auth_provider.dart';
 import '../../application/providers/video_provider.dart';
+import 'player4/player4_error_view.dart';
+import 'youtube_error_mapper.dart';
 import 'youtube_player_widget.dart';
 
 class YoutubePlayerWrapper extends ConsumerStatefulWidget {
@@ -43,10 +46,19 @@ class YoutubePlayerWrapper extends ConsumerStatefulWidget {
       _YoutubePlayerWrapperState();
 }
 
-class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
+class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper>
+    with WidgetsBindingObserver {
   YoutubePlayerController? _controller;
   final _activityLogger = LogRemoteDataSource();
   bool _isPlayerReady = false;
+  // YouTube launch-blocker fix: the package surfaces IFrame API failures
+  // as `value.errorCode` (0 = no error) but only renders its own unstyled
+  // English error screen. These fields drive the localized error overlay
+  // instead. Sticky until the controller is recreated (retry or videoId
+  // change) because playback never recovers on its own after an IFrame
+  // error.
+  bool _hasError = false;
+  int _errorCode = 0;
   PlayerState? _lastCaptionSuppressionState;
   String? _lastVideoId;
   // Guards against scheduling more than one pending post-frame
@@ -98,6 +110,8 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
 
     _isPlayerReady = false;
     _lastCaptionSuppressionState = null;
+    _hasError = false;
+    _errorCode = 0;
   }
 
   /// Schedules [_initController] for after the current frame instead of
@@ -115,8 +129,39 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
     });
   }
 
+  /// Retry after an IFrame error: the error state is sticky in the package
+  /// (`errorCode` only resets once playback starts, which never happens
+  /// after onError), so a retry means a fresh controller for the same
+  /// video id — a full reload, not a resume. Routed through the same
+  /// post-frame swap as a videoId change so the doomed controller is never
+  /// disposed mid-frame.
+  void _retryPlayback() {
+    final videoId = _lastVideoId;
+    if (videoId == null) return;
+    _scheduleControllerSwap(videoId);
+  }
+
   void _videoListener() {
-    if (!mounted || _controller == null || !_controller!.value.isReady) return;
+    if (!mounted || _controller == null) return;
+
+    // Error check must run BEFORE the readiness gate below: the IFrame API
+    // can report onError for a removed/private/mis-embedded video before —
+    // or instead of — the player ever reaching the ready state (and the
+    // package sets errorCode=1 synchronously in load() for a malformed
+    // video id, which never becomes ready at all). Without this ordering,
+    // those failures stay invisible to the app and the student is left on
+    // the package's unstyled English error screen.
+    final value = _controller!.value;
+    if (value.hasError) {
+      if (!_hasError || value.errorCode != _errorCode) {
+        setState(() {
+          _hasError = true;
+          _errorCode = value.errorCode;
+        });
+      }
+      return;
+    }
+    if (!value.isReady) return;
 
     if (!_isPlayerReady) {
       _isPlayerReady = true;
@@ -211,7 +256,29 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Pause on both `paused` (backgrounded) and `inactive` (e.g. an
+    // incoming call or the notification shade) so audio doesn't keep
+    // playing during a transient interruption. Intentionally NO
+    // auto-resume on foreground — same policy as OfflinePlayerWrapper, and
+    // consistent with iOS (no `audio` UIBackgroundModes entry declared).
+    // Launch-blocker fix: previously nothing stopped the iframe's audio
+    // when the app was backgrounded.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _controller?.pause();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
     super.dispose();
   }
@@ -251,6 +318,21 @@ class _YoutubePlayerWrapperState extends ConsumerState<YoutubePlayerWrapper> {
           isFullScreen: widget.isFullScreen,
           onToggleFullScreen: widget.onToggleFullScreen,
         ),
+        // Localized error surface for unavailable/private/embedding-disabled
+        // videos (package only shows its raw English screen underneath).
+        // Positioned.fill covers it; the underlying player needs no teardown
+        // — the overlay disappears on retry or videoId change, when
+        // _initController rebuilds a clean controller.
+        if (_hasError)
+          Positioned.fill(
+            child: Player4ErrorView(
+              errorMessage: mapYoutubeErrorCodeToMessage(
+                AppLocalizations.of(context)!,
+                _errorCode,
+              ),
+              onRetry: _retryPlayback,
+            ),
+          ),
         if (showWatermark)
           Positioned(
             top: AppSpacing.sm,
