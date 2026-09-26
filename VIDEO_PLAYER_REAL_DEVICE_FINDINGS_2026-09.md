@@ -376,3 +376,16 @@ unbounded height. This removes the trigger for the whole chain.
   mapper and HTML-generation logic added in this round are unit-tested
   (youtube_error_mapper_test, modern_player_html_test additions).
 - iOS device round (blocker #4) — still out of scope on this Windows host.
+
+### Release build smoke (same round)
+
+- `flutter clean` → `flutter build apk --release --dart-define-from-file=.env
+  --target-platform android-arm64` succeeded (89.4 MB) after the test
+  sessions (per the project's clean-before-release rule).
+- Installed (required an uninstall — release signing differs from debug,
+  session cleared again) and launched: process alive after 40 s with zero
+  `FATAL`/ANR entries — R8/minification does not break app bootstrap.
+- **Pending:** one authenticated lesson-playback check inside the release
+  build (WebView under R8) was offered for a manual pass but not completed
+  in this round; treat release-mode lesson playback as unverified until
+  that single check is done.
