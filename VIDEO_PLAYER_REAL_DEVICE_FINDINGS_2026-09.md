@@ -252,3 +252,127 @@ existing mirroring window is required for final visual confirmation.
   tap still requires the existing screen-mirroring window. The code/build and
   widget regressions are covered; no network/RPC change was justified by the
   captured evidence.
+
+## Baseline re-measurement — 2026-09-26 (before the launch-blocker fixes)
+
+Fresh debug build (`flutter build apk --debug --dart-define-from-file=.env`)
+installed after an uninstall/reinstall cycle (signing key mismatch again —
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`, same as the earlier session, so the
+on-device session was cleared and login was redone).
+
+Device state during the run: ~3.1 GB free storage (94% used), MemFree ~119 MB
+of 3.9 GB — heavy background memory pressure, several LM-kill sweeps visible
+in logcat (messaging, Play Store, camera processes died during the session).
+
+Timeline (captured from a full `adb logcat` recording, saved as
+`build/baseline_logcat.txt`, timestamps local):
+
+- `17:07:26` cold start: `Skipped 620 frames` + `Skipped 108` + `Skipped 142`
+  on the app main thread (debug build — consistent with, and worse than, the
+  documented 226/82 baseline, most plausibly due to the low-MemFree state).
+- `17:10:32` → `17:11:01` a lesson was played successfully for ~28.5 s
+  (`AudioTrack` created, `start()` from `STATE_STOPPED`, then `stop()` after
+  1,370,112 frames @ 48 kHz — usage=MEDIA). No `libmpv` process activity, so
+  this was the WebView-based (YouTube) player.
+- `17:11:31` **ANR reproduced**: `tombstoned` collected a Java-backtrace
+  intercept for the app pid; the traced sample shows the app at 145% CPU
+  (main thread 91% user) with 139,280 minor / 223 major page faults. The
+  WebView `sandboxed_process0` died right before the kill.
+- `17:11:52` process killed — `Killing <pid>:com.eduzone.learn.app (adj 0):
+  user request after error` — i.e. the ANR dialog was acknowledged and the
+  app was closed. This is direct live evidence for the documented
+  "Skipped frames + OEM ANR" release blocker.
+- `17:12:31` relaunch: `[FeatureFlags] refreshed: 6/7 registered flags in
+  6792ms` — flag refresh took ~6.8 s on this network (documented ~241 ms
+  ping environment).
+
+Confirmed absent in this run: no `RenderFlex overflow`, no `FATAL
+EXCEPTION`, no Flutter-level exception in the captured window.
+
+Baseline accepted for the fix round: cold start 620/108/142 skipped frames,
+lesson playback functional (28.5 s), ANR during post-playback interaction
+reproduced once. The after-fix round must re-measure the same sequence.
+
+## Launch-blocker fix round — 2026-09-26 (same day, same device)
+
+### What was fixed (code)
+
+1. **YouTube error handling (launch-blocker #1)** — `youtube_error_mapper.dart`
+   (new) maps IFrame error codes to localized copy; `_YoutubePlayerWrapperState`
+   now checks `value.hasError` BEFORE the readiness gate (IFrame errors can
+   fire before/instead of onReady) and renders a full-bleed localized error
+   view with a controller-recreating retry. No new l10n keys.
+2. **App-lifecycle pause (launch-blocker #2)** — all three online wrappers
+   (YouTube / Player4 / Modern) now mix in `WidgetsBindingObserver` and stop
+   playback on `paused`/`inactive`, no auto-resume — mirroring
+   `OfflinePlayerWrapper` policy and iOS (no `audio` UIBackgroundModes entry).
+   Modern player gained a guarded `pauseVideo()` JS hook in the generated
+   document.
+3. **Modern player cleanup sweep** throttled 40ms → 400ms (was 25 full DOM
+   sweeps/second for the whole lesson), pinned by test.
+4. **Player4 release-log hygiene** — the three ungated `debugPrint`s in
+   `_handlePlayerError` are now `kDebugMode`-gated.
+5. **player4_remote_ds.dart doc drift** — comment now states `lesson_id` is
+   REQUIRED by the live `video-info` function (HTTP 400 when absent).
+
+### Root cause of the ANR blocker — identified with hard evidence
+
+Second baseline run (17:43–17:46) reproduced the ANR again and this time the
+Dart-side evidence was captured. The freeze chain, all in debug mode:
+
+1. `17:45:15.781` — `RenderFlex children have non-zero flex but incoming
+   height constraints are unbounded`. Culprit identified from the printed
+   creator chain: the bottom-controls
+   `Positioned(bottom/left/right) → Column` in `youtube_player_widget.dart`,
+   whose `ProgressBar(isExpanded: true)` wraps itself in an `Expanded`
+   (VERTICAL flex) inside a bottom-pinned positioned child — which by
+   construction receives unbounded height. This assert had been latent since
+   the initial commit; it was caught-and-logged, normally survivable.
+2. `17:45:15.969` — follow-on `hasSize` assertion
+   (`RenderBox was not laid out: RenderFlex`) in the same frame.
+3. `17:45:16.061` — `!childSemantics.renderObject._nee...` assertion inside
+   `_RenderObjectSemantics._collectChildMergeUpAndSiblingGroup` → mutual
+   recursion with `updateChildren`/`_didUpdateParentData` (frames #2…#68+)
+   → main thread wedged → ANR dialog (17:45:33 stack collection) → process
+   killed `user request after error` (17:45:55).
+
+**Fix:** `ProgressBar(isExpanded: false)` (default) — the bar is already
+full-width through the positioned child's tight width (the package's
+`_buildBar` uses `BoxConstraints.expand`); the `Expanded` only ever asked
+for vertical expansion, which was never the intent and is illegal under
+unbounded height. This removes the trigger for the whole chain.
+
+### Post-fix verification (18:00–18:05, same device, same debug build config)
+
+- Single app process for the whole round — no restarts, **zero ANR, zero
+  RenderFlex/flex assertions, zero provider-mutation errors** (was: ANR on
+  both previous rounds at the fullscreen step).
+- Fullscreen enter + rotate + exit — the exact previous freeze point —
+  completed cleanly; progress bar renders normally (user visual check via
+  mirroring).
+- **Background-pause verified with audio-track evidence**: three playback
+  sessions (`AudioTrack` sessions 59145/59153/59161) each show
+  `start → stop (prior state: STATE_ACTIVE)` exactly when the user pressed
+  Home — audio stops immediately on backgrounding, matching the new
+  lifecycle observer. Return-to-foreground leaves playback paused (no
+  auto-resume) as designed.
+- Same-section lesson switching via sidebar: 15 navigation events, no
+  `lessonContentProvider` errors.
+- Skipped-frames profile (max 686/389/219 at cold start, debug build,
+  device at 94% storage / low free RAM) remains in the same band as the
+  documented baseline — the ANR trigger is gone; the startup/WebView frame
+  cost on this low-end device remains open profiling work (profile-mode
+  measurement recommended before any optimization claim).
+
+### Deferred / environment-blocked items from this round
+
+- **Player4 device verification** — requires the external extraction
+  service (yt-dlp/Python) on the backend, unavailable in the dev
+  environment during this round. The lifecycle pause for Player4 is
+  covered by code review + the identical pattern verified live on the
+  YouTube and Modern players.
+- **Wrapper State widget tests (review item #6)** — deferred: needs a
+  small injectability refactor (Player factory for Player4Wrapper); the
+  mapper and HTML-generation logic added in this round are unit-tested
+  (youtube_error_mapper_test, modern_player_html_test additions).
+- iOS device round (blocker #4) — still out of scope on this Windows host.
