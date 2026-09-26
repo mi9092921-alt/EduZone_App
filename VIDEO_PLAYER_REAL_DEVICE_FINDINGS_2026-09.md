@@ -389,3 +389,17 @@ unbounded height. This removes the trigger for the whole chain.
   build (WebView under R8) was offered for a manual pass but not completed
   in this round; treat release-mode lesson playback as unverified until
   that single check is done.
+
+### CLOSED — release-mode lesson playback (was pending above)
+
+Confirmed 2026-09-26 by the operator on the same device: logged into the
+installed release APK and played a YouTube lesson — video and audio
+playback normal. Corroborated by logcat: app process alive for the whole
+session (pid 15459) with zero `FATAL EXCEPTION`/`ANR in com.eduzone`
+entries in the buffer. R8/minification does not break WebView playback.
+
+With this check, the Android-side launch checklist items that were
+executable in this environment are all closed. Remaining open items are
+exactly the ones documented above: Player4 device round (needs the
+backend extraction service), wrapper State widget tests (injectability
+refactor), and the iOS device round (no host).
