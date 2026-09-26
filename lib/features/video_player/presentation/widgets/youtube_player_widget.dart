@@ -260,8 +260,23 @@ class _CustomYoutubePlayerState extends State<CustomYoutubePlayer> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (_showOverlay)
+                // isExpanded MUST stay false here. The package wraps an
+                // expanded bar in an `Expanded`, which is a VERTICAL flex
+                // inside this Column — and this Column is laid out by a
+                // bottom-pinned Positioned child (left/right/bottom, no
+                // top/height), so its incoming height is unbounded.
+                // Flex + unbounded main axis = the
+                // "RenderFlex children have non-zero flex but incoming
+                // height constraints are unbounded" assertion. On device
+                // (CPH2269, debug build, 2026-09-26) that failed layout
+                // cascaded into an infinite
+                // _RenderObjectSemantics._collectChildMergeUpAndSiblingGroup
+                // recursion that wedged the main thread into an ANR while
+                // entering fullscreen. The bar is already full-width via
+                // the Positioned child's tight width (the package's
+                // _buildBar uses BoxConstraints.expand), so no flex is
+                // needed for the intended layout.
                 ProgressBar(
-                  isExpanded: true,
                   controller: widget.controller,
                   colors: const ProgressBarColors(
                     playedColor: AppColors.primary,
